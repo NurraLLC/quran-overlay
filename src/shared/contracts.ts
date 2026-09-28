@@ -9,6 +9,7 @@ export const LayoutSchema = z.enum(['fullframe', 'lowerthird']);
 export const BackgroundSchema = z.enum(['transparent', 'scrim', 'solid']);
 
 export const DisplayStyleSchema = z.object({
+  readingMode: z.enum(['follow', 'ayah', 'word']).default('follow'),
   layout: LayoutSchema,
   background: BackgroundSchema,
   showTranslation: z.boolean(),
@@ -20,12 +21,13 @@ export const DisplayStyleSchema = z.object({
 export type DisplayStyle = z.infer<typeof DisplayStyleSchema>;
 
 export const DEFAULT_STYLE: DisplayStyle = {
+  readingMode: 'follow',
   layout: 'fullframe',
   background: 'scrim',
   showTranslation: true,
   showReference: true,
   arabicScale: 1,
-  translationPageSeconds: 14,
+  translationPageSeconds: 0,
 };
 
 export const DisplayVerseSchema = z.object({
@@ -52,6 +54,8 @@ export const DisplayStateSchema = z.object({
   arabicPage: z.number().int().nonnegative().nullable(),
   /** Recited position within the verse as a fraction of its words, only for paging long verses. */
   progress: z.number().min(0).max(1).nullable(),
+  /** Display-word coordinates, validated against the selected display script. */
+  cursor: z.object({ from: z.number().int().nonnegative(), to: z.number().int().nonnegative(), provisional: z.boolean() }).nullable().optional(),
 });
 export type DisplayState = z.infer<typeof DisplayStateSchema>;
 

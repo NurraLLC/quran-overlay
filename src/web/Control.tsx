@@ -107,6 +107,7 @@ export function Control() {
             const m = data as ControlServerMessage;
             if (m.type === 'snapshot') setSnap(m.snapshot);
             else if (m.type === 'command_pending') {
+              if (m.requestId.startsWith('listen:')) { lastRequest.current = m.requestId; setResult(null); }
               if (m.requestId === lastRequest.current) setPendingId(m.requestId);
             } else if (m.type === 'command_result') {
               if (m.requestId !== lastRequest.current) return; // an older search never replaces a newer one
@@ -237,6 +238,9 @@ export function Control() {
             {snap.blanked && d.verse && <span className="muted">{d.verse.key} returns when you unhide</span>}
             {lay?.promotedToFullFrame && <span className="warn">Too long for the lower third — shown full frame</span>}
           </div>
+          <div className="reading-view" role="radiogroup" aria-label="Reading view">
+            {([['follow', 'Follow words'], ['word', 'Word focus'], ['ayah', 'Full ayah']] as const).map(([value, label]) => <button key={value} role="radio" aria-checked={d.style.readingMode === value} className={d.style.readingMode === value ? 'primary' : ''} onClick={() => send({ type: 'style', patch: { readingMode: value } })}>{label}</button>)}
+          </div>
           <StageFrame className="preview">
             <VerseDisplay state={d} fontsReady={fontsReady} onLayout={onLayout} preview />
           </StageFrame>
@@ -341,7 +345,7 @@ export function Control() {
               <select value={snap.mode} onChange={(e) => send({ type: 'mode', mode: e.target.value as ControlSnapshot['mode'] })}>
                 <option value="hybrid">Hybrid — JEV only when unsure</option>
                 <option value="deterministic">Deterministic — no JEV</option>
-                <option value="jev_required">JEV required for every change</option>
+                <option value="jev_required">Experimental: wait for JEV at each ayah</option>
               </select>
             </label>
           </details>
@@ -409,7 +413,7 @@ function ListenCard(p: {
         </select>
       </div>
       <p className="hint">
-        {starting ? 'Connecting the microphone…' : p.capture.state === 'error' ? p.capture.detail : p.listening ? 'Stopping keeps the current ayah on screen. Pause following freezes the screen but keeps listening.' : 'Audio goes to Soniox for recognition while listening; nothing is recorded or stored here.'}
+        {starting ? 'Connecting the microphone…' : p.capture.state === 'error' ? p.capture.detail : p.listening ? 'Recite to follow. You can also say “go to Surah Maryam, ayah three” or ask to find a passage. English commentary does not change the screen.' : 'Start once to recite and make English requests. Audio goes to Soniox; source words and translation appear on the reading screen.'}
       </p>
       <div className="start-from">
         <span>Start from</span>
@@ -533,7 +537,7 @@ function FindCard(p: {
       <p className="hint">References show immediately. Searches stay private until you choose Show on stream.</p>
 
       {p.pending && <p className="pending">Searching…</p>}
-      {!p.pending && r?.kind === 'navigate' && <p className="ok">Now showing {r.key}.{r.note ? ` ${r.note}` : ''}</p>}
+      {!p.pending && r?.kind === 'navigate' && <p className="ok">Opened {r.key}.{r.note ? ` ${r.note}` : ''} Recitation may continue from there.</p>}
       {!p.pending && (r?.kind === 'no_match' || r?.kind === 'invalid_reference') && <p className="warn">{r.message}</p>}
       {!p.pending && r?.kind === 'candidates' && (
         <div className="results">

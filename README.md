@@ -6,6 +6,16 @@ All **6,236 ayahs in all 114 surahs** are included and validated. It is not a ch
 
 ![Longest ayah, paged deliberately](docs/screenshots/fullframe-longest-2-282-paged.png)
 
+## Live following (September 28 update)
+
+Choose **Follow words**, **Word focus**, or the original **Full ayah** above the preview. Start listening once: Arabic updates a reversible cursor from the current Soniox hypothesis; a settled English request is classified by JEV and resolved locally. Search results remain private until shown.
+
+Use **Hybrid** for this experience. The experimental JEV-required mode deliberately waits for a model decision at each ayah. Word highlighting does not need a model call. Partial corrections retain the current passage as a prior. Pause freezes the screen; Resume catches up; Stop preserves the verse and removes the active highlight.
+
+English is still the **source ayah translation**, including in Word focus. Synchronized word meanings need verified word-translation data and are not implemented. All 6,236 ayahs remain present. Exact normalized mapping supports 76,248 of 77,797 search words (98.01%); unsupported or ambiguous coordinates remain unhighlighted. Standalone pause marks remain visible but do not count as spoken words.
+
+See [live-follow review](docs/LIVE_FOLLOW_REVIEW.md) for capture comparisons, provider failures, and proof boundaries. It supersedes older verification counts below: this update passes 116 tests, typecheck, build, and two browser walkthroughs. The five owner captures provide actual recognition events, but no new microphone-to-screen latency measurement.
+
 ## Run it
 
 Requires Node 22.12+ (developed on Node 24 LTS; see `.nvmrc`) and Chrome or Edge.
@@ -78,7 +88,7 @@ Local server: transcript assembly → tracker (full-corpus retrieval + bounded a
 |---|---|
 | `npm run corpus:import -- --manifest corpus/sources.json` | Verify source hashes, build and validate the processed corpus and copy the font. Writes nothing if any check fails. |
 | `npm run corpus:validate` | Re-check the processed corpus (25 checks: 114 surahs, Hafs verse map, exact key sets, basmala rules incl. 1:1, 9:1 and 27:30, disjoint-letter openings, markup, UTF-8, hashes, font coverage). |
-| `npm test` | 91 unit and integration tests (tracker, transcript, JEV validation, scheduler, follower modes, server authorization, commands, push-to-talk lane, capture). |
+| `npm test` | Unit and integration tests (tracker, transcript, JEV validation, scheduler, follower modes, server authorization, commands, push-to-talk lane, capture). |
 | `npm run test:ui` | Builds, starts a server on port 4399 and runs the browser walkthrough in installed Edge. |
 | `npm run typecheck` | TypeScript check. |
 | `npm run replay -- --fixture <path> --mode <mode>` | Replay a scenario (`fixtures/scenarios/*.json`) or a capture (`.jsonl`) through the real follower. |
@@ -94,11 +104,11 @@ Set `QO_DIAGNOSTIC_CAPTURE=1` to write recognized text tokens (never audio) to `
 
 | Evidence layer | Status |
 |---|---|
-| Source and tests | 91 tests + typecheck + production build pass. |
+| Source and tests | 116 tests + typecheck + production build pass. |
 | Corpus | 25/25 validation checks; all 6,236 ayahs present in display, search and English with matching keys. |
 | Replay (synthetic) | 19 hand-authored scenarios over real corpus text, three modes: deterministic 0 wrong displays, 168/178 ayahs shown; hybrid identical with a *simulated* decider; jev_required 0 wrong but slower (see `docs/BENCHMARK.md`). Streams use assumed provider timing and error rates. |
 | Browser | Playwright walkthrough in Edge (control page + separate reading screen): privacy of search, show/pause/resume, hide/unhide, paging, lower-third promotion, reload recovery. Frames reviewed visually. |
-| Soniox connection | Verified 2026-09-28: temporary-key minting (111–176 ms) and a real-time stream opening, accepting audio and closing cleanly. **Recognition of recitation from a microphone has not been tested.** |
+| Soniox connection | Verified 2026-09-28: temporary-key minting (111–176 ms) and a real-time stream opening, accepting audio and closing cleanly. Five owner recitation token captures were subsequently reviewed and replayed; this update has not had a new live microphone-to-screen test. |
 | JEV decisions (OpenRouter) | Live calls verified: strict validation passes on real responses; it chose 67:1 over its textual neighbours (p 0.98) and answered WAIT (p 0.99) on the indistinguishable "يا أيها الذين آمنوا". The service intermittently stalled >10 s during testing (reproduced with curl) while successful calls took ~0.3 s. In replay (`docs/BENCHMARK.md`) hybrid with live JEV matched deterministic exactly (0 wrong, same ayahs shown); jev_required showed fewer ayahs and is not recommended. For English search, live JEV selection raised first-card relevance on a frozen set from 15/30 to 21–26/30 (`docs/ENGLISH_EVAL_V2*.md`). |
 | Microphone → screen latency | **Not measured.** Replay onset→display figures use assumed timing. Measured: tracker compute p95 ≈ 3.5 ms per update on this machine; commit→paint round trip is instrumented on the control page. |
 | OBS rendering | **Not verified** in OBS. The overlay is the same page verified in Edge. |
@@ -108,10 +118,10 @@ Set `QO_DIAGNOSTIC_CAPTURE=1` to write recognized text tokens (never audio) to `
 - **Display text/font pairing.** The display text is Quran.com Uthmani; the font is KFGQPC Uthmanic Hafs (QUL font 245), which is built for QPC-Hafs encoding. Rendered directly, every silent-letter mark (U+06DF, 3,988 occurrences) appears as a detached dotted circle. `display-encoding.ts` maps the three affected marks to the codepoints this font draws (verified against QUL's own QPC-Hafs text for the 1,923 verses in the development dump, and visually). One mark remains unrenderable: U+06E3 in 52:37. Tanween and ya forms follow the Uthmani source rather than QPC print conventions. Importing QUL resource 86 (QPC-Hafs text) would remove the mapping.
 - **Rights.** The QUL code licence does not cover the translation or font. Terms for the Saheeh International translation, Quran.com text and KFGQPC font were **not checked**; `corpus/sources.json` marks every source "local use only". Check before publishing or redistributing.
 - **Footnotes.** Saheeh footnote markers are removed from the display; footnote bodies are not in the local corpus (their ids are kept).
-- **Word highlighting** is off: Imlaei (search) and Uthmani (display) word counts differ in 628 ayahs, so no validated word mapping exists.
+- **Word highlighting:** source scripts differ. The exact normalized split/join mapper returns no cursor for 1,549 unsupported or ambiguous search-word positions. Word focus holds the last supported word without an active highlight. This mapping is algorithmically checked, not scholar-certified or phoneme alignment. Word-level English data is not installed.
 - **Basmala:** a recited basmala alone is ambiguous (1:1, 27:30 and the unnumbered basmala before 112 surahs); the tracker waits for the next words rather than guessing.
 - **Semantic search** (optional, set up here): `npm run search:embed` fetches Xenova/all-MiniLM-L6-v2 at pinned revision `751bff37…` from huggingface.co (four files, ~23.7 MB, each checked against a pinned sha256), stores it in `data/models/local/` and embeds all 6,236 translations (~10 s). The server loads it offline only (never downloads) and re-verifies the hashes; without it, lexical search still works. Measured on the 26 meaning queries: shown-card recall 25/26 (lexical alone 24), JEV-shortlist recall 26/26 (was 25); `be kind to mom and dad` moved from lexical rank 84 to visible cards. Query cost ~6–9 ms plus ~0.4 s warm-up at startup. Card ordering is still imperfect (JEV selection is meant to help, unverified). The model's licence was not reviewed.
-- The tracker's thresholds are engineering starting values tuned only on synthetic streams; they need real reciters and the user's microphone before they can be called calibrated.
+- The tracker's thresholds are engineering values checked against synthetic streams and five owner captures. Those captures lack audio-aligned labels; the thresholds are not a calibrated accuracy guarantee.
 
 More: `docs/REUSE_NOTES.md` (what was carried over from Moard and Nur, and how it is verified here), `docs/BENCHMARK.md`, `docs/ENGLISH_EVAL.md`, and the research/plan in `outputs/`.
 

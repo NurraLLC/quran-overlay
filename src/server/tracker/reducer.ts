@@ -128,7 +128,7 @@ export class TrackerEngine {
     const n = finals.length;
     const from = Math.max(this.floor, n - this.cfg.window);
     const words = useProvisional ? [...finals.slice(from), ...provisional] : finals.slice(from);
-    const key = `${from}:${n}:${useProvisional ? provisional.map((w) => w.text).join(' ') : ''}:${this.anchor?.pos}:${this.phase}`;
+    const key = `${from}:${n}:${words.map(w => w.text).join(' ')}:${this.anchor?.pos}:${this.phase}`;
     const base: StepResult = {
       changed: false,
       phase: this.phase,

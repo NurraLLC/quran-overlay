@@ -134,6 +134,11 @@ export class TranscriptBuffer {
     return { final: f, provisional: this.provisionalWords().map((w) => w.text).join(' ') };
   }
 
+  /** Complete current hypothesis, with the pending final subword included exactly once. */
+  liveWords(): Word[] { return [...this.closed, ...this.provisionalWords()]; }
+
+  get hasProvisional(): boolean { return this.provisional.length > 0; }
+
   private appendFinal(t: WireToken) {
     const parts = t.text.split(/(\s+)/);
     for (const part of parts) {

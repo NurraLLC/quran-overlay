@@ -66,6 +66,20 @@ html[data-surface='control'] body { background: var(--ink-0); color: var(--text)
 .stage[data-layout='lowerthird'] .arabic,
 .stage[data-layout='lowerthird'] .english { width: 1600px; }
 .arabic .line, .english .line { white-space: nowrap; }
+.stage:not([data-reading='ayah']) .panel { border-radius: 0; box-shadow: none; transition: none; }
+.stage:not([data-reading='ayah']) .panel::before { display: none; }
+.stage[data-reading='follow'][data-bg='scrim'] .panel,
+.stage[data-reading='word'][data-bg='scrim'] .panel { background: linear-gradient(180deg, transparent, rgba(9,19,23,.72) 28%, rgba(9,19,23,.72) 76%, transparent); }
+.quran-word { border-radius: 6px; }
+.reading-view { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
+.stage[data-reading='follow'] .quran-word { color: var(--ivory); }
+.stage[data-reading='follow'] .passed-word { color: #b9c9c3; }
+.stage[data-reading='follow'] .active-word { color: #ffe0a0; background: rgba(207,170,98,.16); box-shadow: 0 3px 0 var(--gold); }
+.word-focus { min-height: 260px; display: flex; align-items: center; justify-content: center; }
+.focus-word { color: var(--ivory); }
+.focus-word[data-active='true'] { color: #ffe0a0; }
+.focus-wait { font: 32px/1.4 var(--ui); color: var(--muted); }
+.translation-label { color: var(--muted); font: 20px/1.4 var(--ui); letter-spacing: .04em; margin-bottom: 12px; }
 .english { width: 1560px; margin-top: 34px; font-family: var(--serif); line-height: 1.42; color: var(--paper); text-align: center; }
 .stage[data-layout='lowerthird'] .english { margin-top: 16px; }
 .cont { margin-top: 6px; font: 600 19px/1.2 var(--ui); letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold-dim); }

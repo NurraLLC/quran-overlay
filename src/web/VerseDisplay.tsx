@@ -113,7 +113,7 @@ function planFor(state: DisplayState): Plan | null {
     arabicPageWordStarts: [0],
   });
 
-  if (state.style.layout === 'lowerthird') {
+  if (state.style.layout === 'lowerthird' && state.style.readingMode !== 'word') {
     const fit = tryFit(LOWER, Math.round(62 * scale), Math.round(46 * scale), 30, 26);
     if (fit) return single(fit, 'lowerthird', false);
   }
@@ -178,7 +178,11 @@ export function VerseDisplay({
   preview?: boolean;
 }) {
   const v = state.verse;
-  const planKey = v ? `${v.key}|${state.style.layout}|${state.style.arabicScale}|${state.style.showTranslation}` : '';
+  const lastFocus = useRef<{ key: string; text: string } | null>(null);
+  useLayoutEffect(() => {
+    if (v && state.cursor) lastFocus.current = { key: v.key, text: toQpcHafsEncoding(v.arabic).split(/\s+/).filter(Boolean).slice(state.cursor.from, state.cursor.to + 1).join(' ') };
+  }, [v?.key, state.cursor?.from, state.cursor?.to]);
+  const planKey = v ? `${v.key}|${state.style.layout}|${state.style.readingMode}|${state.style.arabicScale}|${state.style.showTranslation}` : '';
   // Layout is computed synchronously from measured line boxes before paint.
   const plan = useMemo(() => (fontsReady && v ? planFor(state) : null), [planKey, fontsReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -208,7 +212,9 @@ export function VerseDisplay({
   if (plan && v) {
     const nA = plan.arabicPages.length;
     if (state.arabicPage !== null) arabicPage = Math.min(state.arabicPage, nA - 1);
-    else if (state.progress !== null && nA > 1) {
+    else if (state.cursor && nA > 1) {
+      for (let i = 0; i < nA; i++) if (plan.arabicPageWordStarts[i] <= state.cursor.from) arabicPage = i;
+    } else if (state.progress !== null && nA > 1) {
       const total = plan.arabicPageWordStarts[nA - 1] + plan.arabicPages[nA - 1].reduce((n, l) => n + l.length, 0);
       const word = Math.floor(state.progress * total);
       for (let i = 0; i < nA; i++) if (plan.arabicPageWordStarts[i] <= word) arabicPage = i;
@@ -217,18 +223,30 @@ export function VerseDisplay({
   }
 
   const layout = plan?.layout ?? state.style.layout;
+  const mode = state.style.readingMode ?? 'follow';
+  const displayWords = v ? toQpcHafsEncoding(v.arabic).split(/\s+/).filter(Boolean) : [];
+  const focusText = state.cursor ? displayWords.slice(state.cursor.from, state.cursor.to + 1).join(' ') : lastFocus.current?.key === v?.key ? lastFocus.current?.text : null;
   return (
-    <div className="stage" data-bg={state.style.background} data-layout={layout} data-preview={preview || undefined}>
+    <div className="stage" data-bg={state.style.background} data-layout={layout} data-reading={mode} data-preview={preview || undefined}>
       <div className={`panel ${visible ? 'panel-on' : 'panel-off'}`} aria-hidden={!visible}>
         {visible && plan && v && (
           <article className="verse" key={v.key} aria-label={`${v.surahName} ${v.key}`}>
-            <div className="arabic" lang="ar" dir="rtl" style={{ fontSize: plan.arabicPx }}>
-              {plan.arabicPages[arabicPage].map((line, i) => (
+            <div className={`arabic ${mode === 'word' ? 'word-focus' : ''}`} lang="ar" dir="rtl" style={{ fontSize: mode === 'word' ? 128 * state.style.arabicScale : plan.arabicPx }}>
+              {mode === 'word' ? (
+                <div className="focus-word" data-active={!!state.cursor}>
+                  {focusText || <span className="focus-wait" lang="en" dir="ltr">Ready to follow</span>}
+                </div>
+              ) : plan.arabicPages[arabicPage].map((line, i) => (
                 <div className="line" key={i}>
-                  {line.join(' ')}
+                  {line.map((word, j) => {
+                    const index = plan.arabicPageWordStarts[arabicPage] + plan.arabicPages[arabicPage].slice(0, i).reduce((n, l) => n + l.length, 0) + j;
+                    const active = mode === 'follow' && !!state.cursor && index >= state.cursor.from && index <= state.cursor.to;
+                    const passed = mode === 'follow' && !!state.cursor && index < state.cursor.from;
+                    return <span key={index}><span className={`quran-word${active ? ' active-word' : ''}${passed ? ' passed-word' : ''}`} data-word-index={index} aria-current={active ? 'true' : undefined}>{word}</span>{j < line.length - 1 ? ' ' : ''}</span>;
+                  })}
                 </div>
               ))}
-              {plan.arabicPages.length > 1 && (
+              {mode !== 'word' && plan.arabicPages.length > 1 && (
                 <div className="cont cont-ar" aria-label={`Arabic part ${arabicPage + 1} of ${plan.arabicPages.length}`}>
                   {arabicPage < plan.arabicPages.length - 1 ? 'continues' : 'end of ayah'} · {arabicPage + 1}/{plan.arabicPages.length}
                 </div>
@@ -236,6 +254,7 @@ export function VerseDisplay({
             </div>
             {state.style.showTranslation && plan.englishPages[englishPage].length > 0 && (
               <div className="english" lang="en" style={{ fontSize: plan.englishPx }}>
+                {mode === 'word' && <div className="translation-label">Ayah translation</div>}
                 {plan.englishPages[englishPage].map((line, i) => (
                   <div className="line" key={i}>
                     {line.join(' ')}

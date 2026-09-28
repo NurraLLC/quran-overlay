@@ -32,6 +32,9 @@ import { RecitationFollower, type FollowerEvent, type TrackerMode } from './trac
 import type { CorpusIndex } from './tracker/index';
 import type { ResourceCatalog } from './resources/catalog';
 import { realClock, type Clock } from './tracker/scheduler';
+import { LiveCursor } from './tracker/live-cursor';
+import { mapDisplayWords, type WordSpan } from './corpus/word-map';
+import { ListeningCommands } from './commands/listening';
 
 export const DISCONNECT_GRACE_MS = 5000;
 
@@ -85,6 +88,14 @@ export class Session {
   private englishPage = 0;
   private arabicPage: number | null = null;
   private progress: number | null = null;
+  private cursor: DisplayState['cursor'] = null;
+  private readonly liveCursor: LiveCursor;
+  private liveFloor = 0;
+  private liveVerse: number | null = null;
+  private readonly wordMaps = new Map<number, Array<WordSpan | null>>();
+  private batchingTranscript = false;
+  private readonly listeningCommands: ListeningCommands;
+  private englishTail = false;
   private layout: ControlSnapshot['layout'] = null;
   private notice: string | null = null;
 
@@ -109,6 +120,11 @@ export class Session {
 
   constructor(private readonly o: SessionOptions) {
     this.clock = o.clock ?? realClock;
+    this.liveCursor = new LiveCursor(o.ix);
+    this.listeningCommands = new ListeningCommands(o.decisionClient, this.clock, (text, id) => {
+      if (this.capture.phase !== 'recording' || this.commandActive) return;
+      void this.command(id, text);
+    }, message => this.say(message));
     this.follower = new RecitationFollower(o.ix, o.corpus.id, this.sessionEpoch, o.decisionClient, o.mode, (e) => this.onFollower(e), this.clock);
     if (o.catalog) attachCatalog(this.follower, o.catalog);
     this.display = this.buildDisplay();
@@ -174,11 +190,13 @@ export class Session {
       englishPage: this.englishPage,
       arabicPage: this.arabicPage,
       progress: this.progress,
+      cursor: this.cursor,
     };
   }
 
   /** Publish only real changes; a repeated frame is not dispatched. */
   private publish() {
+    if (this.batchingTranscript) return;
     const next = this.buildDisplay();
     const key = JSON.stringify({ ...next, revision: 0 });
     if (key !== this.lastPublishedKey) {
@@ -198,6 +216,7 @@ export class Session {
       this.englishPage = 0;
       this.arabicPage = null;
       this.progress = null;
+      this.cursor = null;
       if (this.layout && this.layout.key !== this.verseLabel(i)) this.layout = null;
     }
     this.displayVerse = i;
@@ -222,10 +241,13 @@ export class Session {
     if (e.kind === 'commit') {
       this.trackerVerse = e.verseIndex;
       this.logEvent('commit', this.verseLabel(e.verseIndex), `${e.reason} via ${e.via}`);
-      if (!this.held && !this.commandActive) this.showVerse(e.verseIndex);
+      if (!this.held && !this.commandActive && this.liveVerse === null) this.showVerse(e.verseIndex);
       this.publish();
     } else if (e.kind === 'clear') {
       this.trackerVerse = null;
+      this.liveVerse = null;
+      this.liveCursor.reset();
+      this.cursor = null;
       this.logEvent('clear', null, e.reason);
       if (!this.held) this.showVerse(null);
       this.publish();
@@ -238,7 +260,7 @@ export class Session {
         trailing: c.trailing,
       }));
       const p = e.step.progress;
-      if (p && !this.held && p.verseIndex === this.displayVerse) {
+      if (p && !this.held && !this.commandActive && this.liveVerse === null && p.verseIndex === this.displayVerse) {
         const len = this.o.ix.verseLen[p.verseIndex];
         const q = len ? Math.round((Math.min(p.word + 1, len) / len) * 20) / 20 : null;
         if (q !== this.progress) {
@@ -330,6 +352,7 @@ export class Session {
       }
       case 'command_capture':
         this.commandActive = msg.active;
+        this.listeningCommands.cancel();
         if (msg.active) this.follower.stop();
         return this.queueSnapshot();
       case 'rotate_view':
@@ -353,6 +376,11 @@ export class Session {
   }
 
   gotoIndex(i: number, source: 'manual' | 'search' | 'command') {
+    this.listeningCommands.cancel();
+    this.liveCursor.reset();
+    this.liveVerse = null;
+    this.liveFloor = this.buffer.liveWords().length;
+    this.cursor = null;
     this.latestCommand?.ctrl.abort();
     this.showVerse(i);
     this.trackerVerse = i;
@@ -380,6 +408,7 @@ export class Session {
     }
     this.heldBySearch = false;
     this.notice = null;
+    if (this.capture.phase === 'recording' && !this.commandActive && !this.englishTail) this.updateLiveCursor();
     this.logEvent('resume', this.verseLabel(this.displayVerse));
     this.publish();
   }
@@ -392,8 +421,51 @@ export class Session {
     this.writeCapture(msg.tokens);
     const r = this.buffer.apply(msg.tokens);
     const heard = this.buffer.heardText(1);
-    this.follower.onTranscript(this.buffer.evidence(), heard.provisional, r.evidenceChanged);
-    if (!r.evidenceChanged && r.provisionalChanged) this.queueSnapshot();
+    const liveWords = this.buffer.liveWords();
+    const english = !this.commandActive && this.listeningCommands.observe(liveWords, this.buffer.hasProvisional, r.endpoint);
+    if (english) {
+      this.englishTail = true;
+      this.cursor = null;
+      this.liveCursor.reset();
+      this.follower.stop();
+      this.publish();
+      return;
+    }
+    if (this.englishTail) {
+      // Resume at Arabic after the English utterance. No English words become recitation evidence.
+      const lastEnglish = liveWords.findLastIndex(w => /[A-Za-z]/.test(w.text));
+      this.liveFloor = Math.max(this.liveFloor, lastEnglish + 1);
+      this.follower.engine.floor = Math.max(this.follower.engine.floor, Math.min(this.buffer.evidence().length, lastEnglish + 1));
+      if (this.latestCommand?.id.startsWith('listen:')) this.latestCommand.ctrl.abort();
+      this.englishTail = false;
+    }
+    this.batchingTranscript = true;
+    try {
+      this.follower.onTranscript(this.buffer.evidence(), heard.provisional, r.evidenceChanged);
+      if (!this.held && !this.commandActive && (r.evidenceChanged || r.provisionalChanged)) {
+        this.updateLiveCursor();
+      }
+    } finally { this.batchingTranscript = false; }
+    this.publish();
+  }
+
+  private updateLiveCursor() {
+    const words = this.buffer.liveWords().slice(this.liveFloor);
+    const live = this.liveCursor.update(words, this.follower.engine.anchor, this.buffer.hasProvisional, this.follower.engine.prior, this.follower.engine.neighbours);
+    if (live && (this.follower.mode !== 'jev_required' || live.verseIndex === this.trackerVerse)) {
+      this.liveVerse = live.verseIndex;
+      this.showVerse(live.verseIndex);
+      const v = this.o.corpus.at(live.verseIndex)!;
+      let mapping = this.wordMaps.get(live.verseIndex);
+      if (!mapping) { mapping = mapDisplayWords(v.searchText, v.arabicDisplay); this.wordMaps.set(live.verseIndex, mapping); }
+      const span = mapping[live.word];
+      this.cursor = span ? { ...span, provisional: live.provisional } : null;
+      this.progress = Math.min(1, (live.word + 1) / this.o.ix.verseLen[live.verseIndex]);
+    } else {
+      this.cursor = null;
+      // A provisional subword is frequently rewritten. Hold the source verse without an
+      // active cursor while it forms; never flash an older finalized verse between updates.
+    }
   }
 
   private onCapture(msg: Extract<ControlClientMessage, { type: 'capture' }>) {
@@ -402,6 +474,12 @@ export class Session {
     if (msg.captureEpoch > this.capture.captureEpoch) {
       this.capture = { phase: 'starting', captureEpoch: msg.captureEpoch, detail: null, since: now };
       this.buffer = new TranscriptBuffer();
+      this.listeningCommands.cancel(true);
+      this.englishTail = false;
+      this.liveCursor.reset();
+      this.liveVerse = null;
+      this.liveFloor = 0;
+      this.cursor = null;
       this.lastSeq = -1;
       this.follower.newCapture(msg.captureEpoch);
       this.openCapture(msg.captureEpoch);
@@ -413,8 +491,15 @@ export class Session {
     this.capture = { ...this.capture, phase, detail: msg.detail ?? (msg.event === 'muted' ? 'Microphone muted at the system or device level.' : null), since: now };
     this.logEvent(`capture:${msg.event}`, null, msg.detail);
     if (msg.event === 'stopped') {
+      this.listeningCommands.cancel();
+      if (this.latestCommand?.id.startsWith('listen:')) this.latestCommand.ctrl.abort();
       this.follower.stop();
+      this.liveCursor.reset();
+      this.liveVerse = null;
+      this.cursor = null;
+      this.publish();
     } else if (msg.event === 'error') {
+      this.listeningCommands.cancel();
       this.follower.stop();
       this.startDisconnectGrace();
     }
@@ -453,6 +538,7 @@ export class Session {
   }
 
   controlDisconnected() {
+    this.listeningCommands.cancel();
     this.controlClients = Math.max(0, this.controlClients - 1);
     if (this.controlClients === 0 && ['starting', 'recording', 'reconnecting'].includes(this.capture.phase)) {
       this.capture = { ...this.capture, phase: 'disconnected', detail: 'Control page disconnected while listening.', since: this.clock.now() };
@@ -509,6 +595,7 @@ export class Session {
     if (this.latestCommand !== cmd || ctrl.signal.aborted) return; // an old search cannot publish after a newer request
     if (result.kind === 'navigate') {
       this.gotoIndex(this.o.corpus.verse(result.key)!.index, 'command');
+      if (requestId.startsWith('listen:')) { this.held = false; this.heldBySearch = false; this.publish(); }
       this.latestCommand = cmd;
     }
     // Cards and their adjacent-ayah context (browsable in the card) may be shown.
@@ -537,6 +624,7 @@ export class Session {
     if (this.held) return 'held';
     if (c === 'off') return 'idle';
     if (c === 'stopped') return 'stopped';
+    if (this.liveVerse !== null && this.cursor) return 'tracking';
     const p = this.follower.engine.phase;
     return p === 'unlocated' ? 'listening_unlocated' : p;
   }
