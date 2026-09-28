@@ -1,0 +1,278 @@
+{
+  "schema_version": 1,
+  "snapshot_date": "2026-09-28",
+  "inspected_app_head": "7227503ce7c4dafe8564bd4c53f52431cfde9f35",
+  "status": "read-only audit and implementation specification; this catalog is not a runtime importer",
+  "count_warning": "Homepage counts use category-specific units and are not comparable to the number of archived resource detail pages. Do not add them or infer full local coverage.",
+  "source": "https://qul.tarteel.ai/resources",
+  "resources": [
+    {
+      "category": "quran-script",
+      "source_url": "https://qul.tarteel.ai/resources/quran-script",
+      "homepage_displayed_count": 30,
+      "homepage_count_unit": "script variants",
+      "archived_detail_pages": 30,
+      "product_job": "Display every ayah faithfully; map search words to display words",
+      "initial_selection": "qul:quran-script/86 + 312",
+      "local_evidence": "Full Quran.com text imported; full matched QPC script/word exports missing",
+      "runtime_state": "active_with_rendering_gap",
+      "integration_owner": "src/shared/display-encoding.ts",
+      "completion_evidence": "All 6236 verses rendered with the intended font; 52:37 fixed; no unverified mark substitution",
+      "phase": "foundation"
+    },
+    {
+      "category": "font",
+      "source_url": "https://qul.tarteel.ai/resources/font",
+      "homepage_displayed_count": 24,
+      "homepage_count_unit": "font resources",
+      "archived_detail_pages": 22,
+      "product_job": "Shape Arabic correctly and keep reading layout stable",
+      "initial_selection": "qul:font/245",
+      "local_evidence": "Hafs V22 file downloaded and used; text/font mismatch documented",
+      "runtime_state": "active_with_rendering_gap",
+      "integration_owner": "src/web/VerseDisplay.tsx",
+      "completion_evidence": "Actual-font screenshots for every distinct Quranic mark and longest/shortest content",
+      "phase": "foundation"
+    },
+    {
+      "category": "quran-metadata",
+      "source_url": "https://qul.tarteel.ai/resources/quran-metadata",
+      "homepage_displayed_count": 8,
+      "homepage_count_unit": "metadata resources",
+      "archived_detail_pages": 8,
+      "product_job": "Canonical references, surah/juz/hizb/rub/manzil navigation",
+      "initial_selection": "qul:quran-metadata/69 + 70",
+      "local_evidence": "Complete chapter names/counts imported; richer location metadata not connected",
+      "runtime_state": "partly_active",
+      "integration_owner": "src/server/search/references.ts",
+      "completion_evidence": "Reference boundaries and all 6236 keys agree with selected narration",
+      "phase": "foundation"
+    },
+    {
+      "category": "similar-ayah",
+      "source_url": "https://qul.tarteel.ai/resources/similar-ayah",
+      "homepage_displayed_count": 4001,
+      "homepage_count_unit": "homepage similar-ayah records; not export-file count",
+      "archived_detail_pages": 1,
+      "product_job": "Keep known confusing passages in tracking candidates",
+      "initial_selection": "qul:similar-ayah/74",
+      "local_evidence": "Detail pages/source schema archived; published JSON/SQLite export absent",
+      "runtime_state": "not_integrated",
+      "integration_owner": "src/server/tracker/candidates.ts",
+      "completion_evidence": "Annotated similar-passage fixtures prove candidate coverage and safe continuity; no wrong extra jumps",
+      "phase": "tracker"
+    },
+    {
+      "category": "mutashabihat",
+      "source_url": "https://qul.tarteel.ai/resources/mutashabihat",
+      "homepage_displayed_count": 5277,
+      "homepage_count_unit": "homepage phrase records; not export-file count",
+      "archived_detail_pages": 1,
+      "product_job": "Track repeated phrase occurrences and distinguishing continuations",
+      "initial_selection": "qul:mutashabihat/73",
+      "local_evidence": "Raw phrase/mapping CSVs downloaded; approval/review/parent filters not imported",
+      "runtime_state": "not_integrated",
+      "integration_owner": "src/server/tracker/reducer.ts",
+      "completion_evidence": "Approved phrase links and ranges validated; continuity versus unknown-start cases measured",
+      "phase": "tracker"
+    },
+    {
+      "category": "morphology",
+      "source_url": "https://qul.tarteel.ai/resources/morphology",
+      "homepage_displayed_count": 77432,
+      "homepage_count_unit": "homepage morphology records; not model training examples",
+      "archived_detail_pages": 6,
+      "product_job": "Enrich Arabic/entity search with roots, lemmas and grammatical context",
+      "initial_selection": "qul:morphology/75 + 76 + 77",
+      "local_evidence": "Lemma vocabulary and pruned development tables only; no runtime join",
+      "runtime_state": "not_integrated",
+      "integration_owner": "src/server/search/lexical.ts",
+      "completion_evidence": "Word locations round-trip; root similarity cannot itself authorize a recitation transition",
+      "phase": "search"
+    },
+    {
+      "category": "ayah-topics",
+      "source_url": "https://qul.tarteel.ai/resources/ayah-topics",
+      "homepage_displayed_count": 2512,
+      "homepage_count_unit": "homepage topic records; not export-file count",
+      "archived_detail_pages": 1,
+      "product_job": "Resolve English concepts and entities to source-mapped passages",
+      "initial_selection": "qul:ayah-topics/45",
+      "local_evidence": "Full export missing; development dump has 50 topics and 8512 mapping rows with incomplete joins",
+      "runtime_state": "not_integrated",
+      "integration_owner": "src/server/commands/reducer.ts",
+      "completion_evidence": "Taxonomy and all joins validated; topic path improves separately held-out candidate recall",
+      "phase": "search"
+    },
+    {
+      "category": "ayah-theme",
+      "source_url": "https://qul.tarteel.ai/resources/ayah-theme",
+      "homepage_displayed_count": 1049,
+      "homepage_count_unit": "homepage theme records; not export-file count",
+      "archived_detail_pages": 1,
+      "product_job": "Retrieve coherent ayah ranges for meaning searches",
+      "initial_selection": "qul:ayah-theme/62",
+      "local_evidence": "Full export missing; development dump contains five theme rows",
+      "runtime_state": "not_integrated",
+      "integration_owner": "src/server/commands/reducer.ts",
+      "completion_evidence": "Range membership validated; broad query returns relevant passages with source context",
+      "phase": "search"
+    },
+    {
+      "category": "translation",
+      "source_url": "https://qul.tarteel.ai/resources/translation",
+      "homepage_displayed_count": 226,
+      "homepage_count_unit": "204 ayah translations + 22 word translations on homepage",
+      "archived_detail_pages": 207,
+      "product_job": "Existing display languages and alternate-English search wording",
+      "initial_selection": "qul:translation/193; current quran.com:translation/20",
+      "local_evidence": "Complete Saheeh used; alternative and word-level translation resources not connected",
+      "runtime_state": "partly_active",
+      "integration_owner": "src/server/search/lexical.ts",
+      "completion_evidence": "Index deduplicates by canonical verse; display uses selected source; no generated text",
+      "phase": "search"
+    },
+    {
+      "category": "transliteration",
+      "source_url": "https://qul.tarteel.ai/resources/transliteration",
+      "homepage_displayed_count": 10,
+      "homepage_count_unit": "9 ayah resources + 1 word resource",
+      "archived_detail_pages": 8,
+      "product_job": "Accept Latin-script remembered Arabic and offer optional reading assistance",
+      "initial_selection": "qul:transliteration",
+      "local_evidence": "Catalog archived; no selected corpus imported",
+      "runtime_state": "not_integrated",
+      "integration_owner": "src/server/search/references.ts",
+      "completion_evidence": "Latin-script queries join to valid verses without pretending to provide acoustic evidence",
+      "phase": "search"
+    },
+    {
+      "category": "surah-info",
+      "source_url": "https://qul.tarteel.ai/resources/surah-info",
+      "homepage_displayed_count": 9,
+      "homepage_count_unit": "homepage language variants",
+      "archived_detail_pages": 6,
+      "product_job": "Chapter aliases and optional sourced chapter context",
+      "initial_selection": "qul:surah-info",
+      "local_evidence": "Chapter names used through metadata; richer descriptions not imported",
+      "runtime_state": "not_integrated",
+      "integration_owner": "src/server/search/references.ts",
+      "completion_evidence": "Names and descriptions retain source/language; no content inferred from model memory",
+      "phase": "context"
+    },
+    {
+      "category": "mushaf-layout",
+      "source_url": "https://qul.tarteel.ai/resources/mushaf-layout",
+      "homepage_displayed_count": 28,
+      "homepage_count_unit": "20 approved + 8 work-in-progress layouts",
+      "archived_detail_pages": 12,
+      "product_job": "Optional familiar page view with validated word placement",
+      "initial_selection": "qul:mushaf-layout",
+      "local_evidence": "Catalog/source archived; no layout imported",
+      "runtime_state": "not_integrated",
+      "integration_owner": "src/web/VerseDisplay.tsx",
+      "completion_evidence": "Approved layout maps every displayed word to the matching script/font version",
+      "phase": "display_extension"
+    },
+    {
+      "category": "recitation",
+      "source_url": "https://qul.tarteel.ai/resources/recitation",
+      "homepage_displayed_count": 131,
+      "homepage_count_unit": "73 unsegmented + 58 segmented resources",
+      "archived_detail_pages": 133,
+      "product_job": "Known-recording synchronization and labeled replay evaluation",
+      "initial_selection": "qul:recitation",
+      "local_evidence": "Catalog and sample segment metadata; no complete selected recording/timestamp pair",
+      "runtime_state": "not_integrated",
+      "integration_owner": "scripts/replay.ts",
+      "completion_evidence": "Recording hash matches timestamps; seeks/pauses/rate changes verified; live and playback results separate",
+      "phase": "playback_extension"
+    },
+    {
+      "category": "tafsir",
+      "source_url": "https://qul.tarteel.ai/resources/tafsir",
+      "homepage_displayed_count": 115,
+      "homepage_count_unit": "35 mukhtasar + 80 detailed resources",
+      "archived_detail_pages": 108,
+      "product_job": "Deliberate source-backed context for the current passage",
+      "initial_selection": "qul:tafsir",
+      "local_evidence": "Catalog/source archived; no selected source imported",
+      "runtime_state": "not_integrated",
+      "integration_owner": "src/server/commands/reducer.ts",
+      "completion_evidence": "Correct author/source/range attribution; private by default; never injected into recitation automatically",
+      "phase": "context"
+    }
+  ],
+  "downloaded_assets": [
+    {
+      "path": "work/datasets/chapters-derived-from-qul.json",
+      "exists_in_research_workspace": true,
+      "sha256": "8d3e2b678bb94a1961c9952f088b912c428aeabc08ebf5f895092c257cb2832f",
+      "source_url": "derived:mini_quran_dev.sql.zip:quran.chapters",
+      "consumed_by_app_corpus_import": true
+    },
+    {
+      "path": "work/datasets/lemmas.txt",
+      "exists_in_research_workspace": true,
+      "sha256": "631fd141d1a0d7b771b638bf8a30a73c97391e5086af98978b9260062cf1ee04",
+      "source_url": "https://static-cdn.tarteel.ai/qul/data/lemmas.txt",
+      "consumed_by_app_corpus_import": false
+    },
+    {
+      "path": "work/datasets/mini_quran_dev.sql.zip",
+      "exists_in_research_workspace": true,
+      "sha256": "212077277691d3c053de80c9c8c85170b236b0dddf332c16ec634a19b75fabcb",
+      "source_url": "https://static-cdn.tarteel.ai/qul/mini-dumps/mini_quran_dev.sql.zip",
+      "consumed_by_app_corpus_import": false
+    },
+    {
+      "path": "work/datasets/phrases.csv",
+      "exists_in_research_workspace": true,
+      "sha256": "4747b88d6ea4ce5b1a639c0b6272dd0642d08cc564eb03b93d954b63b50158bf",
+      "source_url": "https://static-cdn.tarteel.ai/qul/data/phrases.csv",
+      "consumed_by_app_corpus_import": false
+    },
+    {
+      "path": "work/datasets/phrases_verses.csv",
+      "exists_in_research_workspace": true,
+      "sha256": "bd18996e3f0dd26940fe08279eabcd4dd367de873a4159287e91694557929b63",
+      "source_url": "https://static-cdn.tarteel.ai/qul/data/phrases_verses.csv",
+      "consumed_by_app_corpus_import": false
+    },
+    {
+      "path": "work/datasets/quran-com-imlaei.json",
+      "exists_in_research_workspace": true,
+      "sha256": "21faa1665da65908763433b4abe2d7f42db21983e7070f0b46ea6f9e3e65823d",
+      "source_url": "https://api.quran.com/api/v4/quran/verses/imlaei",
+      "consumed_by_app_corpus_import": true
+    },
+    {
+      "path": "work/datasets/quran-com-saheeh-20.json",
+      "exists_in_research_workspace": true,
+      "sha256": "ef523825d721ad2c324fbb3b078815bcc5cc2e1e383eb0898455d7b5dfcd48e4",
+      "source_url": "https://api.quran.com/api/v4/quran/translations/20?fields=verse_key",
+      "consumed_by_app_corpus_import": true
+    },
+    {
+      "path": "work/datasets/quran-com-translations-catalog.json",
+      "exists_in_research_workspace": true,
+      "sha256": "c68df4a6cef3e0559a0daeb12c7373e5837e2d4f5c1bf259fff6aaa6184f9f9a",
+      "source_url": "https://api.quran.com/api/v4/resources/translations",
+      "consumed_by_app_corpus_import": false
+    },
+    {
+      "path": "work/datasets/quran-com-uthmani.json",
+      "exists_in_research_workspace": true,
+      "sha256": "3754c592dd15d7047d5b4339737ad3171c5c1d431a8c3e4c1eee7781c135d58c",
+      "source_url": "https://api.quran.com/api/v4/quran/verses/uthmani",
+      "consumed_by_app_corpus_import": true
+    },
+    {
+      "path": "work/datasets/UthmanicHafs_V22.ttf",
+      "exists_in_research_workspace": true,
+      "sha256": "aa68bffce289b4c0ebac68e90502eb69e42356abcd1603cb2b8e99c2c723f145",
+      "source_url": "https://static-cdn.tarteel.ai/qul/fonts/UthmanicHafs_V22.ttf",
+      "consumed_by_app_corpus_import": true
+    }
+  ]
+}

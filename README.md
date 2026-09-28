@@ -112,3 +112,8 @@ Set `QO_DIAGNOSTIC_CAPTURE=1` to write recognized text tokens (never audio) to `
 - The tracker's thresholds are engineering starting values tuned only on synthetic streams; they need real reciters and the user's microphone before they can be called calibrated.
 
 More: `docs/REUSE_NOTES.md` (what was carried over from Moard and Nur, and how it is verified here), `docs/BENCHMARK.md`, `docs/ENGLISH_EVAL.md`, and the research/plan in `outputs/`.
+
+
+## Required next integration: QUL resource layer
+
+Read [Resource integration correction](docs/RESOURCE_INTEGRATION.md) and [the 14-category capability catalog](corpus/resource-catalog.json). These identify the missing resource-to-feature connections in the current implementation and define the import, coverage, tracking and search work required. They are an audited implementation brief, not a claim that these runtime integrations already exist.
