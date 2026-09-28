@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "narration": "hafs",
+  "note": "Inputs for npm run corpus:import. Paths are relative to this repository root. Files live in the git-ignored work/ research pack and are copied into data/raw on import.",
+  "sources": [
+    {
+      "role": "arabicDisplay",
+      "path": "work/datasets/quran-com-uthmani.json",
+      "sourceUrl": "https://api.quran.com/api/v4/quran/verses/uthmani",
+      "sha256": "3754c592dd15d7047d5b4339737ad3171c5c1d431a8c3e4c1eee7781c135d58c",
+      "bytes": 1654246,
+      "downloadedAt": "2026-09-28 (research pack; exact time not recorded)",
+      "licenseStatus": "unverified: resource-specific redistribution terms not yet checked; local use only",
+      "sourceResourceId": "quran.com:verses/uthmani",
+      "attribution": "Uthmani script text via Quran.com API v4 (not a QUL export)"
+    },
+    {
+      "role": "arabicSearch",
+      "path": "work/datasets/quran-com-imlaei.json",
+      "sourceUrl": "https://api.quran.com/api/v4/quran/verses/imlaei",
+      "sha256": "21faa1665da65908763433b4abe2d7f42db21983e7070f0b46ea6f9e3e65823d",
+      "bytes": 1602614,
+      "downloadedAt": "2026-09-28 (research pack; exact time not recorded)",
+      "licenseStatus": "unverified: resource-specific redistribution terms not yet checked; local use only",
+      "sourceResourceId": "quran.com:verses/imlaei",
+      "attribution": "Imlaei script text via Quran.com API v4 (not a QUL export)"
+    },
+    {
+      "role": "english",
+      "path": "work/datasets/quran-com-saheeh-20.json",
+      "sourceUrl": "https://api.quran.com/api/v4/quran/translations/20?fields=verse_key",
+      "sha256": "ef523825d721ad2c324fbb3b078815bcc5cc2e1e383eb0898455d7b5dfcd48e4",
+      "bytes": 1239086,
+      "downloadedAt": "2026-09-28 (research pack; exact time not recorded)",
+      "licenseStatus": "unverified: resource-specific redistribution terms not yet checked; local use only",
+      "sourceResourceId": "quran.com:translation/20",
+      "attribution": "Saheeh International translation, via Quran.com API v4 (resource 20)",
+      "displayName": "Saheeh International"
+    },
+    {
+      "role": "chapters",
+      "path": "work/datasets/chapters-derived-from-qul.json",
+      "sourceUrl": "derived:mini_quran_dev.sql.zip:quran.chapters",
+      "sha256": "8d3e2b678bb94a1961c9952f088b912c428aeabc08ebf5f895092c257cb2832f",
+      "bytes": 22542,
+      "downloadedAt": "2026-09-28 (research pack; exact time not recorded)",
+      "licenseStatus": "unverified: resource-specific redistribution terms not yet checked; local use only",
+      "sourceResourceId": "qul:mini_quran_dev.sql:quran.chapters",
+      "attribution": "Chapter names and counts from the QUL public development dump chapter table"
+    },
+    {
+      "role": "font",
+      "path": "work/datasets/UthmanicHafs_V22.ttf",
+      "sourceUrl": "https://static-cdn.tarteel.ai/qul/fonts/UthmanicHafs_V22.ttf",
+      "sha256": "aa68bffce289b4c0ebac68e90502eb69e42356abcd1603cb2b8e99c2c723f145",
+      "bytes": 297700,
+      "downloadedAt": "2026-09-28 (research pack; exact time not recorded)",
+      "licenseStatus": "unverified: resource-specific redistribution terms not yet checked; local use only",
+      "sourceResourceId": "qul:font/245",
+      "attribution": "KFGQPC Uthmanic Script HAFS (UthmanicHafs_V22) via QUL static CDN"
+    }
+  ]
+}

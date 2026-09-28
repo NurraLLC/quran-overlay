@@ -1,0 +1,19 @@
+{
+  "name": "longest-ayah",
+  "description": "2:281 → 2:282 (longest ayah, 145 search words) → 2:283.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "2:281-2:283"
+    }
+  ],
+  "expect": {
+    "finalDisplay": "2:283",
+    "mustShow": [
+      "2:282",
+      "2:283"
+    ],
+    "maxClears": 0
+  }
+}

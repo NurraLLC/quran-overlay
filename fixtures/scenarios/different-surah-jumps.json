@@ -1,0 +1,28 @@
+{
+  "name": "different-surah-jumps",
+  "description": "Ya-Sin → Al-Ikhlas → Al-Mulk. 36:4 shares its words with the end of 67:22 (a false-jump trap).",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "36:1-36:5"
+    },
+    {
+      "recite": "112:1-112:4"
+    },
+    {
+      "recite": "67:1-67:3"
+    }
+  ],
+  "expect": {
+    "finalDisplay": "67:3",
+    "mustShow": [
+      "112:1",
+      "67:1"
+    ],
+    "mustNotShow": [
+      "67:23"
+    ],
+    "maxClears": 0
+  }
+}

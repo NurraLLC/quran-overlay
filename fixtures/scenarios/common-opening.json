@@ -1,0 +1,19 @@
+{
+  "name": "common-opening",
+  "description": "Starts on a common opening (يا أيها الذين آمنوا) shared by many ayahs: 2:153-2:155.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "2:153-2:155"
+    }
+  ],
+  "expect": {
+    "finalDisplay": "2:155",
+    "mustShow": [
+      "2:153",
+      "2:154"
+    ],
+    "maxClears": 0
+  }
+}

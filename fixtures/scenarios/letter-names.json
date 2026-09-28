@@ -1,0 +1,22 @@
+{
+  "name": "letter-names",
+  "description": "Disjoint letters recited by name (الف لام ميم) as ASR may write them, then 2:2-2:4.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "say": "الف لام ميم",
+      "as": "2:1"
+    },
+    {
+      "recite": "2:2-2:4"
+    }
+  ],
+  "expect": {
+    "finalDisplay": "2:4",
+    "mustShow": [
+      "2:2",
+      "2:3"
+    ]
+  }
+}

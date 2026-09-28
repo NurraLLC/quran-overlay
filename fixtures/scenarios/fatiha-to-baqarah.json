@@ -1,0 +1,27 @@
+{
+  "name": "fatiha-to-baqarah",
+  "description": "Normal start: Al-Fatihah (basmala ambiguous with 27:30 and pre-surah basmalas) into Al-Baqarah with its disjoint-letter opening.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "1:1-1:7"
+    },
+    {
+      "recite": "2:1-2:5"
+    }
+  ],
+  "expect": {
+    "finalDisplay": "2:5",
+    "mustShow": [
+      "1:2",
+      "1:7",
+      "2:2",
+      "2:5"
+    ],
+    "mustNotShow": [
+      "27:30"
+    ],
+    "maxClears": 0
+  }
+}

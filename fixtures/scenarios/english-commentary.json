@@ -1,0 +1,25 @@
+{
+  "name": "english-commentary",
+  "description": "Recites Maryam 19:1-4, speaks English commentary (~6 s), then resumes at 19:5.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "19:1-19:4"
+    },
+    {
+      "say": "now before we continue I want to explain the story of Zakariya and his prayer to his Lord in old age"
+    },
+    {
+      "recite": "19:5-19:7"
+    }
+  ],
+  "expect": {
+    "finalDisplay": "19:7",
+    "mustShow": [
+      "19:4",
+      "19:5"
+    ],
+    "maxClears": 1
+  }
+}

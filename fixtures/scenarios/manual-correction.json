@@ -1,0 +1,27 @@
+{
+  "name": "manual-correction",
+  "description": "Broadcaster jumps manually to 3:1 mid-stream, then recites 3:2-3:4.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "2:1-2:3"
+    },
+    {
+      "control": {
+        "kind": "manual",
+        "key": "3:1"
+      }
+    },
+    {
+      "recite": "3:2-3:4"
+    }
+  ],
+  "expect": {
+    "finalDisplay": "3:4",
+    "mustShow": [
+      "3:2",
+      "3:3"
+    ]
+  }
+}

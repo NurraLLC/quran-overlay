@@ -1,0 +1,24 @@
+{
+  "name": "noisy-baqarah-13",
+  "description": "Al-Baqarah 2:1-2:12 with synthetic ASR errors (6% substitution, 4% drop, 3% insertion, 12% letter edit). Rates are assumptions, not Soniox measurements.",
+  "synthetic": true,
+  "seed": 13,
+  "script": [
+    {
+      "recite": "2:1-2:12"
+    }
+  ],
+  "errors": {
+    "substitute": 0.06,
+    "drop": 0.04,
+    "insert": 0.03,
+    "letterEdit": 0.12
+  },
+  "expect": {
+    "mustShow": [
+      "2:3",
+      "2:6",
+      "2:10"
+    ]
+  }
+}

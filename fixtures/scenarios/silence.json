@@ -1,0 +1,25 @@
+{
+  "name": "silence",
+  "description": "Long silence (20 s) mid-surah must not clear the screen; continues afterwards.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "67:1-67:3"
+    },
+    {
+      "pause": 20000
+    },
+    {
+      "recite": "67:4-67:5"
+    }
+  ],
+  "expect": {
+    "finalDisplay": "67:5",
+    "mustShow": [
+      "67:3",
+      "67:4"
+    ],
+    "maxClears": 0
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "note": "Synthetic, corpus-derived provider streams with stated timing/error assumptions. Replace or extend with real diagnostic captures (.jsonl) and labelled audio when available.",
+  "fixtures": [
+    "fixtures/scenarios/common-opening.json",
+    "fixtures/scenarios/different-surah-jumps.json",
+    "fixtures/scenarios/english-commentary.json",
+    "fixtures/scenarios/fatiha-to-baqarah.json",
+    "fixtures/scenarios/letter-names.json",
+    "fixtures/scenarios/longest-ayah.json",
+    "fixtures/scenarios/manual-correction.json",
+    "fixtures/scenarios/mid-ayah-start.json",
+    "fixtures/scenarios/noisy-baqarah-11.json",
+    "fixtures/scenarios/noisy-baqarah-12.json",
+    "fixtures/scenarios/noisy-baqarah-13.json",
+    "fixtures/scenarios/noisy-kahf-11.json",
+    "fixtures/scenarios/noisy-kahf-12.json",
+    "fixtures/scenarios/noisy-kahf-13.json",
+    "fixtures/scenarios/refrain-55.json",
+    "fixtures/scenarios/repeat-previous.json",
+    "fixtures/scenarios/same-surah-jump.json",
+    "fixtures/scenarios/short-surahs.json",
+    "fixtures/scenarios/silence.json"
+  ],
+  "modes": [
+    "deterministic",
+    "hybrid",
+    "jev_required"
+  ],
+  "decisions": {
+    "hybrid": "simulated:350",
+    "jev_required": "simulated:350"
+  }
+}

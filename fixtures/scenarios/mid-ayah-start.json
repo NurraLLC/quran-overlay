@@ -1,0 +1,26 @@
+{
+  "name": "mid-ayah-start",
+  "description": "Starts in the middle of 2:255 (words 8-end) and continues into 2:256.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "2:255",
+      "words": [
+        8,
+        60
+      ]
+    },
+    {
+      "recite": "2:256"
+    }
+  ],
+  "expect": {
+    "finalDisplay": "2:256",
+    "mustShow": [
+      "2:255",
+      "2:256"
+    ],
+    "maxClears": 0
+  }
+}

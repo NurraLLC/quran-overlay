@@ -1,0 +1,23 @@
+{
+  "name": "refrain-55",
+  "description": "Ar-Rahman 55:1-25: the refrain 55:13 recurs; identical text must be followed by context.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "55:1-55:25"
+    }
+  ],
+  "expect": {
+    "finalDisplay": "55:25",
+    "mustShow": [
+      "55:13",
+      "55:16",
+      "55:18",
+      "55:21",
+      "55:23",
+      "55:25"
+    ],
+    "maxClears": 0
+  }
+}

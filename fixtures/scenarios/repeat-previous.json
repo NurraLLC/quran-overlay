@@ -1,0 +1,23 @@
+{
+  "name": "repeat-previous",
+  "description": "Reciter repeats the previous ayah (18:2) then continues.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "18:1-18:3"
+    },
+    {
+      "recite": "18:2-18:5"
+    }
+  ],
+  "expect": {
+    "finalDisplay": "18:5",
+    "mustShow": [
+      "18:2",
+      "18:3",
+      "18:4"
+    ],
+    "maxClears": 0
+  }
+}

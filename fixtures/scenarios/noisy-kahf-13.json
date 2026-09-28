@@ -1,0 +1,24 @@
+{
+  "name": "noisy-kahf-13",
+  "description": "Al-Kahf 18:1-18:10 with the same synthetic ASR error assumptions.",
+  "synthetic": true,
+  "seed": 13,
+  "script": [
+    {
+      "recite": "18:1-18:10"
+    }
+  ],
+  "errors": {
+    "substitute": 0.06,
+    "drop": 0.04,
+    "insert": 0.03,
+    "letterEdit": 0.12
+  },
+  "expect": {
+    "mustShow": [
+      "18:3",
+      "18:6",
+      "18:10"
+    ]
+  }
+}

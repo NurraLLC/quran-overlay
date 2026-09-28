@@ -1,0 +1,207 @@
+// Bounded, ordered alignment of recently heard words against a corpus region.
+//
+// Local alignment (free start in both the heard window and the corpus), scored by word
+// informativeness. The heard window's *end* is where the reciter is now; trailing heard words the
+// alignment cannot explain are reported (`trailing`) rather than hidden, so a candidate that only
+// matched old words cannot pretend to describe current speech.
+
+import type { CorpusIndex } from './index';
+import { similarity } from './normalize';
+
+export type Obs = {
+  key: string;
+  cons: string;
+  foreign: boolean;
+  startMs: number | null;
+  endMs: number | null;
+};
+
+export type Alignment = {
+  score: number;
+  /** Corpus global positions of the first and last matched corpus words. */
+  startPos: number;
+  endPos: number;
+  matched: number;
+  matchedWeight: number;
+  subs: number;
+  ins: number;
+  dels: number;
+  /** Heard-window index of the last matched heard word. */
+  lastObs: number;
+  /** Heard words after the last matched one (not explained by this alignment). */
+  trailing: number;
+  /** Length of the final run of exact, consecutive heard/corpus word matches. */
+  run: number;
+  /** [heard index, corpus position, similarity] for matched/near-matched pairs, in order. */
+  pairs: Array<[number, number, number]>;
+};
+
+export const ALIGN = {
+  insArabic: 0.55,
+  insForeign: 0.35,
+  delBase: 0.3,
+  delWeighted: 0.2,
+  mismatch: 0.6,
+  /** Per-word decay for older heard words: current speech dominates, older context still counts. */
+  recency: 0.85,
+  recencyFloor: 0.1,
+};
+
+const simCache = new Map<string, number>();
+function sim(a: string, b: string): number {
+  if (a === b) return 1;
+  const k = a < b ? `${a}|${b}` : `${b}|${a}`;
+  let s = simCache.get(k);
+  if (s === undefined) {
+    s = similarity(a, b);
+    if (simCache.size > 200_000) simCache.clear();
+    simCache.set(k, s);
+  }
+  return s;
+}
+
+function pairScore(o: Obs, key: string, cons: string, w: number): { score: number; s: number } {
+  if (o.foreign) return { score: -ALIGN.mismatch, s: 0 };
+  if (o.key === key) return { score: w + (o.cons === cons ? 0.05 : 0), s: 1 };
+  const s = sim(o.key, key);
+  if (s >= 0.75) return { score: w * s * 0.8, s };
+  if (s >= 0.6) return { score: w * 0.3, s };
+  return { score: -ALIGN.mismatch, s };
+}
+
+const DIAG = 1;
+const UP = 2; // heard word inserted
+const LEFT = 3; // corpus word skipped
+
+let H = new Float64Array(0);
+let D = new Uint8Array(0);
+let S = new Float32Array(0);
+
+/** Align heard words `obs` against corpus positions [from, to). */
+export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, to: number): Alignment | null {
+  from = Math.max(0, from);
+  to = Math.min(ix.totalWords, to);
+  const m = obs.length;
+  const n = to - from;
+  if (m === 0 || n <= 0) return null;
+  const size = (m + 1) * (n + 1);
+  if (H.length < size) {
+    H = new Float64Array(size * 2);
+    D = new Uint8Array(size * 2);
+    S = new Float32Array(size * 2);
+  }
+  const W = n + 1;
+  for (let j = 0; j <= n; j++) {
+    H[j] = 0;
+    D[j] = 0;
+  }
+  for (let i = 1; i <= m; i++) {
+    const o = obs[i - 1];
+    const f = Math.max(ALIGN.recencyFloor, ALIGN.recency ** (m - i));
+    const ins = (o.foreign ? ALIGN.insForeign : ALIGN.insArabic) * f;
+    H[i * W] = 0;
+    D[i * W] = 0;
+    for (let j = 1; j <= n; j++) {
+      const pos = from + j - 1;
+      const w = ix.weight[ix.wordId[pos]];
+      const ps = pairScore(o, ix.words[pos], ix.consWords[pos], w);
+      let best = 0;
+      let dir = 0;
+      const diag = H[(i - 1) * W + j - 1] + ps.score * f;
+      if (diag > best) {
+        best = diag;
+        dir = DIAG;
+      }
+      const up = H[(i - 1) * W + j] - ins;
+      if (up > best) {
+        best = up;
+        dir = UP;
+      }
+      const left = H[i * W + j - 1] - (ALIGN.delBase + ALIGN.delWeighted * w) * f;
+      if (left > best) {
+        best = left;
+        dir = LEFT;
+      }
+      H[i * W + j] = best;
+      D[i * W + j] = dir;
+      S[i * W + j] = ps.s;
+    }
+  }
+  // Best cell ending at *any* heard row; trailing rows after it are unexplained speech.
+  let bi = 0;
+  let bj = 0;
+  let bestScore = 0;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const v = H[i * W + j];
+      // Prefer later heard rows on ties so current speech is explained when possible.
+      if (v > bestScore + 1e-9 || (Math.abs(v - bestScore) <= 1e-9 && v > 0 && i > bi)) {
+        bestScore = v;
+        bi = i;
+        bj = j;
+      }
+    }
+  }
+  if (bestScore <= 0) return null;
+  // Penalize unexplained trailing heard words so the score describes the *current* position.
+  let trailingPenalty = 0;
+  for (let i = bi; i < m; i++) trailingPenalty += obs[i].foreign ? ALIGN.insForeign : ALIGN.insArabic;
+
+  const pairs: Array<[number, number, number]> = [];
+  let i = bi;
+  let j = bj;
+  let subs = 0;
+  let ins = 0;
+  let dels = 0;
+  let matched = 0;
+  let matchedWeight = 0;
+  while (i > 0 && j > 0 && H[i * W + j] > 0) {
+    const dir = D[i * W + j];
+    if (dir === DIAG) {
+      const s = S[i * W + j];
+      const pos = from + j - 1;
+      if (s >= 0.6) {
+        pairs.push([i - 1, pos, s]);
+        matched++;
+        matchedWeight += ix.weight[ix.wordId[pos]] * (s === 1 ? 1 : s * 0.8);
+        if (s < 1) subs++;
+      } else subs++;
+      i--;
+      j--;
+    } else if (dir === UP) {
+      ins++;
+      i--;
+    } else if (dir === LEFT) {
+      dels++;
+      j--;
+    } else break;
+  }
+  pairs.reverse();
+  if (!pairs.length) return null;
+  const endPos = pairs[pairs.length - 1][1];
+  const lastObs = pairs[pairs.length - 1][0];
+  let run = 0;
+  for (let k = pairs.length - 1; k >= 0; k--) {
+    const [oi, pos, s] = pairs[k];
+    if (s !== 1) break;
+    if (k < pairs.length - 1) {
+      const [noi, npos] = pairs[k + 1];
+      if (noi !== oi + 1 || npos !== pos + 1) break;
+    }
+    run++;
+  }
+  return {
+    score: bestScore - trailingPenalty,
+    startPos: pairs[0][1],
+    endPos,
+    matched,
+    matchedWeight,
+    subs,
+    ins,
+    dels,
+    lastObs,
+    trailing: m - 1 - lastObs,
+    run,
+    pairs,
+  };
+}
