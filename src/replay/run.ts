@@ -173,6 +173,7 @@ export async function replay(
   mode: TrackerMode,
   decisions: { kind: 'none' } | { kind: 'simulated'; latencyMs: number } | { kind: 'client'; client: DecisionClient },
   catalog: ResourceCatalog | null = null,
+  opts: { commitOnProvisional?: boolean; advanceWords?: 1 | 2 } = {},
 ): Promise<ReplayResult> {
   const clock = new ReplayClock();
   const client: DecisionClient | null =
@@ -192,6 +193,7 @@ export async function replay(
   };
   const f = new RecitationFollower(ix, corpus.id, 'replay', client, mode, onEvent, clock);
   if (catalog) attachCatalog(f, catalog);
+  if (opts.advanceWords) f.engine.cfg = { ...f.engine.cfg, advanceWords: opts.advanceWords };
   let buf = new TranscriptBuffer();
   let epoch = 1;
   f.newCapture(epoch);
@@ -219,7 +221,9 @@ export async function replay(
     }
     if (stopped) continue;
     const r = buf.apply(ev.tokens as WireToken[]);
-    f.onTranscript(buf.evidence(), buf.heardText(1).provisional, r.evidenceChanged);
+    // Follower-level experiment only; the app follows early words through LiveCursor (sessions.ts).
+    const early = opts.commitOnProvisional ?? false;
+    f.onTranscript(early ? buf.liveWords() : buf.evidence(), buf.heardText(1).provisional, r.evidenceChanged || (early && r.provisionalChanged));
   }
   await clock.advanceTo(clock.now() + 3000);
 

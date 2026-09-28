@@ -2,7 +2,7 @@
 // provisional text to the confirmed follower, sends JEV requests, or edits the Quran corpus.
 import type { Word } from '../../shared/transcript';
 import type { CorpusIndex } from './index';
-import { TrackerEngine } from './reducer';
+import { DEFAULT_TRACKER_CONFIG, TrackerEngine } from './reducer';
 import type { NeighbourProvider } from './candidates';
 
 export type LivePosition = { verseIndex: number; word: number; provisional: boolean };
@@ -10,14 +10,19 @@ type Anchor = { pos: number; verseIndex: number };
 
 export class LiveCursor {
   private anchor: Anchor | null = null;
-  constructor(private readonly ix: CorpusIndex) {}
+  constructor(
+    private readonly ix: CorpusIndex,
+    public advanceWords: 1 | 2 = 1,
+  ) {}
   reset() { this.anchor = null; }
 
   update(words: readonly Word[], confirmed: Anchor | null, provisional: boolean, prior: number | null = null, neighbours: NeighbourProvider | null = null): LivePosition | null {
     if (!words.length) { this.reset(); return null; }
     // Re-align the complete latest hypothesis every time. A subword correction is not a new
     // location: preserve the local path as a prior while requiring present speech to support it.
-    const engine = new TrackerEngine(this.ix);
+    // One exact word of the next ayah is enough on the confirmed path (see oneWordAdvance): waiting
+    // for a second word was the visible first-word delay at every ayah change.
+    const engine = new TrackerEngine(this.ix, { ...DEFAULT_TRACKER_CONFIG, advanceWords: this.advanceWords });
     engine.prior = prior;
     engine.neighbours = neighbours;
     engine.anchor = this.anchor ?? confirmed;

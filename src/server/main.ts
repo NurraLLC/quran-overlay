@@ -47,6 +47,8 @@ function decisionSetup(): { client: DecisionClient | null; provider: JevGateway 
 
 async function main() {
   loadEnvFile();
+  // `--capture` is equivalent to QO_DIAGNOSTIC_CAPTURE=1 (for launchers that cannot set env vars).
+  if (process.argv.includes('--capture')) process.env.QO_DIAGNOSTIC_CAPTURE = '1';
   const t0 = performance.now();
   const corpus = new Corpus(loadCorpus());
   const ix = buildIndex(corpus.verses);

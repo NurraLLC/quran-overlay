@@ -1,6 +1,7 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "quran-overlay", "runtimeExecutable": "npm", "runtimeArgs": ["start"], "port": 4317 }
+    { "name": "quran-overlay", "runtimeExecutable": "npm", "runtimeArgs": ["start"], "port": 4317 },
+    { "name": "quran-overlay-capture", "runtimeExecutable": "npm", "runtimeArgs": ["start", "--", "--capture"], "port": 4317 }
   ]
 }

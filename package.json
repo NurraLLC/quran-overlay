@@ -21,7 +21,8 @@
     "eval:english": "tsx scripts/eval-english.ts",
     "search:embed": "tsx scripts/build-embeddings.ts",
     "resources:import": "tsx scripts/import-resources.ts",
-    "fixtures:derived": "tsx scripts/make-derived-fixtures.ts"
+    "fixtures:derived": "tsx scripts/make-derived-fixtures.ts",
+    "replay:session": "tsx scripts/replay-session.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.5",

@@ -443,7 +443,9 @@ function ListenCard(p: {
 
 function ResultCard({ card, confirmed, onShow }: { card: SearchCard; confirmed: boolean; onShow: (key: string) => void }) {
   const [shown, setShown] = useState<SearchCard>(card);
-  useEffect(() => setShown(card), [card]);
+  // Reset the context view only when the card becomes a different ayah; a refined result (e.g. JEV's
+  // pick arriving) must not undo browsing the user is doing on this card.
+  useEffect(() => setShown(card), [card.key]); // eslint-disable-line react-hooks/exhaustive-deps
   const go = (key: string | null) => {
     if (!key) return;
     fetch(`/api/verse/${key}`, { credentials: 'same-origin' })

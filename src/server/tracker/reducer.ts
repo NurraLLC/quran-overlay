@@ -19,6 +19,11 @@ export type TrackerConfig = {
   formingGraceMs: number;
   /** Keep the last verse on screen when speech stops matching (broadcaster preference). */
   keepOnUncertain: boolean;
+  /**
+   * Words of the next ayah needed to advance along the confirmed path. 1 is allowed only when the
+   * current ayah was heard to its end and that first word matches exactly (see decide()).
+   */
+  advanceWords: 1 | 2;
 };
 
 export const DEFAULT_TRACKER_CONFIG: TrackerConfig = {
@@ -26,6 +31,7 @@ export const DEFAULT_TRACKER_CONFIG: TrackerConfig = {
   uncertainClearMs: 3000,
   formingGraceMs: 1500,
   keepOnUncertain: false,
+  advanceWords: 2,
 };
 
 export type ProposalReason = 'acquire' | 'advance' | 'skip' | 'repeat' | 'jump';
@@ -75,6 +81,8 @@ export class TrackerEngine {
   /** First closed-final word index that counts as evidence (authority changes move it). */
   floor = 0;
   private unexplainedSince: number | null = null;
+  /** Audio time up to which heard speech last supported the current location. */
+  private supportedUntil = -Infinity;
   private lastKey = '';
 
   /** Resource-backed collision neighbours (null = enrichment off; the corpus seeds still run). */
@@ -87,6 +95,7 @@ export class TrackerEngine {
 
   /** Manual anchor or resume: authoritative location, old evidence discarded. */
   seek(verseIndex: number, finalsLength: number) {
+    this.supportedUntil = -Infinity;
     this.anchor = { pos: Math.max(0, this.ix.verseStart[verseIndex] - 1), verseIndex };
     this.phase = 'tracking';
     this.floor = finalsLength;
@@ -211,7 +220,7 @@ export class TrackerEngine {
     } else if (rel === 'same') {
       if (current && !preview) this.anchor = { pos: B.endPos, verseIndex: B.verseIndex };
     } else if (rel === 'next') {
-      if (current && B.inVerse >= need(B.verseIndex, 2) && margin >= 0.5) {
+      if (current && (B.inVerse >= need(B.verseIndex, 2) || this.oneWordAdvance(B)) && margin >= 0.5) {
         res.proposal = { verseIndex: B.verseIndex, pos: B.endPos, reason: 'advance', candidate: B, margin };
       }
     } else if (rel === 'skip' || rel === 'repeat') {
@@ -226,6 +235,8 @@ export class TrackerEngine {
     const explainedLocally = (rel === 'same' || rel === 'next') && current;
     if (explainedLocally || res.proposal) {
       this.unexplainedSince = null;
+      const lastObs = obs[B.lastObs];
+      this.supportedUntil = Math.max(this.supportedUntil, lastObs?.endMs ?? lastObs?.startMs ?? -Infinity);
       if (this.phase === 'uncertain' && !preview) this.phase = 'tracking';
       return;
     }
@@ -233,6 +244,21 @@ export class TrackerEngine {
     const unexplained = local ? local.trailing : obs.length;
     const forming = rel !== 'same' && rel !== 'next' && B.matched >= 2 && current;
     this.noteUnexplained(obs, unexplained, res, preview, forming);
+  }
+
+  /**
+   * Advance on a single word only when the path is unambiguous: the current ayah was heard through
+   * its last two words immediately before, and the new ayah's first word matches exactly.
+   */
+  private oneWordAdvance(c: Candidate): boolean {
+    if (this.cfg.advanceWords !== 1 || !this.anchor || c.inVerse !== 1) return false;
+    const last = c.pairs[c.pairs.length - 1];
+    const prev = c.pairs[c.pairs.length - 2];
+    if (!last || !prev || last[2] !== 1) return false;
+    if (last[1] !== this.ix.verseStart[c.verseIndex]) return false;
+    const prevVerse = this.ix.wordVerse[prev[1]];
+    const endOfPrev = this.ix.verseStart[prevVerse] + this.ix.verseLen[prevVerse] - 1;
+    return prevVerse === c.verseIndex - 1 && prev[1] >= endOfPrev - 1 && prev[0] === last[0] - 1;
   }
 
   /** Evidence from heard words at window index >= `fromObs` only. */
@@ -256,9 +282,12 @@ export class TrackerEngine {
     if (preview || unexplainedCount < 2) return;
     const firstUnexplained = obs[obs.length - unexplainedCount];
     const last = obs[obs.length - 1];
-    const start = firstUnexplained.startMs ?? firstUnexplained.endMs;
+    const rawStart = firstUnexplained.startMs ?? firstUnexplained.endMs;
     const end = last.endMs ?? last.startMs;
-    if (start === null || end === null) return;
+    if (rawStart === null || end === null) return;
+    // Contradiction is only counted after the last speech that supported the current location;
+    // a noisy word from before the latest confirmed move can never backdate the clear timer.
+    const start = Math.max(rawStart, this.supportedUntil);
     if (this.unexplainedSince === null || start < this.unexplainedSince) this.unexplainedSince = start;
     if (this.anchor) this.phase = 'uncertain';
     const limit = this.cfg.uncertainClearMs + (forming ? this.cfg.formingGraceMs : 0);
