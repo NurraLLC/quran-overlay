@@ -34,7 +34,7 @@ function decisionSetup(): { client: DecisionClient | null; provider: JevGateway 
   const provider = (process.env.JEV_PROVIDER || '').trim() as JevGateway | '';
   const keys: Record<JevGateway, string | undefined> = { typesafe: process.env.TYPESAFE_API_KEY, openrouter: process.env.OPENROUTER_API_KEY };
   const chosen: JevGateway | null = provider === 'typesafe' || provider === 'openrouter' ? provider : keys.typesafe ? 'typesafe' : keys.openrouter ? 'openrouter' : null;
-  if (!chosen) return { client: null, provider: null, detail: 'No JEV key configured (set JEV_PROVIDER and TYPESAFE_API_KEY or OPENROUTER_API_KEY). Deterministic following, manual navigation and lexical search still work.' };
+  if (!chosen) return { client: null, provider: null, detail: 'No JEV key configured (set JEV_PROVIDER and TYPESAFE_API_KEY or OPENROUTER_API_KEY). Deterministic following, manual navigation and search still work.' };
   const key = keys[chosen];
   if (!key) return { client: null, provider: chosen, detail: `JEV_PROVIDER=${chosen} but ${chosen === 'typesafe' ? 'TYPESAFE_API_KEY' : 'OPENROUTER_API_KEY'} is not set.` };
   try {

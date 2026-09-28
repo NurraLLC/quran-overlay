@@ -84,7 +84,7 @@ Local server: transcript assembly → tracker (full-corpus retrieval + bounded a
 | `npm run replay -- --fixture <path> --mode <mode>` | Replay a scenario (`fixtures/scenarios/*.json`) or a capture (`.jsonl`) through the real follower. |
 | `npm run benchmark -- --manifest fixtures/benchmark.json` | All fixtures × three modes → `docs/BENCHMARK.md`. |
 | `npm run eval:english` | 50 English requests (28 held out) → `docs/ENGLISH_EVAL.md`. |
-| `npm run search:embed` | Optional semantic-search experiment; downloads a model — see below. |
+| `npm run search:embed` | Optional semantic search: fetch the pinned, hash-checked model and embed all translations — see below. |
 
 Set `QO_DIAGNOSTIC_CAPTURE=1` to write recognized text tokens (never audio) to `data/captures/*.jsonl`, bounded at 20 MB, in the replay format. Off by default.
 
@@ -108,7 +108,7 @@ Set `QO_DIAGNOSTIC_CAPTURE=1` to write recognized text tokens (never audio) to `
 - **Footnotes.** Saheeh footnote markers are removed from the display; footnote bodies are not in the local corpus (their ids are kept).
 - **Word highlighting** is off: Imlaei (search) and Uthmani (display) word counts differ in 628 ayahs, so no validated word mapping exists.
 - **Basmala:** a recited basmala alone is ambiguous (1:1, 27:30 and the unnumbered basmala before 112 surahs); the tracker waits for the next words rather than guessing.
-- **Semantic search** is not set up. `npm run search:embed` requires `npm install @huggingface/transformers` and downloads Xenova/all-MiniLM-L6-v2 (~23 MB) from huggingface.co; its benefit is unmeasured.
+- **Semantic search** (optional, set up here): `npm run search:embed` fetches Xenova/all-MiniLM-L6-v2 at pinned revision `751bff37…` from huggingface.co (four files, ~23.7 MB, each checked against a pinned sha256), stores it in `data/models/local/` and embeds all 6,236 translations (~10 s). The server loads it offline only (never downloads) and re-verifies the hashes; without it, lexical search still works. Measured on the 26 meaning queries: shown-card recall 25/26 (lexical alone 24), JEV-shortlist recall 26/26 (was 25); `be kind to mom and dad` moved from lexical rank 84 to visible cards. Query cost ~6–9 ms plus ~0.4 s warm-up at startup. Card ordering is still imperfect (JEV selection is meant to help, unverified). The model's licence was not reviewed.
 - The tracker's thresholds are engineering starting values tuned only on synthetic streams; they need real reciters and the user's microphone before they can be called calibrated.
 
 More: `docs/REUSE_NOTES.md` (what was carried over from Moard and Nur, and how it is verified here), `docs/BENCHMARK.md`, `docs/ENGLISH_EVAL.md`, and the research/plan in `outputs/`.

@@ -116,7 +116,14 @@ export class CommandResolver {
         semantic = [];
       }
     }
-    const fused = reciprocalRankFusion(semantic.length ? [lexical, semantic] : [lexical]).slice(0, TO_JEV);
+    // Each retriever's best hit stays visible (an exact-wording match must not be out-voted by
+    // passages both retrievers rank moderately); the rest follows reciprocal rank fusion.
+    const lists = semantic.length ? [lexical, semantic] : [lexical];
+    const leaders = [...new Set(lists.map((l) => l[0]?.verseIndex).filter((v): v is number => v !== undefined))];
+    const fused = [
+      ...leaders.map((verseIndex) => ({ verseIndex, score: Infinity })),
+      ...reciprocalRankFusion(lists).filter((f) => !leaders.includes(f.verseIndex)),
+    ].slice(0, TO_JEV);
     const trace: SearchTrace = {
       lexical: lexical.map((h) => h.verseIndex),
       semantic: semantic.map((h) => h.verseIndex),

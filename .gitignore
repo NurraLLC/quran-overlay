@@ -11,3 +11,4 @@ data/captures/
 test-results/
 playwright-report/
 artifacts/
+data/models/
