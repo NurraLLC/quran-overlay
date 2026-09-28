@@ -1,0 +1,524 @@
+{
+ "note": "English navigation/search evaluation set. Expected keys for meaning queries are illustrative (several passages may fit); they measure candidate recall, not theological relevance. split: dev (used while building) / test (held out; not used for tuning).",
+ "requests": [
+  {
+   "text": "2:255",
+   "expect": {
+    "kind": "navigate",
+    "key": "2:255"
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "surah two verse two hundred fifty five",
+   "expect": {
+    "kind": "navigate",
+    "key": "2:255"
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "Surah Maryam ayah 3",
+   "expect": {
+    "kind": "navigate",
+    "key": "19:3"
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "go to surah yaseen",
+   "expect": {
+    "kind": "navigate",
+    "key": "36:1"
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "al kahf verse ten",
+   "expect": {
+    "kind": "navigate",
+    "key": "18:10"
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "chapter one hundred twelve",
+   "expect": {
+    "kind": "navigate",
+    "key": "112:1"
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "surah rahman verse thirteen",
+   "expect": {
+    "kind": "navigate",
+    "key": "55:13"
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "ayah 5",
+   "expect": {
+    "kind": "navigate",
+    "key": "18:5"
+   },
+   "current": "18:1",
+   "split": "dev"
+  },
+  {
+   "text": "next",
+   "expect": {
+    "kind": "navigate",
+    "key": "2:256"
+   },
+   "current": "2:255",
+   "split": "dev"
+  },
+  {
+   "text": "previous one",
+   "expect": {
+    "kind": "navigate",
+    "key": "2:254"
+   },
+   "current": "2:255",
+   "split": "test"
+  },
+  {
+   "text": "ayatul kursi",
+   "expect": {
+    "kind": "navigate",
+    "key": "2:255"
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "baqarah two eight two",
+   "expect": {
+    "kind": "navigate",
+    "key": "2:282"
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "take me to surah al mulk",
+   "expect": {
+    "kind": "navigate",
+    "key": "67:1"
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "show surah ikhlas",
+   "expect": {
+    "kind": "navigate",
+    "key": "112:1"
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "surah an nas ayah six",
+   "expect": {
+    "kind": "navigate",
+    "key": "114:6"
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "surah 115",
+   "expect": {
+    "kind": "invalid_reference"
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "surah fatiha verse 9",
+   "expect": {
+    "kind": "invalid_reference"
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "ayah 300",
+   "expect": {
+    "kind": "invalid_reference"
+   },
+   "current": "2:1",
+   "split": "test"
+  },
+  {
+   "text": "surah al kahf verse one hundred twenty",
+   "expect": {
+    "kind": "invalid_reference"
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "no soul is burdened beyond its capacity",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "2:286"
+    ]
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "God does not burden a soul more than it can bear",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "2:286"
+    ]
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "God will not give me more than I can handle",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "2:286"
+    ]
+   },
+   "current": null,
+   "split": "dev",
+   "note": "paraphrase; research BM25 rank 504"
+  },
+  {
+   "text": "every soul will taste death",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "3:185",
+     "21:35",
+     "29:57"
+    ]
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "everybody eventually passes away",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "3:185",
+     "21:35",
+     "29:57",
+     "55:26"
+    ]
+   },
+   "current": null,
+   "split": "dev",
+   "note": "paraphrase"
+  },
+  {
+   "text": "be kind to mom and dad",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "17:23",
+     "4:36",
+     "6:151",
+     "29:8",
+     "31:14",
+     "46:15",
+     "2:83"
+    ]
+   },
+   "current": null,
+   "split": "dev",
+   "note": "paraphrase; research BM25 rank 825"
+  },
+  {
+   "text": "do not say uff to your parents",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "17:23"
+    ]
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "with hardship comes ease",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "94:5",
+     "94:6"
+    ]
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "call upon me and I will respond to you",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "40:60",
+     "2:186"
+    ]
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "there is no compulsion in religion",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "2:256"
+    ]
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "whoever saves one life it is as if he saved all of mankind",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "5:32"
+    ]
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "we made you into nations and tribes so that you may know one another",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "49:13"
+    ]
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "Allah is the light of the heavens and the earth",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "24:35"
+    ]
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "remember me and I will remember you",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "2:152"
+    ]
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "hearts find rest in the remembrance of Allah",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "13:28"
+    ]
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "Allah will not change a people until they change what is in themselves",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "13:11"
+    ]
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "do not despair of the mercy of Allah",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "39:53"
+    ]
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "seek help through patience and prayer",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "2:45",
+     "2:153"
+    ]
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "Moses sees a fire and goes to it",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "20:10",
+     "27:7",
+     "28:29"
+    ]
+   },
+   "current": null,
+   "split": "test",
+   "note": "story paraphrase"
+  },
+  {
+   "text": "Joseph dreams of eleven stars and the sun and moon",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "12:4"
+    ]
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "Mary and the trunk of the palm tree",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "19:23",
+     "19:25"
+    ]
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "the youths who took refuge in the cave",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "18:10",
+     "18:9",
+     "18:13"
+    ]
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "my Lord increase me in knowledge",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "20:114"
+    ]
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "the night of decree is better than a thousand months",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "97:3"
+    ]
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "fasting has been prescribed for you as it was for those before you",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "2:183"
+    ]
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "Jonah swallowed by the fish",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "37:142",
+     "21:87",
+     "68:48"
+    ]
+   },
+   "current": null,
+   "split": "test",
+   "note": "paraphrase"
+  },
+  {
+   "text": "okay everyone thanks for joining the stream tonight",
+   "expect": {
+    "kind": "not_navigate"
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "let me get a glass of water",
+   "expect": {
+    "kind": "not_navigate"
+   },
+   "current": null,
+   "split": "dev"
+  },
+  {
+   "text": "can you all hear me okay",
+   "expect": {
+    "kind": "not_navigate"
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "next time we will continue from here",
+   "expect": {
+    "kind": "not_navigate"
+   },
+   "current": null,
+   "split": "test"
+  },
+  {
+   "text": "please like and subscribe",
+   "expect": {
+    "kind": "not_navigate"
+   },
+   "current": null,
+   "split": "test"
+  }
+ ]
+}

@@ -32,6 +32,7 @@ export async function loadExtractor(revision?: string): Promise<Extractor> {
 export class SemanticRetriever {
   status: SemanticStatus = { state: 'unavailable', reason: 'not started' };
   private vectors: Float32Array | null = null;
+  private verseOfVector: number[] = [];
   private dims = 0;
   private extractor: Extractor | null = null;
 
@@ -42,7 +43,8 @@ export class SemanticRetriever {
     }
     this.status = { state: 'loading' };
     try {
-      const meta = JSON.parse(readFileSync(EMBEDDINGS_META, 'utf8')) as { dims: number; verses: number; model: string; revision: string };
+      const meta = JSON.parse(readFileSync(EMBEDDINGS_META, 'utf8')) as { dims: number; verses: number; model: string; revision: string; verseOfVector: number[] };
+      this.verseOfVector = meta.verseOfVector;
       const buf = readFileSync(EMBEDDINGS_FILE);
       this.vectors = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
       this.dims = meta.dims;
@@ -65,13 +67,15 @@ export class SemanticRetriever {
     const out = await this.extractor(query, { pooling: 'mean', normalize: true });
     const q = out.data;
     const n = this.vectors.length / this.dims;
-    const scores: Array<{ verseIndex: number; score: number }> = [];
-    for (let v = 0; v < n; v++) {
+    const best = new Map<number, number>();
+    for (let i = 0; i < n; i++) {
       let dot = 0;
-      const base = v * this.dims;
+      const base = i * this.dims;
       for (let d = 0; d < this.dims; d++) dot += q[d] * this.vectors[base + d];
-      scores.push({ verseIndex: v, score: dot });
+      const v = this.verseOfVector[i];
+      if ((best.get(v) ?? -Infinity) < dot) best.set(v, dot);
     }
+    const scores = [...best.entries()].map(([verseIndex, score]) => ({ verseIndex, score }));
     return scores.sort((a, b) => b.score - a.score).slice(0, k);
   }
 }

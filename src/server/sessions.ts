@@ -8,6 +8,9 @@
 //   Manual navigation always publishes (it is explicit), and re-anchors the tracker.
 
 import { randomBytes } from 'node:crypto';
+import { appendFileSync, mkdirSync, statSync } from 'node:fs';
+import { EOL } from 'node:os';
+import path from 'node:path';
 import {
   DEFAULT_STYLE,
   DisplayStyleSchema,
@@ -46,7 +49,11 @@ export type SessionOptions = {
   setup: SessionSetup;
   overlayUrl: (viewToken: string) => string;
   clock?: Clock;
+  /** Explicit, bounded, local diagnostic capture of provider token events (no audio). */
+  captureDir?: string | null;
 };
+
+const CAPTURE_MAX_BYTES = 20 * 1024 * 1024;
 
 const pct = (xs: number[], p: number) => {
   if (!xs.length) return null;
@@ -81,6 +88,8 @@ export class Session {
   private capture: ControlSnapshot['capture'] = { phase: 'off', captureEpoch: 0, detail: null, since: 0 };
   private buffer = new TranscriptBuffer();
   private lastSeq = -1;
+  private captureFile: string | null = null;
+  private captureStart = 0;
   private disconnectTimer: unknown = null;
   private pageTimer: unknown = null;
 
@@ -376,6 +385,7 @@ export class Session {
     if (this.capture.phase === 'stopped' || this.capture.phase === 'off') return; // late results after Stop
     if (msg.seq <= this.lastSeq) return; // duplicate delivery
     this.lastSeq = msg.seq;
+    this.writeCapture(msg.tokens);
     const r = this.buffer.apply(msg.tokens);
     const heard = this.buffer.heardText(1);
     this.follower.onTranscript(this.buffer.evidence(), heard.provisional, r.evidenceChanged);
@@ -390,6 +400,7 @@ export class Session {
       this.buffer = new TranscriptBuffer();
       this.lastSeq = -1;
       this.follower.newCapture(msg.captureEpoch);
+      this.openCapture(msg.captureEpoch);
       if (this.trackerVerse === null) this.follower.setPrior(this.startHint);
     }
     this.cancelDisconnect();
@@ -404,6 +415,30 @@ export class Session {
       this.startDisconnectGrace();
     }
     this.queueSnapshot();
+  }
+
+  // ---------- diagnostic capture ----------
+
+  private openCapture(epoch: number) {
+    this.captureFile = null;
+    if (!this.o.captureDir) return;
+    mkdirSync(this.o.captureDir, { recursive: true });
+    this.captureFile = path.join(this.o.captureDir, `capture-${epoch}.jsonl`);
+    this.captureStart = this.clock.now();
+  }
+
+  /** Replay-format lines ({t, type:'result', tokens}); stops at the size bound. */
+  private writeCapture(tokens: unknown) {
+    if (!this.captureFile) return;
+    try {
+      if ((statSync(this.captureFile, { throwIfNoEntry: false })?.size ?? 0) > CAPTURE_MAX_BYTES) {
+        this.captureFile = null;
+        return this.say('Diagnostic capture stopped at its 20 MB limit.');
+      }
+      appendFileSync(this.captureFile, JSON.stringify({ t: Math.round(this.clock.now() - this.captureStart), type: 'result', tokens }) + EOL);
+    } catch {
+      this.captureFile = null;
+    }
   }
 
   // ---------- connection lifecycle ----------

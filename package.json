@@ -13,11 +13,13 @@
     "start": "tsx src/server/main.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "test:ui": "playwright test",
+    "test:ui": "vite build && playwright test",
     "corpus:import": "tsx scripts/import-corpus.ts",
     "corpus:validate": "tsx scripts/validate-corpus.ts",
     "replay": "tsx scripts/replay.ts",
-    "benchmark": "tsx scripts/benchmark.ts"
+    "benchmark": "tsx scripts/benchmark.ts",
+    "eval:english": "tsx scripts/eval-english.ts",
+    "search:embed": "tsx scripts/build-embeddings.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.5",

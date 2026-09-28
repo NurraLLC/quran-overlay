@@ -80,11 +80,15 @@ async function main() {
       },
     },
     overlayUrl: (view) => `${publicOrigin}/overlay#view=${view}`,
+    captureDir: process.env.QO_DIAGNOSTIC_CAPTURE === '1' ? path.join(ROOT, 'data', 'captures') : null,
   });
-  const { app, ownerToken } = await buildApp({ session, port, sonioxApiKey: process.env.SONIOX_API_KEY, devOrigins });
+  // QO_OWNER_TOKEN exists only so automated browser tests can open the control page; normal runs
+  // generate a fresh random capability each start.
+  const { app, ownerToken } = await buildApp({ session, port, sonioxApiKey: process.env.SONIOX_API_KEY, devOrigins, ownerToken: process.env.QO_OWNER_TOKEN || undefined });
   await app.listen({ host: '127.0.0.1', port });
   const ms = Math.round(performance.now() - t0);
   console.log(`Quran Overlay ready in ${ms} ms — corpus ${corpus.id}: ${corpus.verses.length} ayahs / ${corpus.data.chapters.length} surahs`);
+  if (process.env.QO_DIAGNOSTIC_CAPTURE === '1') console.log('Diagnostic capture ON: recognized text tokens are written to data/captures/*.jsonl (no audio).');
   console.log(`Tracker mode: ${mode}. Soniox: ${process.env.SONIOX_API_KEY ? 'configured' : 'NOT configured (set SONIOX_API_KEY)'}. ${jev.detail}`);
   console.log(`\nOpen the control page (keep this link private):\n  ${publicOrigin}/control#owner=${ownerToken}\n`);
 }

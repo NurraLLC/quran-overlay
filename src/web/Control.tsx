@@ -40,7 +40,12 @@ function statusLine(s: ControlSnapshot): { tone: string; title: string; detail: 
       return {
         tone: 'held',
         title: `Paused · screen holds ${s.display.verse?.key ?? 'nothing'}`,
-        detail: s.trackerVerse && s.trackerVerse !== s.display.verse?.key ? `You seem to be at ${s.trackerVerse}. Resume following to show it.` : 'Your recitation is still heard privately.',
+        detail:
+          s.trackerVerse && s.trackerVerse !== s.display.verse?.key
+            ? `You seem to be at ${s.trackerVerse}. Resume following to show it.`
+            : ['recording', 'starting', 'reconnecting'].includes(s.capture.phase)
+              ? 'Still listening privately; the screen will not move until you resume.'
+              : 'The screen will not move until you resume following.',
       };
     case 'stopped':
       return { tone: 'idle', title: 'Not listening', detail: key ? `${key} stays on screen until you change it.` : 'The screen is empty.' };
@@ -229,7 +234,7 @@ export function Control() {
         <section className="monitor" aria-label="What the audience sees">
           <div className="monitor-head">
             <span className={`onair ${d.visible ? 'live' : ''}`}>{d.visible ? 'On screen' : snap.blanked ? 'Hidden from stream' : 'Nothing on screen'}</span>
-            {snap.blanked && d.verse && <span className="muted">{d.verse.key} returns when you show the screen again</span>}
+            {snap.blanked && d.verse && <span className="muted">{d.verse.key} returns when you unhide</span>}
             {lay?.promotedToFullFrame && <span className="warn">Too long for the lower third — shown full frame</span>}
           </div>
           <StageFrame className="preview">
@@ -245,8 +250,8 @@ export function Control() {
             ) : (
               <button onClick={() => send({ type: 'hold', on: true })} title="Pause following (H)">Pause following</button>
             )}
-            <button className={snap.blanked ? 'primary' : ''} onClick={() => send({ type: 'blank', on: !snap.blanked })} title="Hide or show the screen (B)">
-              {snap.blanked ? 'Show on stream' : 'Hide from stream'}
+            <button className={snap.blanked ? 'primary' : ''} onClick={() => send({ type: 'blank', on: !snap.blanked })} title="Hide or unhide the screen (B)">
+              {snap.blanked ? 'Unhide' : 'Hide from stream'}
             </button>
           </div>
 
@@ -273,39 +278,6 @@ export function Control() {
 
           {snap.notice && <div className="notice">{snap.notice}</div>}
 
-          <details className="diagnostics">
-            <summary>What the tracker hears (private)</summary>
-            <p className="heard" lang="ar" dir="rtl">
-              {snap.heard.final} <span className="provisional">{snap.heard.provisional}</span>
-            </p>
-            <div className="diag-grid">
-              <div>
-                <h4>Candidates</h4>
-                <ul>{snap.candidates.map((c) => <li key={c.key}>{c.key} · {c.relation} · score {c.score} · {c.matched} matched{c.trailing ? ` · ${c.trailing} unexplained` : ''}</li>)}</ul>
-              </div>
-              <div>
-                <h4>Decisions ({snap.mode})</h4>
-                <ul>{snap.decisions.map((x, i) => <li key={i}>{x.reason}: {x.outcome} · {x.latencyMs} ms{x.truncated ? ' · shortlist truncated' : ''}{x.changedOverlay ? ' · changed screen' : ''}</li>)}</ul>
-                {!snap.decisions.length && <p className="muted">No decision requests yet.</p>}
-              </div>
-              <div>
-                <h4>Timing (this session)</h4>
-                <ul>
-                  <li>Tracker update p50/p95: {snap.metrics.trackerP50Ms ?? '—'} / {snap.metrics.trackerP95Ms ?? '—'} ms ({snap.metrics.updates} updates)</li>
-                  <li>Commit → OBS paint ack p50/p95: {snap.metrics.paintRttP50Ms ?? '—'} / {snap.metrics.paintRttP95Ms ?? '—'} ms</li>
-                  <li>Decision calls: {snap.metrics.decisionCalls}{snap.metrics.decisionP50Ms !== null ? `, p50 ${snap.metrics.decisionP50Ms} ms` : ''}</li>
-                </ul>
-              </div>
-            </div>
-            <label className="row">
-              Tracker mode (experiment)
-              <select value={snap.mode} onChange={(e) => send({ type: 'mode', mode: e.target.value as ControlSnapshot['mode'] })}>
-                <option value="hybrid">Hybrid — JEV only when unsure</option>
-                <option value="deterministic">Deterministic — no JEV</option>
-                <option value="jev_required">JEV required for every change</option>
-              </select>
-            </label>
-          </details>
         </section>
 
         <aside className="side">
@@ -340,6 +312,39 @@ export function Control() {
             held={snap.held}
             onResume={() => send({ type: 'hold', on: false })}
           />
+          <details className="diagnostics">
+            <summary>What the tracker hears (private)</summary>
+            <p className="heard" lang="ar" dir="rtl">
+              {snap.heard.final} <span className="provisional">{snap.heard.provisional}</span>
+            </p>
+            <div className="diag-grid">
+              <div>
+                <h4>Candidates</h4>
+                <ul>{snap.candidates.map((c) => <li key={c.key}>{c.key} · {c.relation} · score {c.score} · {c.matched} matched{c.trailing ? ` · ${c.trailing} unexplained` : ''}</li>)}</ul>
+              </div>
+              <div>
+                <h4>Decisions ({snap.mode})</h4>
+                <ul>{snap.decisions.map((x, i) => <li key={i}>{x.reason}: {x.outcome} · {x.latencyMs} ms{x.truncated ? ' · shortlist truncated' : ''}{x.changedOverlay ? ' · changed screen' : ''}</li>)}</ul>
+                {!snap.decisions.length && <p className="muted">No decision requests yet.</p>}
+              </div>
+              <div>
+                <h4>Timing (this session)</h4>
+                <ul>
+                  <li>Tracker update p50/p95: {snap.metrics.trackerP50Ms ?? '—'} / {snap.metrics.trackerP95Ms ?? '—'} ms ({snap.metrics.updates} updates)</li>
+                  <li>Commit → OBS paint ack p50/p95: {snap.metrics.paintRttP50Ms ?? '—'} / {snap.metrics.paintRttP95Ms ?? '—'} ms</li>
+                  <li>Decision calls: {snap.metrics.decisionCalls}{snap.metrics.decisionP50Ms !== null ? `, p50 ${snap.metrics.decisionP50Ms} ms` : ''}</li>
+                </ul>
+              </div>
+            </div>
+            <label className="row">
+              Tracker mode (experiment)
+              <select value={snap.mode} onChange={(e) => send({ type: 'mode', mode: e.target.value as ControlSnapshot['mode'] })}>
+                <option value="hybrid">Hybrid — JEV only when unsure</option>
+                <option value="deterministic">Deterministic — no JEV</option>
+                <option value="jev_required">JEV required for every change</option>
+              </select>
+            </label>
+          </details>
           <OutputCard
             snap={snap}
             send={send}
