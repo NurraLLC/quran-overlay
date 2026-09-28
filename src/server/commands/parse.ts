@@ -11,6 +11,7 @@ export type Intent =
   | { kind: 'reference'; surah: number; ayah: number | null; route: 'numeric' | 'named_chapter' | 'named_passage' | 'current_chapter' }
   | { kind: 'invalid_reference'; message: string }
   | { kind: 'ambiguous_chapter'; options: ChapterMatch[]; ayah: number | null }
+  | { kind: 'division'; type: 'juz' | 'hizb' | 'rub' | 'manzil'; number: number }
   | { kind: 'search'; query: string };
 
 const LEADING = [
@@ -82,6 +83,18 @@ export function parseIntent(text: string, names: ChapterNames, currentSurah: num
   const phrase = t.join(' ');
   if (NEXT.has(phrase)) return { kind: 'next' };
   if (PREV.has(phrase)) return { kind: 'previous' };
+
+  // "juz 30", "para 30", "hizb five", "manzil 3", "rub 12"
+  const DIV: Record<string, 'juz' | 'hizb' | 'rub' | 'manzil'> = { juz: 'juz', juzz: 'juz', para: 'juz', parah: 'juz', hizb: 'hizb', rub: 'rub', manzil: 'manzil' };
+  if (t.length >= 2 && DIV[t[0]]) {
+    const n = numberAt(t, 1);
+    if (n && n.next === t.length) {
+      const type = DIV[t[0]];
+      const max = { juz: 30, hizb: 60, rub: 240, manzil: 7 }[type];
+      if (n.value < 1 || n.value > max) return { kind: 'invalid_reference', message: `There are ${max} ${type === 'rub' ? 'rub‘ sections' : `${type}s`}; ${n.value} is out of range.` };
+      return { kind: 'division', type, number: n.value };
+    }
+  }
 
   // "2 255" (from "2:255" / "2.255")
   if (t.length === 2 && /^\d{1,3}$/.test(t[0]) && /^\d{1,3}$/.test(t[1])) return validate(Number(t[0]), Number(t[1]), 'numeric', names);

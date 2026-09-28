@@ -72,13 +72,22 @@ export function relationOf(ix: CorpusIndex, anchorVerse: number | null, verseInd
   return 'jump';
 }
 
+/** Resource-backed collision neighbours of a verse (verse indices, strongest first). */
+export type NeighbourProvider = (verseIndex: number) => readonly number[];
+
+export const NEIGHBOUR_BUDGET = 24;
+
+export type CandidateSet = Candidate[] & { neighbourRegions?: number; neighbourTruncated?: number };
+
 export function buildCandidates(
   ix: CorpusIndex,
   obs: readonly Obs[],
   anchor: { pos: number; verseIndex: number } | null,
   priorVerse: number | null,
-): Candidate[] {
-  const regions: Array<{ from: number; to: number; source: 'local' | 'global' }> = [];
+  extraRegions: ReadonlyArray<{ from: number; to: number }> = [],
+  neighbours: NeighbourProvider | null = null,
+): CandidateSet {
+  const regions: Array<{ from: number; to: number; source: 'local' | 'global' | 'neighbour' }> = extraRegions.map((r) => ({ ...r, source: 'global' as const }));
   const m = obs.length;
   const localAround = (pos: number, verseIndex: number) => {
     const back = ix.verseStart[Math.max(0, verseIndex - 1)];
@@ -89,23 +98,56 @@ export function buildCandidates(
   for (const r of globalSeeds(ix, obs)) regions.push({ ...r, source: 'global' });
 
   const byEnd = new Map<number, Candidate>();
-  for (const r of regions) {
-    const a = alignRegion(ix, obs, r.from, r.to);
-    if (!a) continue;
-    const verseIndex = ix.wordVerse[a.endPos];
-    const prev = byEnd.get(a.endPos);
-    if (prev && prev.score >= a.score) continue;
-    let inVerse = 0;
-    for (const [, pos] of a.pairs) if (ix.wordVerse[pos] === verseIndex) inVerse++;
-    byEnd.set(a.endPos, {
-      ...a,
-      verseIndex,
-      inVerse,
-      source: r.source,
-      relation: relationOf(ix, anchor?.verseIndex ?? null, verseIndex),
-    });
+  const alignAll = (rs: typeof regions) => {
+    for (const r of rs) {
+      const a = alignRegion(ix, obs, r.from, r.to);
+      if (!a) continue;
+      const verseIndex = ix.wordVerse[a.endPos];
+      const prev = byEnd.get(a.endPos);
+      if (prev && prev.score >= a.score) continue;
+      let inVerse = 0;
+      for (const [, pos] of a.pairs) if (ix.wordVerse[pos] === verseIndex) inVerse++;
+      byEnd.set(a.endPos, {
+        ...a,
+        verseIndex,
+        inVerse,
+        source: r.source === 'neighbour' ? 'global' : r.source,
+        relation: relationOf(ix, anchor?.verseIndex ?? null, verseIndex),
+      });
+    }
+  };
+  alignAll(regions);
+  let result: CandidateSet = [...byEnd.values()].sort((a, b) => b.score - a.score);
+
+  // Collision neighbours (exact shared phrases, curated similar ayahs) of the anchored verse and of
+  // the strongest global hypotheses are aligned too, so plausible twins stay represented even when
+  // seed clusters were capped. Bounded; truncation is reported, never taken as uniqueness.
+  let added = 0;
+  let truncated = 0;
+  if (neighbours) {
+    const present = new Set(result.map((c) => c.verseIndex));
+    const focal = [...new Set([anchor?.verseIndex, ...result.filter((c) => c.trailing <= 1).slice(0, 2).map((c) => c.verseIndex)].filter((v): v is number => v !== undefined))];
+    const extra: typeof regions = [];
+    for (const f of focal) {
+      for (const n of neighbours(f)) {
+        if (present.has(n)) continue;
+        present.add(n);
+        if (extra.length >= NEIGHBOUR_BUDGET) {
+          truncated++;
+          continue;
+        }
+        extra.push({ from: ix.verseStart[n] - m - 4, to: ix.verseStart[n] + ix.verseLen[n] + 2 * m, source: 'neighbour' });
+      }
+    }
+    added = extra.length;
+    if (extra.length) {
+      alignAll(extra);
+      result = [...byEnd.values()].sort((a, b) => b.score - a.score);
+    }
   }
-  return [...byEnd.values()].sort((a, b) => b.score - a.score);
+  result.neighbourRegions = added;
+  result.neighbourTruncated = truncated;
+  return result;
 }
 
 /** Best candidate per verse (highest score), preserving order. */

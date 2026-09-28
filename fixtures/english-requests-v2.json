@@ -1,0 +1,419 @@
+{
+ "note": "FROZEN 2026-09-28 before any QUL topic/theme/division import and before tuning on it. Do not change retrieval code in response to individual items here; add a new set instead. Expected keys are illustrative (several passages may fit); notTop lists passages that share words but are the wrong context and must not be the first card.",
+ "requests": [
+  {
+   "text": "Nuh builds the ship",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "11:37",
+     "11:38",
+     "23:27",
+     "54:13"
+    ]
+   }
+  },
+  {
+   "text": "the flood of Noah",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "11:40",
+     "11:44",
+     "29:14",
+     "54:11",
+     "54:12"
+    ]
+   }
+  },
+  {
+   "text": "Ibrahim and the birds cut into pieces",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "2:260"
+    ]
+   }
+  },
+  {
+   "text": "Isa speaks from the cradle",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "19:29",
+     "19:30",
+     "3:46"
+    ]
+   }
+  },
+  {
+   "text": "Sulayman and the ants",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "27:18",
+     "27:19"
+    ]
+   }
+  },
+  {
+   "text": "Dawud's armour of iron",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "21:80",
+     "34:10",
+     "34:11"
+    ]
+   }
+  },
+  {
+   "text": "Yunus prays in the darkness",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "21:87",
+     "21:88"
+    ]
+   }
+  },
+  {
+   "text": "Musa strikes the sea with his staff",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "26:63"
+    ]
+   }
+  },
+  {
+   "text": "the sacrifice of Ibrahim's son",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "37:102",
+     "37:103",
+     "37:107"
+    ]
+   }
+  },
+  {
+   "text": "Lut's people and their destruction",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "11:82",
+     "15:73",
+     "15:74",
+     "26:173"
+    ]
+   }
+  },
+  {
+   "text": "honour your mother and father",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "17:23",
+     "17:24",
+     "4:36",
+     "6:151",
+     "31:14",
+     "46:15",
+     "29:8",
+     "2:83"
+    ],
+    "notTop": [
+     "80:35"
+    ]
+   },
+   "note": "80:35 mentions mother and father but is about fleeing on the Day of Judgment"
+  },
+  {
+   "text": "pray for your parents' mercy",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "17:24",
+     "71:28",
+     "14:41"
+    ]
+   }
+  },
+  {
+   "text": "a man flees from his own brother on that day",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "80:34",
+     "80:35",
+     "80:36"
+    ]
+   }
+  },
+  {
+   "text": "mother carried him in weakness upon weakness",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "31:14",
+     "46:15"
+    ]
+   }
+  },
+  {
+   "text": "we will test you with fear and hunger and loss of wealth",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "2:155"
+    ]
+   }
+  },
+  {
+   "text": "Allah is with the patient",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "2:153",
+     "8:46",
+     "2:249",
+     "8:66"
+    ]
+   }
+  },
+  {
+   "text": "be patient with beautiful patience",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "70:5",
+     "12:18",
+     "12:83"
+    ]
+   }
+  },
+  {
+   "text": "no disaster strikes except by Allah's permission",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "64:11",
+     "57:22"
+    ]
+   }
+  },
+  {
+   "text": "don't mock other people",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "49:11"
+    ]
+   }
+  },
+  {
+   "text": "don't spy or backbite",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "49:12"
+    ]
+   }
+  },
+  {
+   "text": "give full measure and weight",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "17:35",
+     "6:152",
+     "11:85",
+     "26:181",
+     "83:1"
+    ]
+   }
+  },
+  {
+   "text": "do not waste, Allah does not love the wasteful",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "7:31",
+     "6:141",
+     "17:26",
+     "17:27"
+    ]
+   }
+  },
+  {
+   "text": "repel evil with what is better",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "41:34",
+     "23:96",
+     "13:22",
+     "28:54"
+    ]
+   }
+  },
+  {
+   "text": "the best provision is taqwa",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "2:197"
+    ]
+   }
+  },
+  {
+   "text": "orphans' property",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "4:10",
+     "4:2",
+     "6:152",
+     "17:34"
+    ]
+   }
+  },
+  {
+   "text": "speak kindly to people",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "2:83",
+     "17:53",
+     "20:44"
+    ]
+   }
+  },
+  {
+   "text": "the believers are brothers",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "49:10"
+    ]
+   }
+  },
+  {
+   "text": "Allah does not burden a soul beyond its ability",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "2:286",
+     "2:233",
+     "6:152",
+     "7:42",
+     "23:62",
+     "65:7"
+    ]
+   }
+  },
+  {
+   "text": "paradise under which rivers flow",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "2:25",
+     "3:15",
+     "3:136",
+     "4:13",
+     "9:72",
+     "9:100"
+    ]
+   },
+   "note": "many correct answers"
+  },
+  {
+   "text": "the day when every soul will find what it did of good",
+   "expect": {
+    "kind": "candidates",
+    "anyOf": [
+     "3:30"
+    ]
+   }
+  },
+  {
+   "text": "juz thirty",
+   "current": null,
+   "expect": {
+    "kind": "navigate",
+    "key": "78:1"
+   }
+  },
+  {
+   "text": "para one",
+   "current": null,
+   "expect": {
+    "kind": "navigate",
+    "key": "1:1"
+   }
+  },
+  {
+   "text": "surah waqiah verse one",
+   "current": null,
+   "expect": {
+    "kind": "navigate",
+    "key": "56:1"
+   }
+  },
+  {
+   "text": "ayah seven",
+   "current": "36:1",
+   "expect": {
+    "kind": "navigate",
+    "key": "36:7"
+   }
+  },
+  {
+   "text": "surah al baqarah two hundred and eighty six",
+   "current": null,
+   "expect": {
+    "kind": "navigate",
+    "key": "2:286"
+   }
+  },
+  {
+   "text": "go to surah ar rahman",
+   "current": null,
+   "expect": {
+    "kind": "navigate",
+    "key": "55:1"
+   }
+  },
+  {
+   "text": "juz thirty one",
+   "expect": {
+    "kind": "invalid_reference"
+   }
+  },
+  {
+   "text": "surah yusuf verse one hundred twelve",
+   "expect": {
+    "kind": "invalid_reference"
+   }
+  },
+  {
+   "text": "hold on I need to adjust the camera",
+   "expect": {
+    "kind": "not_navigate"
+   }
+  },
+  {
+   "text": "salam everyone welcome back",
+   "expect": {
+    "kind": "not_navigate"
+   }
+  },
+  {
+   "text": "let us begin shall we",
+   "expect": {
+    "kind": "not_navigate"
+   }
+  }
+ ]
+}

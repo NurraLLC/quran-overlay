@@ -6,7 +6,7 @@
 
 import type { Word } from '../../shared/transcript';
 import type { Obs } from './align';
-import { bestPerVerse, buildCandidates, type Candidate, type Relation } from './candidates';
+import { bestPerVerse, buildCandidates, type Candidate, type NeighbourProvider, type Relation } from './candidates';
 import { canonicalizeLetterNames, type CorpusIndex } from './index';
 import { tokenize } from './normalize';
 
@@ -59,6 +59,9 @@ export type StepResult = {
   /** Within-verse word progress for the committed verse (search-word index). */
   progress: { verseIndex: number; word: number } | null;
   computeMs: number;
+  /** Collision-neighbour regions aligned this step, and neighbours skipped by the budget. */
+  neighbourRegions?: number;
+  neighbourTruncated?: number;
 };
 
 const SHORTLIST = 12;
@@ -73,6 +76,9 @@ export class TrackerEngine {
   floor = 0;
   private unexplainedSince: number | null = null;
   private lastKey = '';
+
+  /** Resource-backed collision neighbours (null = enrichment off; the corpus seeds still run). */
+  neighbours: NeighbourProvider | null = null;
 
   constructor(
     readonly ix: CorpusIndex,
@@ -141,9 +147,11 @@ export class TrackerEngine {
       res.computeMs = performance.now() - t0;
       return res;
     }
-    const all = buildCandidates(this.ix, obs, this.anchor, this.prior);
+    const all = buildCandidates(this.ix, obs, this.anchor, this.prior, [], this.neighbours);
     const top = bestPerVerse(all);
     res.top = top.slice(0, 8);
+    res.neighbourRegions = all.neighbourRegions ?? 0;
+    res.neighbourTruncated = all.neighbourTruncated ?? 0;
     this.decide(top, obs, { from, to: n }, res, useProvisional);
     res.phase = this.phase;
     if (this.anchor) {
@@ -283,29 +291,39 @@ export class TrackerEngine {
   }
 
   /**
-   * Re-align a decided verse against the newest heard words. Returns the position to publish
-   * (possibly already the following verse if the reciter moved on), or why it cannot be published.
-   * A decision can never resolve a collision: if another location explains the same heard words
-   * with the same corpus words (or an indistinguishable score), the answer is rejected.
+   * Re-check a decided verse against the newest heard words in the tracker's *real* context
+   * (confirmed/manual anchor and prior), with the same rules `decide` applies: fresh evidence for a
+   * jump, continuity of the real anchor breaking exact textual ties, and no publication when another
+   * location explains the same fresh words identically. Returns the position to publish (possibly
+   * the following verse if the reciter moved on). A decision can never resolve a true collision.
    */
   revalidate(verseIndex: number, finals: readonly Word[]): { ok: true; proposal: Proposal } | { ok: false; reason: 'unsupported_now' | 'collision' } {
     const n = finals.length;
     const from = Math.max(this.floor, n - this.cfg.window);
     const obs = this.toObs(finals.slice(from));
     if (!obs.length) return { ok: false, reason: 'unsupported_now' };
-    const pseudoAnchor = { pos: Math.max(0, this.ix.verseStart[verseIndex] - 1), verseIndex };
-    const top = bestPerVerse(buildCandidates(this.ix, obs, pseudoAnchor, null));
-    const path = top.find((c) => c.verseIndex >= verseIndex && c.verseIndex <= verseIndex + 2 && c.trailing <= 1 && c.inVerse >= 1);
+    const m = obs.length;
+    const chosenRegion = { from: this.ix.verseStart[verseIndex] - m - 4, to: this.ix.verseStart[verseIndex] + this.ix.verseLen[verseIndex] + 2 * m };
+    const top = bestPerVerse(buildCandidates(this.ix, obs, this.anchor, this.prior, [chosenRegion], this.neighbours));
+    const onPath = (c: Candidate) => c.verseIndex >= verseIndex && c.verseIndex <= verseIndex + 2;
+    const path = top.find((c) => onPath(c) && c.trailing <= 1 && c.inVerse >= 1 && (c.verseIndex === verseIndex || c.pairs.some(([, pos]) => this.ix.wordVerse[pos] === verseIndex)));
     if (!path) return { ok: false, reason: 'unsupported_now' };
-    const touchesChosen = path.pairs.some(([, pos]) => this.ix.wordVerse[pos] === verseIndex);
-    if (!touchesChosen && path.verseIndex !== verseIndex) return { ok: false, reason: 'unsupported_now' };
-    const signature = (c: Candidate) => c.pairs.map(([oi, pos]) => `${oi}:${this.ix.words[pos]}`).join(' ');
+    const continuing = path.relation === 'same' || path.relation === 'next';
+    const local = this.anchor ? top.find((c) => c.relation === 'same' || c.relation === 'next') : undefined;
+    const freshFrom = local && local !== path ? obs.length - local.trailing : 0;
+    if (this.anchor && !continuing && this.freshStats(path, freshFrom).matched < 2) return { ok: false, reason: 'unsupported_now' };
+    const signature = (c: Candidate) =>
+      c.pairs
+        .filter(([oi]) => oi >= freshFrom)
+        .map(([oi, pos]) => `${oi}:${this.ix.words[pos]}`)
+        .join(' ');
     const sig = signature(path);
-    const onPath = (c: Candidate) => c.verseIndex >= verseIndex && c.verseIndex <= path.verseIndex;
-    const twin = top.find((c) => !onPath(c) && c.trailing <= 1 && (signature(c) === sig || c.score >= path.score - 0.05));
-    if (twin) return { ok: false, reason: 'collision' };
-    const contradicting = top.find((c) => !onPath(c) && c.score > path.score + 1.0);
-    if (contradicting) return { ok: false, reason: 'unsupported_now' };
-    return { ok: true, proposal: { verseIndex: path.verseIndex, pos: path.endPos, reason: 'jump', candidate: path, margin: 0 } };
+    const rivals = top.filter((c) => !onPath(c) && c.trailing <= 1);
+    const twin = rivals.find((c) => signature(c) === sig || c.score >= path.score - 0.05);
+    // Same rule as decide(): continuity of the real anchor distinguishes it from a distant twin.
+    if (twin && !(continuing && twin.relation === 'jump')) return { ok: false, reason: 'collision' };
+    if (rivals.some((c) => c.score > path.score + 1.0)) return { ok: false, reason: 'unsupported_now' };
+    return { ok: true, proposal: { verseIndex: path.verseIndex, pos: path.endPos, reason: continuing ? 'advance' : 'jump', candidate: path, margin: 0 } };
   }
+
 }

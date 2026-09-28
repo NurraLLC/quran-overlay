@@ -1,0 +1,19 @@
+{
+  "name": "one-word-dropped-26-70",
+  "description": "Unknown start on 26:70 with ASR deleting its only distinguishing word (word 5) versus 37:85: the evidence cannot separate them.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "26:70",
+      "omit": [
+        4
+      ]
+    }
+  ],
+  "expect": {
+    "mustNotShow": [
+      "37:85"
+    ]
+  }
+}

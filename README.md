@@ -83,7 +83,9 @@ Local server: transcript assembly → tracker (full-corpus retrieval + bounded a
 | `npm run typecheck` | TypeScript check. |
 | `npm run replay -- --fixture <path> --mode <mode>` | Replay a scenario (`fixtures/scenarios/*.json`) or a capture (`.jsonl`) through the real follower. |
 | `npm run benchmark -- --manifest fixtures/benchmark.json` | All fixtures × three modes → `docs/BENCHMARK.md`. |
-| `npm run eval:english` | 50 English requests (28 held out) → `docs/ENGLISH_EVAL.md`. |
+| `npm run eval:english [-- --set <file> --out <md> --jev]` | English requests → report. `fixtures/english-requests-v2.json` is frozen and untouched by tuning; `--jev` measures live JEV selection. |
+| `npm run resources:import` | Import QUL exports from `data/inbox/`. |
+| `npm run fixtures:derived` | Regenerate resource-derived tracking scenarios from the collision index. |
 | `npm run search:embed` | Optional semantic search: fetch the pinned, hash-checked model and embed all translations — see below. |
 
 Set `QO_DIAGNOSTIC_CAPTURE=1` to write recognized text tokens (never audio) to `data/captures/*.jsonl`, bounded at 20 MB, in the replay format. Off by default.
@@ -96,8 +98,8 @@ Set `QO_DIAGNOSTIC_CAPTURE=1` to write recognized text tokens (never audio) to `
 | Corpus | 25/25 validation checks; all 6,236 ayahs present in display, search and English with matching keys. |
 | Replay (synthetic) | 19 hand-authored scenarios over real corpus text, three modes: deterministic 0 wrong displays, 168/178 ayahs shown; hybrid identical with a *simulated* decider; jev_required 0 wrong but slower (see `docs/BENCHMARK.md`). Streams use assumed provider timing and error rates. |
 | Browser | Playwright walkthrough in Edge (control page + separate reading screen): privacy of search, show/pause/resume, hide/unhide, paging, lower-third promotion, reload recovery. Frames reviewed visually. |
-| Soniox live recognition | **Not verified** — no `SONIOX_API_KEY` was available. SDK integration follows the installed `@soniox/client` 2.3.0 declarations. |
-| JEV decisions | **Not verified live** — no TypeSafe/OpenRouter key. Validated against transport fixtures only; no Arabic accuracy claim. |
+| Soniox connection | Verified 2026-09-28: temporary-key minting (111–176 ms) and a real-time stream opening, accepting audio and closing cleanly. **Recognition of recitation from a microphone has not been tested.** |
+| JEV decisions (OpenRouter) | Live calls verified: strict validation passes on real responses; it chose 67:1 over its textual neighbours (p 0.98) and answered WAIT (p 0.99) on the indistinguishable "يا أيها الذين آمنوا". The service intermittently stalled >10 s during testing (reproduced with curl) while successful calls took ~0.3 s. In replay (`docs/BENCHMARK.md`) hybrid with live JEV matched deterministic exactly (0 wrong, same ayahs shown); jev_required showed fewer ayahs and is not recommended. For English search, live JEV selection raised first-card relevance on a frozen set from 15/30 to 21–26/30 (`docs/ENGLISH_EVAL_V2*.md`). |
 | Microphone → screen latency | **Not measured.** Replay onset→display figures use assumed timing. Measured: tracker compute p95 ≈ 3.5 ms per update on this machine; commit→paint round trip is instrumented on the control page. |
 | OBS rendering | **Not verified** in OBS. The overlay is the same page verified in Edge. |
 
@@ -113,6 +115,14 @@ Set `QO_DIAGNOSTIC_CAPTURE=1` to write recognized text tokens (never audio) to `
 
 More: `docs/REUSE_NOTES.md` (what was carried over from Moard and Nur, and how it is verified here), `docs/BENCHMARK.md`, `docs/ENGLISH_EVAL.md`, and the research/plan in `outputs/`.
 
+
+## QUL resource layer
+
+`src/server/resources/` owns Quran resource relationships (`ResourceCatalog`). Import status is visible on the control page under *Quran resources*.
+
+- **In use now:** the five core corpus sources; a complete corpus-derived exact-phrase collision index (2,823 ayahs share a 4-word phrase with another), given to JEV as decision evidence ("related candidates", "continues with"); contextual revalidation of every decision with the real anchor.
+- **Ready, waiting for data:** importers (written against QUL's exporter source, content-detected, validated, fixture-tested) for similar ayah (74), mutashabihat (73), topics (45), themes (62), QPC-Hafs ayah/word text (86/312), ayah metadata (69) and juz/hizb/rub/manzil (68/67/63/66). QUL downloads need a logged-in account: put the files in `data/inbox/` and run `npm run resources:import`; provenance and coverage go to `corpus/resources.lock.json` and `docs/RESOURCE_COVERAGE.md`. Once imported, curated near-matches become tracker candidate regions, topics become a search channel, and juz/hizb navigation works.
+- **Measured and changed:** aligning exact-phrase neighbours as extra tracker candidates doubled compute with no behavioural change across 51 fixtures, so exact collisions stay decision evidence only.
 
 ## Required next integration: QUL resource layer
 

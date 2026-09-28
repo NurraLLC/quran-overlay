@@ -30,3 +30,16 @@ Not carried over (Moard-specific): always-listening English TALK endpoint tuning
 | Hybrid made 8 wrong displays with a stand-in decider | A decision accepted a passage textually identical to others after two words | Collision check in revalidation; ask only after 3 fresh words | follower collision regression test; benchmark hybrid 0 wrong | `reducer.ts` `revalidate` |
 | Silent-alif marks rendered as dotted circles | Display text and font use different encodings | Evidence-checked display re-encoding | `scripts/check-display-encoding.ts`, rendered mark sheet | `display-encoding.ts` |
 | Isolation test pages "proved" correct rendering | file:// test pages silently fell back to a system font | Test glyphs only inside the served app with the font loaded | — (method note) | this record |
+
+## Resource integration slices (docs/RESOURCE_INTEGRATION.md)
+
+Each row: input → validated coverage → built index → actual caller → changed behaviour → measured result.
+
+| Slice | Input | Coverage | Index | Caller | Behaviour change | Measured |
+|---|---|---|---|---|---|---|
+| Exact collisions (derived) | Imlaei text, all 6,236 ayahs | 3,771 shared 4-word phrases; 2,823 ayahs with ≥1 twin | `resources/phrases.ts` (24 ms build) | JEV locate evidence (`related_candidates`) | Decisions see which candidates are textual twins | Candidate-region use removed: 0 behaviour change, ~2.4× compute over 51 fixtures (`docs/BENCHMARK.md`) |
+| Contextual revalidation | Real anchor/prior + fresh evidence | — | — | `follower.onOutcome` | Continuity breaks identical-text ties (3:2 vs 2:255 with anchor; 55:13 refrain); true collisions refused | `tests/tracker/revalidate.test.ts`; live JEV WAIT + local refusal on a 20-way opening |
+| QUL similar/mutashabihat/topics/themes/divisions/QPC | Exports not yet downloaded (login required) | — | Importers + compiled artifacts | Tracker regions, search channel, navigation (wired, inactive without data) | Pending | Importer fixture tests only (`tests/resources/importers.test.ts`) |
+| Live JEV for search | OpenRouter Decisions | — | — | `CommandResolver.search` (progressive, hedged) | JEV pick badged; retrieved cards shown at once | Frozen v2 first-card relevance 15/30 → 21–26/30 (uncontrolled provider conditions) |
+
+Provider finding: OpenRouter Decisions intermittently stalled >10 s (no response byte) during testing; identical requests otherwise took ~0.3 s; reproduced with curl, so not a client fault. Recitation decisions keep their 600 ms deadline and fall back to deterministic results; only user-triggered search is hedged (one duplicate after 700 ms, never after rate-limit/auth errors).

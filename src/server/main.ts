@@ -11,6 +11,7 @@ import { SemanticRetriever } from './search/semantic';
 import { Session } from './sessions';
 import { TRACKER_MODES, type TrackerMode } from './tracker/follower';
 import { buildIndex } from './tracker/index';
+import { ResourceCatalog } from './resources/catalog';
 
 function loadEnvFile() {
   const file = path.join(ROOT, '.env');
@@ -38,7 +39,7 @@ function decisionSetup(): { client: DecisionClient | null; provider: JevGateway 
   const key = keys[chosen];
   if (!key) return { client: null, provider: chosen, detail: `JEV_PROVIDER=${chosen} but ${chosen === 'typesafe' ? 'TYPESAFE_API_KEY' : 'OPENROUTER_API_KEY'} is not set.` };
   try {
-    return { client: new JevClient(chosen, key), provider: chosen, detail: `JEV via ${chosen === 'typesafe' ? 'TypeSafe direct' : 'OpenRouter Decisions'} (not live-verified in this build).` };
+    return { client: new JevClient(chosen, key), provider: chosen, detail: `JEV via ${chosen === 'typesafe' ? 'TypeSafe direct' : 'OpenRouter Decisions'}; in hybrid mode it is asked only when the tracker is unsure, and every answer is re-checked locally.` };
   } catch {
     return { client: null, provider: chosen, detail: 'JEV key has an invalid format.' };
   }
@@ -49,12 +50,13 @@ async function main() {
   const t0 = performance.now();
   const corpus = new Corpus(loadCorpus());
   const ix = buildIndex(corpus.verses);
+  const catalog = new ResourceCatalog(corpus, ix);
   const semantic = new SemanticRetriever();
   void semantic.init();
   const jev = decisionSetup();
   const modeEnv = (process.env.TRACKER_MODE || 'hybrid') as TrackerMode;
   const mode: TrackerMode = TRACKER_MODES.includes(modeEnv) ? modeEnv : 'hybrid';
-  const resolver = new CommandResolver(corpus, semantic, jev.client);
+  const resolver = new CommandResolver(corpus, semantic, jev.client, catalog);
 
   let port = Number(process.env.PORT || 4317);
   if (!(await portFree(port))) {
@@ -81,6 +83,7 @@ async function main() {
     },
     overlayUrl: (view) => `${publicOrigin}/overlay#view=${view}`,
     captureDir: process.env.QO_DIAGNOSTIC_CAPTURE === '1' ? path.join(ROOT, 'data', 'captures') : null,
+    catalog,
   });
   // QO_OWNER_TOKEN exists only so automated browser tests can open the control page; normal runs
   // generate a fresh random capability each start.

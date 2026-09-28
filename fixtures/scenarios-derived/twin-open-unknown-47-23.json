@@ -1,0 +1,19 @@
+{
+  "name": "twin-open-unknown-47-23",
+  "description": "Unknown start on 47:23, whose first four words also open 4:52; continues into 47:24.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "47:23-47:24"
+    }
+  ],
+  "expect": {
+    "mustShow": [
+      "47:24"
+    ],
+    "mustNotShow": [
+      "4:52"
+    ]
+  }
+}

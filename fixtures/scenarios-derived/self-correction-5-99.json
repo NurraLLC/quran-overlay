@@ -1,0 +1,26 @@
+{
+  "name": "self-correction-5-99",
+  "description": "Starts 5:99, stops after 4 words, restarts it from the beginning, continues to 5:100.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "5:99",
+      "words": [
+        0,
+        4
+      ]
+    },
+    {
+      "pause": 800
+    },
+    {
+      "recite": "5:99-5:100"
+    }
+  ],
+  "expect": {
+    "mustShow": [
+      "5:100"
+    ]
+  }
+}

@@ -93,9 +93,11 @@ export class Timeline {
     }
   }
 
-  reciteVerse(v: Verse, range?: [number, number]) {
+  /** Recite a verse (or a word range of it); `omit` drops word positions (simulated ASR deletions). */
+  reciteVerse(v: Verse, range?: [number, number], omit?: number[]) {
     const words = v.searchText.split(/\s+/).map(asrSurface).filter((w) => /[ء-ي]/.test(w));
-    const slice = range ? words.slice(range[0], range[1]) : words;
+    const kept = omit?.length ? words.filter((_, i) => !omit.includes(i)) : words;
+    const slice = range ? kept.slice(range[0], range[1]) : kept;
     this.speak(slice, v.key);
     this.t += this.timing.ayahPauseMs - this.timing.wordGapMs;
   }

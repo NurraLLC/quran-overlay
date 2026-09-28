@@ -1,0 +1,19 @@
+{
+  "name": "one-word-dropped-20-43",
+  "description": "Unknown start on 20:43 with ASR deleting its only distinguishing word (word 1) versus 79:17: the evidence cannot separate them.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "20:43",
+      "omit": [
+        0
+      ]
+    }
+  ],
+  "expect": {
+    "mustNotShow": [
+      "79:17"
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "twin-open-unknown-16-119",
+  "description": "Unknown start on 16:119, whose first four words also open 16:110; continues into 16:120.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "16:119-16:120"
+    }
+  ],
+  "expect": {
+    "mustShow": [
+      "16:120"
+    ],
+    "mustNotShow": [
+      "16:110"
+    ]
+  }
+}

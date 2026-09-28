@@ -35,6 +35,9 @@ function spanText(ix: CorpusIndex, from: number, to: number) {
   return ix.consWords.slice(Math.max(0, from), Math.min(ix.totalWords, to)).join(' ');
 }
 
+/** Which sources relate two verses (e.g. "shares exact phrases", "QUL similar ayah"). */
+export type RelateFn = (a: number, b: number) => string[];
+
 export function buildLocate(
   ix: CorpusIndex,
   gateway: JevGateway,
@@ -42,19 +45,29 @@ export function buildLocate(
   provisional: string,
   currentKey: string | null,
   shortlist: readonly Candidate[],
+  relate: RelateFn | null = null,
 ): LocatePacket {
   const heardFinal = obs.map((o) => o.cons).join(' ');
   const describe = (c: Candidate, id: string) => {
     const aligned = c.pairs.map(([oi, pos]) => `${obs[oi].cons}=${ix.consWords[pos]}`).join(' ');
-    return [
-      id,
-      {
-        reference_text: spanText(ix, c.startPos - 2, c.endPos + 4),
-        observed_alignment: `${c.matched} of ${obs.length} heard words align in order (${aligned}); ${c.trailing} most recent heard words unexplained`,
-        relation: RELATION_NOTE[c.relation] ?? c.relation,
-      },
-    ] as const;
+    const d: Record<string, unknown> = {
+      reference_text: spanText(ix, c.startPos - 2, c.endPos + 1),
+      // What the reciter would say next on this path: the words that will separate twins.
+      continues_with: spanText(ix, c.endPos + 1, c.endPos + 5),
+      observed_alignment: `${c.matched} of ${obs.length} heard words align in order (${aligned}); ${c.trailing} most recent heard words unexplained`,
+      relation: RELATION_NOTE[c.relation] ?? c.relation,
+    };
+    if (relate) {
+      const rel = shortlistIds
+        .filter((o) => o.c !== c)
+        .map((o) => ({ id: o.id, why: relate(c.verseIndex, o.c.verseIndex) }))
+        .filter((o) => o.why.length)
+        .map((o) => `${o.id} (${o.why.join(', ')})`);
+      if (rel.length) d.related_candidates = rel.join('; ');
+    }
+    return [id, d] as const;
   };
+  let shortlistIds: Array<{ id: string; c: Candidate }> = [];
   const encodeWith = (cands: Candidate[]) => {
     const { state, questions } = assemble(cands);
     return encodeRequest(gateway, state, questions);
@@ -62,6 +75,7 @@ export function buildLocate(
   const assemble = (cands: Candidate[]) => {
     const candidates: Record<string, unknown> = {};
     const criteria: Record<string, string> = {};
+    shortlistIds = cands.map((c, i) => ({ id: `c${i}`, c }));
     cands.forEach((c, i) => {
       const [id, d] = describe(c, `c${i}`);
       candidates[id] = d;

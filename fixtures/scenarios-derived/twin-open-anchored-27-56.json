@@ -1,0 +1,20 @@
+{
+  "name": "twin-open-anchored-27-56",
+  "description": "27:55 then 27:56 (shares its opening with 29:24) then 27:57.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "27:55-27:57"
+    }
+  ],
+  "expect": {
+    "mustShow": [
+      "27:56",
+      "27:57"
+    ],
+    "mustNotShow": [
+      "29:24"
+    ]
+  }
+}

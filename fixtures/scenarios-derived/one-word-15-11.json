@@ -1,0 +1,19 @@
+{
+  "name": "one-word-15-11",
+  "description": "15:11 and 43:7 differ only at word 4; recited after 15:10.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "15:10-15:11"
+    }
+  ],
+  "expect": {
+    "mustShow": [
+      "15:11"
+    ],
+    "mustNotShow": [
+      "43:7"
+    ]
+  }
+}

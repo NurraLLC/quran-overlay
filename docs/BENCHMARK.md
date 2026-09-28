@@ -1,76 +1,54 @@
 # Tracker replay benchmark
 
-Generated 2026-09-28T12:30:39.803Z by `npm run benchmark -- --manifest fixtures/benchmark.json` on this machine.
+Generated 2026-09-28T13:44:47.729Z by `npm run benchmark -- --manifest fixtures/benchmark.json` on this machine.
 
-**What this is:** the three tracker modes replayed over identical provider event streams in virtual time.
-**What this is not:** a live latency or accuracy result. All streams below are corpus-derived synthetic Soniox-like token streams with assumed timing (final tokens 700 ms after each word, provisional 150 ms) and, for the `noisy-*` fixtures, assumed ASR error rates. Decision calls in `hybrid` and `jev_required` use a simulated client with a fixed 350 ms latency that always picks the top-ranked local candidate — it is **not JEV** and says nothing about JEV accuracy on Arabic. No microphone, Soniox, JEV or OBS measurement is included.
+**What this measures:** identical provider event streams replayed through the real follower in virtual time, across tracker mode × decision provider × resource enrichment. **Live JEV** rows made real OpenRouter Decisions calls; each answer was delivered at start + measured wall-clock latency in virtual time.
 
-| Mode | Decisions | Runs | Ayahs shown / recited | Wrong displays | Clears | Runs failing expectations | Onset→display p50 / p95 (ms, assumed timing) | Words heard before display p50 | Decision calls | Tracker compute p50 / p95 (ms, measured) |
-|---|---|---|---|---|---|---|---|---|---|---|
-| deterministic | none | 19 | 168 / 178 | 0 | 1 | 0 | 1295 / 2265 | 3 | 0 | 2.48 / 3.70 |
-| hybrid | simulated (350 ms; NOT JEV) | 19 | 168 / 178 | 0 | 1 | 0 | 1295 / 2265 | 3 | 17 | 2.57 / 3.49 |
-| jev_required | simulated (350 ms; NOT JEV) | 19 | 155 / 178 | 0 | 4 | 3 | 1745 / 2715 | 4 | 279 | 2.55 / 3.34 |
+**What it does not measure:** microphone audio, Soniox recognition, or real reciters. Every stream is a corpus-derived synthetic Soniox-like token stream (final tokens 700 ms after each word, provisional 150 ms; `noisy-*` fixtures add assumed ASR error rates). JEV here judges clean or synthetically corrupted text, which is not yet evidence about real ASR output of recitation. Onset→display uses the assumed timing.
 
-## Per fixture
+## All fixtures
 
-| Fixture | Mode | Shown / recited | Wrong | Clears | Onset→display p50 (ms) | Calls | Expectations |
-|---|---|---|---|---|---|---|---|
-| common-opening | deterministic | 3 / 3 | 0 | 0 | 1350 | 0 | pass |
-| common-opening | hybrid | 3 / 3 | 0 | 0 | 1350 | 2 | pass |
-| common-opening | jev_required | 3 / 3 | 0 | 0 | 1800 | 6 | pass |
-| different-surah-jumps | deterministic | 11 / 12 | 0 | 0 | 1240 | 0 | pass |
-| different-surah-jumps | hybrid | 11 / 12 | 0 | 0 | 1240 | 1 | pass |
-| different-surah-jumps | jev_required | 9 / 12 | 0 | 1 | 1635 | 17 | never showed 112:1; 1 clears > 0 |
-| english-commentary | deterministic | 6 / 7 | 0 | 1 | 1240 | 0 | pass |
-| english-commentary | hybrid | 6 / 7 | 0 | 1 | 1240 | 0 | pass |
-| english-commentary | jev_required | 3 / 7 | 0 | 1 | 1690 | 34 | final display null ≠ expected 19:7; never showed 19:5 |
-| fatiha-to-baqarah | deterministic | 11 / 12 | 0 | 0 | 1295 | 0 | pass |
-| fatiha-to-baqarah | hybrid | 11 / 12 | 0 | 0 | 1295 | 3 | pass |
-| fatiha-to-baqarah | jev_required | 11 / 12 | 0 | 0 | 1745 | 14 | pass |
-| letter-names | deterministic | 3 / 4 | 0 | 0 | 1350 | 0 | pass |
-| letter-names | hybrid | 3 / 4 | 0 | 0 | 1350 | 0 | pass |
-| letter-names | jev_required | 3 / 4 | 0 | 0 | 1800 | 4 | pass |
-| longest-ayah | deterministic | 3 / 3 | 0 | 0 | 1240 | 0 | pass |
-| longest-ayah | hybrid | 3 / 3 | 0 | 0 | 1240 | 0 | pass |
-| longest-ayah | jev_required | 3 / 3 | 0 | 0 | 1690 | 3 | pass |
-| manual-correction | deterministic | 5 / 6 | 0 | 0 | 1240 | 0 | pass |
-| manual-correction | hybrid | 5 / 6 | 0 | 0 | 1240 | 0 | pass |
-| manual-correction | jev_required | 5 / 6 | 0 | 0 | 1690 | 6 | pass |
-| mid-ayah-start | deterministic | 2 / 2 | 0 | 0 | 1670 | 0 | pass |
-| mid-ayah-start | hybrid | 2 / 2 | 0 | 0 | 1670 | 0 | pass |
-| mid-ayah-start | jev_required | 2 / 2 | 0 | 0 | 2120 | 3 | pass |
-| noisy-baqarah-11 | deterministic | 11 / 12 | 0 | 0 | 1295 | 0 | pass |
-| noisy-baqarah-11 | hybrid | 11 / 12 | 0 | 0 | 1295 | 0 | pass |
-| noisy-baqarah-11 | jev_required | 11 / 12 | 0 | 0 | 1745 | 14 | pass |
-| noisy-baqarah-12 | deterministic | 11 / 12 | 0 | 0 | 1295 | 0 | pass |
-| noisy-baqarah-12 | hybrid | 11 / 12 | 0 | 0 | 1295 | 0 | pass |
-| noisy-baqarah-12 | jev_required | 11 / 12 | 0 | 0 | 1745 | 14 | pass |
-| noisy-baqarah-13 | deterministic | 11 / 12 | 0 | 0 | 1295 | 0 | pass |
-| noisy-baqarah-13 | hybrid | 11 / 12 | 0 | 0 | 1295 | 0 | pass |
-| noisy-baqarah-13 | jev_required | 11 / 12 | 0 | 0 | 1745 | 13 | pass |
-| noisy-kahf-11 | deterministic | 10 / 10 | 0 | 0 | 1295 | 0 | pass |
-| noisy-kahf-11 | hybrid | 10 / 10 | 0 | 0 | 1295 | 1 | pass |
-| noisy-kahf-11 | jev_required | 10 / 10 | 0 | 0 | 1745 | 13 | pass |
-| noisy-kahf-12 | deterministic | 10 / 10 | 0 | 0 | 1295 | 0 | pass |
-| noisy-kahf-12 | hybrid | 10 / 10 | 0 | 0 | 1295 | 1 | pass |
-| noisy-kahf-12 | jev_required | 10 / 10 | 0 | 0 | 1745 | 15 | pass |
-| noisy-kahf-13 | deterministic | 10 / 10 | 0 | 0 | 1240 | 0 | pass |
-| noisy-kahf-13 | hybrid | 10 / 10 | 0 | 0 | 1240 | 1 | pass |
-| noisy-kahf-13 | jev_required | 10 / 10 | 0 | 0 | 1690 | 13 | pass |
-| refrain-55 | deterministic | 24 / 25 | 0 | 0 | 1295 | 0 | pass |
-| refrain-55 | hybrid | 24 / 25 | 0 | 0 | 1295 | 0 | pass |
-| refrain-55 | jev_required | 24 / 25 | 0 | 0 | 1745 | 27 | pass |
-| repeat-previous | deterministic | 7 / 7 | 0 | 0 | 1295 | 0 | pass |
-| repeat-previous | hybrid | 7 / 7 | 0 | 0 | 1295 | 1 | pass |
-| repeat-previous | jev_required | 5 / 7 | 0 | 0 | 1745 | 19 | pass |
-| same-surah-jump | deterministic | 4 / 5 | 0 | 0 | 1350 | 0 | pass |
-| same-surah-jump | hybrid | 4 / 5 | 0 | 0 | 1350 | 4 | pass |
-| same-surah-jump | jev_required | 4 / 5 | 0 | 0 | 1800 | 10 | pass |
-| short-surahs | deterministic | 21 / 21 | 0 | 0 | 1240 | 0 | pass |
-| short-surahs | hybrid | 21 / 21 | 0 | 0 | 1240 | 2 | pass |
-| short-surahs | jev_required | 15 / 21 | 0 | 2 | 1745 | 49 | never showed 110:1; never showed 112:1 |
-| silence | deterministic | 5 / 5 | 0 | 0 | 1240 | 0 | pass |
-| silence | hybrid | 5 / 5 | 0 | 0 | 1240 | 1 | pass |
-| silence | jev_required | 5 / 5 | 0 | 0 | 1690 | 5 | pass |
+| Configuration | Runs | Ayahs shown / recited | Wrong displays | Clears | Runs failing expectations | Onset→display p50 / p95 ms | Words before display p50 | Decision calls | Outcomes | JEV p50 / p95 ms | Cost USD | Tracker p95 ms |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| deterministic · no decisions · enrichment off | 51 | 227 / 244 | 0 | 1 | 0 | 1295 / 4425 | 3 | 0 | — | — / — | 0.0000 | 3.34 |
+| deterministic · no decisions · enrichment on | 51 | 227 / 244 | 0 | 1 | 0 | 1295 / 4425 | 3 | 0 | — | — / — | 0.0000 | 7.97 |
+| hybrid · live JEV · enrichment off | 51 | 227 / 244 | 0 | 1 | 0 | 1295 / 4425 | 3 | 94 | deadline 48, wait 28, below_gate 12, error 5, accepted 1 | 600 / 600 | 0.0037 | 3.37 |
+| hybrid · live JEV · enrichment on | 51 | 227 / 244 | 0 | 1 | 0 | 1295 / 4425 | 3 | 95 | deadline 54, below_gate 11, accepted 1, wait 25, error 4 | 600 / 600 | 0.0038 | 7.90 |
+| jev_required · live JEV · enrichment on | 51 | 196 / 244 | 0 | 10 | 10 | 1693 / 7343 | 4 | 565 | deadline 94, accepted 201, below_gate 175, error 2, wait 93 | 233 / 600 | 0.0400 | 7.41 |
 
-Onset→display is measured from the end of the first word of each recited ayah to the moment that ayah is first shown, using the synthetic stream's assumed provider timing; it includes waiting for enough distinguishing words. "Wrong displays" counts commits of an ayah that was not among the last 12 recited words. Tracker compute is real wall-clock time on this machine per material update.
+## Hand-authored scenarios
+
+| Configuration | Runs | Ayahs shown / recited | Wrong displays | Clears | Runs failing expectations | Onset→display p50 / p95 ms | Words before display p50 | Decision calls | Outcomes | JEV p50 / p95 ms | Cost USD | Tracker p95 ms |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| deterministic · no decisions · enrichment off | 19 | 168 / 178 | 0 | 1 | 0 | 1295 / 2265 | 3 | 0 | — | — / — | 0.0000 | 3.44 |
+| deterministic · no decisions · enrichment on | 19 | 168 / 178 | 0 | 1 | 0 | 1295 / 2265 | 3 | 0 | — | — / — | 0.0000 | 7.87 |
+| hybrid · live JEV · enrichment off | 19 | 168 / 178 | 0 | 1 | 0 | 1295 / 2265 | 3 | 14 | deadline 6, wait 5, below_gate 3 | 456 / 600 | 0.0007 | 3.47 |
+| hybrid · live JEV · enrichment on | 19 | 168 / 178 | 0 | 1 | 0 | 1295 / 2265 | 3 | 15 | deadline 8, below_gate 4, accepted 1, wait 2 | 600 / 600 | 0.0006 | 8.12 |
+| jev_required · live JEV · enrichment on | 19 | 136 / 178 | 0 | 10 | 10 | 1666 / 6964 | 4 | 349 | deadline 93, accepted 141, below_gate 109, error 2, wait 4 | 273 / 600 | 0.0200 | 7.39 |
+
+## Resource-derived scenarios
+
+Generated by `npm run fixtures:derived` from the complete exact-phrase collision index: twin openings (unknown start / anchored), near-identical ayahs differing by one word, ASR deleting that word, self-correction.
+
+| Configuration | Runs | Ayahs shown / recited | Wrong displays | Clears | Runs failing expectations | Onset→display p50 / p95 ms | Words before display p50 | Decision calls | Outcomes | JEV p50 / p95 ms | Cost USD | Tracker p95 ms |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| deterministic · no decisions · enrichment off | 32 | 59 / 66 | 0 | 0 | 0 | 1405 / 7795 | 3 | 0 | — | — / — | 0.0000 | 2.86 |
+| deterministic · no decisions · enrichment on | 32 | 59 / 66 | 0 | 0 | 0 | 1405 / 7795 | 3 | 0 | — | — / — | 0.0000 | 8.07 |
+| hybrid · live JEV · enrichment off | 32 | 59 / 66 | 0 | 0 | 0 | 1405 / 7795 | 3 | 80 | wait 23, deadline 42, below_gate 9, error 5, accepted 1 | 600 / 600 | 0.0030 | 3.22 |
+| hybrid · live JEV · enrichment on | 32 | 59 / 66 | 0 | 0 | 0 | 1405 / 7795 | 3 | 80 | deadline 46, wait 23, below_gate 7, error 4 | 600 / 600 | 0.0032 | 7.44 |
+| jev_required · live JEV · enrichment on | 32 | 60 / 66 | 0 | 0 | 0 | 2182 / 8797 | 4 | 216 | wait 89, below_gate 66, accepted 60, deadline 1 | 207 / 380 | 0.0200 | 7.51 |
+
+## Failing expectations
+
+- jev_required · live JEV · enrichment on — common-opening: never showed 2:153
+- jev_required · live JEV · enrichment on — different-surah-jumps: never showed 112:1; never showed 67:1
+- jev_required · live JEV · enrichment on — english-commentary: final display 19:6 ≠ expected 19:7
+- jev_required · live JEV · enrichment on — fatiha-to-baqarah: final display 2:4 ≠ expected 2:5; never showed 1:2; never showed 2:5; 2 clears > 0
+- jev_required · live JEV · enrichment on — letter-names: final display 2:3 ≠ expected 2:4; never showed 2:2
+- jev_required · live JEV · enrichment on — manual-correction: never showed 3:2
+- jev_required · live JEV · enrichment on — noisy-baqarah-11: never showed 2:3
+- jev_required · live JEV · enrichment on — noisy-baqarah-13: never showed 2:3
+- jev_required · live JEV · enrichment on — refrain-55: 1 clears > 0
+- jev_required · live JEV · enrichment on — short-surahs: never showed 110:1; never showed 112:1
+
+"Wrong displays" counts commits of an ayah that was not among the last 12 recited words. Zero wrong displays with more missed ayahs is a tradeoff, not an automatic improvement.

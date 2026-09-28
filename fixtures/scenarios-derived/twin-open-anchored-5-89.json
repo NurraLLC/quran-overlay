@@ -1,0 +1,20 @@
+{
+  "name": "twin-open-anchored-5-89",
+  "description": "5:88 then 5:89 (shares its opening with 2:225) then 5:90.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "5:88-5:90"
+    }
+  ],
+  "expect": {
+    "mustShow": [
+      "5:89",
+      "5:90"
+    ],
+    "mustNotShow": [
+      "2:225"
+    ]
+  }
+}

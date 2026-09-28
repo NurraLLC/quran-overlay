@@ -1,0 +1,26 @@
+{
+  "name": "self-correction-16-30",
+  "description": "Starts 16:30, stops after 4 words, restarts it from the beginning, continues to 16:31.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "16:30",
+      "words": [
+        0,
+        4
+      ]
+    },
+    {
+      "pause": 800
+    },
+    {
+      "recite": "16:30-16:31"
+    }
+  ],
+  "expect": {
+    "mustShow": [
+      "16:31"
+    ]
+  }
+}

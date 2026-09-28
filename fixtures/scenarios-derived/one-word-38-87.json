@@ -1,0 +1,19 @@
+{
+  "name": "one-word-38-87",
+  "description": "38:87 and 68:52 differ only at word 1; recited after 38:86.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "38:86-38:87"
+    }
+  ],
+  "expect": {
+    "mustShow": [
+      "38:87"
+    ],
+    "mustNotShow": [
+      "68:52"
+    ]
+  }
+}

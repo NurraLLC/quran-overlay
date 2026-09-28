@@ -345,6 +345,17 @@ export function Control() {
               </select>
             </label>
           </details>
+          <details className="diagnostics">
+            <summary>Quran resources ({snap.setup.resources.filter((r) => r.state === 'in use').length} in use)</summary>
+            <ul className="resources">
+              {snap.setup.resources.map((r) => (
+                <li key={r.id}>
+                  <strong>{r.title}</strong> <span className={`res-state res-${r.state.split(' ')[0]}`}>{r.state}</span>
+                  {r.detail && <div className="muted">{r.detail}</div>}
+                </li>
+              ))}
+            </ul>
+          </details>
           <OutputCard
             snap={snap}
             send={send}
@@ -446,6 +457,7 @@ function ResultCard({ card, confirmed, onShow }: { card: SearchCard; confirmed: 
       </div>
       <p className="result-ar" lang="ar" dir="rtl">{toQpcHafsEncoding(shown.arabic)}</p>
       <p className="result-en">{shown.english}</p>
+      {shown.key === card.key && card.foundBy.length > 0 && <p className="found-by">Found by {card.foundBy.join(' · ')}</p>}
       <div className="result-actions">
         <button className="primary" onClick={() => onShow(shown.key)}>Show on stream</button>
         <button onClick={() => go(shown.key === card.nextKey ? card.key : card.prevKey)} disabled={shown.key === card.prevKey || !card.prevKey}>Earlier</button>
@@ -525,7 +537,7 @@ function FindCard(p: {
       {!p.pending && (r?.kind === 'no_match' || r?.kind === 'invalid_reference') && <p className="warn">{r.message}</p>}
       {!p.pending && r?.kind === 'candidates' && (
         <div className="results">
-          <p className="hint">{r.status}</p>
+          <p className={r.refining ? 'pending' : 'hint'}>{r.status}</p>
           <ol>
             {r.cards.map((c) => (
               <ResultCard key={c.key} card={c} confirmed={c.key === r.confirmedKey} onShow={p.onShow} />

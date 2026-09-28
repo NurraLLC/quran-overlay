@@ -131,6 +131,8 @@ export type SearchCard = {
   english: string;
   prevKey: string | null;
   nextKey: string | null;
+  /** Which retrieval channels found this passage (translation wording, meaning, QUL topic, reference). */
+  foundBy: string[];
 };
 
 export type CommandResult =
@@ -143,6 +145,8 @@ export type CommandResult =
       /** Key JEV selected among the retrieved cards, if any. */
       confirmedKey: string | null;
       status: string;
+      /** Preliminary cards shown while JEV is still choosing; a final result follows. */
+      refining: boolean;
     }
   | { kind: 'no_match'; message: string }
   | { kind: 'invalid_reference'; message: string };
@@ -186,6 +190,8 @@ export type ControlSnapshot = {
     soniox: boolean;
     jev: { provider: 'typesafe' | 'openrouter' | null; configured: boolean; detail: string };
     semantic: string;
+    /** Resource capability status for the broadcaster/developer (never shown on the overlay). */
+    resources: Array<{ id: string; title: string; state: string; detail: string }>;
   };
   overlay: { url: string; clients: number; lastPaintRttMs: number | null };
   metrics: {

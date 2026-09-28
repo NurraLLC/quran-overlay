@@ -9,7 +9,7 @@
 // published (never the request's old cursor).
 
 import type { Word } from '../../shared/transcript';
-import { buildLocate, readLocate, type LocatePacket, type LocateVerdict } from '../providers/decisions';
+import { buildLocate, readLocate, type LocatePacket, type LocateVerdict, type RelateFn } from '../providers/decisions';
 import { JevError, type DecisionClient } from '../providers/jev';
 import type { CorpusIndex } from './index';
 import { TrackerEngine, type Ask, type Proposal, type StepResult, type TrackerConfig } from './reducer';
@@ -60,6 +60,8 @@ export class RecitationFollower {
   private providerBackoffUntil = -Infinity;
   private committedVerse: number | null = null;
   readonly decisions: DecisionRecord[] = [];
+  /** Resource relationships given to decisions as evidence (null = enrichment off). */
+  relate: RelateFn | null = null;
   readonly computeMs: number[] = [];
 
   constructor(
@@ -219,7 +221,7 @@ export class RecitationFollower {
     if (!this.scheduler || !this.client) return;
     if (this.clock.now() < this.providerBackoffUntil) return;
     const currentKey = this.committedVerse !== null ? this.ix.verses[this.committedVerse].key : null;
-    const locate = buildLocate(this.ix, this.client.gateway, ask.obs, this.provisionalText, currentKey, ask.shortlist);
+    const locate = buildLocate(this.ix, this.client.gateway, ask.obs, this.provisionalText, currentKey, ask.shortlist, this.relate);
     const fingerprint = [
       ask.reason,
       this.captureEpoch,

@@ -9,11 +9,14 @@ import type { DecisionClient } from '../server/providers/jev';
 import { RecitationFollower, type FollowerEvent, type TrackerMode } from '../server/tracker/follower';
 import type { CorpusIndex } from '../server/tracker/index';
 import type { Clock } from '../server/tracker/scheduler';
+import type { Decision, Question } from '../server/providers/jev';
+import { attachCatalog } from '../server/sessions';
+import type { ResourceCatalog } from '../server/resources/catalog';
 import { TranscriptBuffer, type WireToken } from '../shared/transcript';
 import { DEFAULT_TIMING, NO_ERRORS, rng, Timeline, type ReplayEvent, type SynthErrors, type SynthTiming, type TruthWord } from './synth';
 
 export type ScenarioStep =
-  | { recite: string; words?: [number, number] }
+  | { recite: string; words?: [number, number]; omit?: number[] }
   | { pause: number }
   | { say: string; as?: string }
   | { control: { kind: 'manual'; key: string } | { kind: 'stop' } | { kind: 'hold'; on: boolean } | { kind: 'resume' } };
@@ -33,6 +36,8 @@ export type Loaded = { name: string; events: ReplayEvent[]; truth: TruthWord[] |
 
 class ReplayClock implements Clock {
   t = 0;
+  /** Real provider calls in flight: virtual time does not advance past them until they settle. */
+  readonly pendingReal = new Set<Promise<unknown>>();
   private timers: Array<{ at: number; fn: () => void; id: number }> = [];
   private seq = 0;
   now() {
@@ -48,6 +53,7 @@ class ReplayClock implements Clock {
   }
   async advanceTo(t: number) {
     for (;;) {
+      while (this.pendingReal.size) await Promise.all([...this.pendingReal]);
       this.timers.sort((a, b) => a.at - b.at || a.id - b.id);
       const next = this.timers[0];
       if (!next || next.at > t) break;
@@ -66,6 +72,39 @@ class ReplayClock implements Clock {
         this.clearTimeout(id);
         reject(Object.assign(new Error('aborted'), { code: 'CANCELLED' }));
       });
+    });
+  }
+}
+
+/**
+ * Runs a real decision client while virtual time is frozen; the answer is delivered at
+ * start + measured wall-clock latency in virtual time, so deadlines and staleness behave as live.
+ */
+class VirtualLatencyClient implements DecisionClient {
+  readonly gateway: DecisionClient['gateway'];
+  calls = 0;
+  constructor(
+    private readonly real: DecisionClient,
+    private readonly clock: ReplayClock,
+  ) {
+    this.gateway = real.gateway;
+  }
+  evaluate(state: unknown, questions: Record<string, Question>, opts: { timeoutMs: number; signal?: AbortSignal }): Promise<Decision> {
+    this.calls++;
+    const vStart = this.clock.now();
+    const rStart = performance.now();
+    return new Promise<Decision>((resolve, reject) => {
+      const track = this.real.evaluate(state, questions, { timeoutMs: 5000 }).then(
+        (r) => ({ ok: true as const, r }),
+        (e) => ({ ok: false as const, e }),
+      );
+      const settle = track.then((res) => {
+        const latency = performance.now() - rStart;
+        this.clock.setTimeout(() => (res.ok ? resolve({ ...res.r, latencyMs: latency }) : reject(res.e)), Math.max(0, vStart + latency - this.clock.now()));
+      });
+      this.clock.pendingReal.add(settle);
+      void settle.finally(() => this.clock.pendingReal.delete(settle));
+      opts.signal?.addEventListener('abort', () => reject(Object.assign(new Error('cancelled'), { code: 'CANCELLED' })));
     });
   }
 }
@@ -92,7 +131,7 @@ export function buildScenario(sc: Scenario, corpus: Corpus): Omit<Loaded, 'name'
       const from = corpus.verse(a);
       const to = corpus.verse(b ?? a);
       if (!from || !to) throw new Error(`Unknown reference in scenario ${sc.name}: ${step.recite}`);
-      for (let i = from.index; i <= to.index; i++) tl.reciteVerse(corpus.at(i)!, i === from.index && i === to.index ? step.words : undefined);
+      for (let i = from.index; i <= to.index; i++) tl.reciteVerse(corpus.at(i)!, i === from.index && i === to.index ? step.words : undefined, step.omit);
     } else if ('pause' in step) tl.pause(step.pause);
     else if ('say' in step) tl.speak(step.say.split(/\s+/), step.as ?? null);
     else tl.control(step.control);
@@ -105,6 +144,7 @@ export type ReplayResult = {
   label: string;
   mode: TrackerMode;
   decisions: string;
+  enrichment: 'on' | 'off';
   timeline: Array<{ t: number; event: string; key: string | null; detail?: string }>;
   metrics: {
     commits: number;
@@ -118,6 +158,9 @@ export type ReplayResult = {
     wordsHeardBeforeDisplay: number[];
     decisionCalls: number;
     decisionAccepted: number;
+    decisionOutcomes: Record<string, number>;
+    decisionCostUsd: number;
+    decisionLatencyMs: number[];
     trackerComputeMs: number[];
     expectationFailures: string[];
   };
@@ -129,10 +172,11 @@ export async function replay(
   ix: CorpusIndex,
   mode: TrackerMode,
   decisions: { kind: 'none' } | { kind: 'simulated'; latencyMs: number } | { kind: 'client'; client: DecisionClient },
+  catalog: ResourceCatalog | null = null,
 ): Promise<ReplayResult> {
   const clock = new ReplayClock();
   const client: DecisionClient | null =
-    decisions.kind === 'none' ? null : decisions.kind === 'client' ? decisions.client : new SimulatedDecisionClient(decisions.latencyMs, (ms, s) => clock.wait(ms, s));
+    decisions.kind === 'none' ? null : decisions.kind === 'client' ? new VirtualLatencyClient(decisions.client, clock) : new SimulatedDecisionClient(decisions.latencyMs, (ms, s) => clock.wait(ms, s));
   const timeline: ReplayResult['timeline'] = [];
   let shown: number | null = null;
   const onEvent = (e: FollowerEvent) => {
@@ -147,6 +191,7 @@ export async function replay(
     }
   };
   const f = new RecitationFollower(ix, corpus.id, 'replay', client, mode, onEvent, clock);
+  if (catalog) attachCatalog(f, catalog);
   let buf = new TranscriptBuffer();
   let epoch = 1;
   f.newCapture(epoch);
@@ -228,8 +273,9 @@ export async function replay(
     fixture: loaded.name,
     label: loaded.label,
     mode,
-    decisions: decisions.kind === 'simulated' ? `simulated (${decisions.latencyMs} ms; NOT JEV)` : decisions.kind === 'client' ? `live ${decisions.client.gateway}` : 'none',
+    decisions: decisions.kind === 'simulated' ? `simulated (${decisions.latencyMs} ms; NOT JEV)` : decisions.kind === 'client' ? `live JEV via ${decisions.client.gateway}` : 'none',
     timeline,
+    enrichment: catalog ? 'on' : 'off',
     metrics: {
       commits: commits.length,
       wrongCommits: wrong.length,
@@ -241,6 +287,9 @@ export async function replay(
       wordsHeardBeforeDisplay: wordsBefore,
       decisionCalls: f.stats?.started ?? 0,
       decisionAccepted: f.decisions.filter((d) => d.outcome === 'accepted').length,
+      decisionOutcomes: f.decisions.reduce<Record<string, number>>((m, d) => ((m[d.outcome] = (m[d.outcome] ?? 0) + 1), m), {}),
+      decisionCostUsd: f.decisions.reduce((n, d) => n + (d.usage?.cost ?? 0), 0),
+      decisionLatencyMs: f.decisions.filter((d) => d.outcome !== 'stale').map((d) => d.latencyMs),
       trackerComputeMs: [...f.computeMs],
       expectationFailures: failures,
     },

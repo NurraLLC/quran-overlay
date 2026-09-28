@@ -1,0 +1,19 @@
+{
+  "name": "twin-open-unknown-5-89",
+  "description": "Unknown start on 5:89, whose first four words also open 2:225; continues into 5:90.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "5:89-5:90"
+    }
+  ],
+  "expect": {
+    "mustShow": [
+      "5:90"
+    ],
+    "mustNotShow": [
+      "2:225"
+    ]
+  }
+}

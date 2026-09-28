@@ -30,6 +30,7 @@ import type { Corpus } from './corpus/load';
 import type { DecisionClient } from './providers/jev';
 import { RecitationFollower, type FollowerEvent, type TrackerMode } from './tracker/follower';
 import type { CorpusIndex } from './tracker/index';
+import type { ResourceCatalog } from './resources/catalog';
 import { realClock, type Clock } from './tracker/scheduler';
 
 export const DISCONNECT_GRACE_MS = 5000;
@@ -51,6 +52,8 @@ export type SessionOptions = {
   clock?: Clock;
   /** Explicit, bounded, local diagnostic capture of provider token events (no audio). */
   captureDir?: string | null;
+  /** Resource relationships (collision neighbours, topics, divisions); optional. */
+  catalog?: ResourceCatalog | null;
 };
 
 const CAPTURE_MAX_BYTES = 20 * 1024 * 1024;
@@ -107,6 +110,7 @@ export class Session {
   constructor(private readonly o: SessionOptions) {
     this.clock = o.clock ?? realClock;
     this.follower = new RecitationFollower(o.ix, o.corpus.id, this.sessionEpoch, o.decisionClient, o.mode, (e) => this.onFollower(e), this.clock);
+    if (o.catalog) attachCatalog(this.follower, o.catalog);
     this.display = this.buildDisplay();
   }
 
@@ -494,7 +498,11 @@ export class Session {
     this.emitControl({ type: 'command_pending', requestId });
     let result: CommandResult;
     try {
-      result = await this.o.resolver.resolve(text, this.displayVerse ?? this.trackerVerse, ctrl.signal);
+      result = await this.o.resolver.resolve(text, this.displayVerse ?? this.trackerVerse, ctrl.signal, (pre) => {
+        if (this.latestCommand !== cmd || ctrl.signal.aborted || pre.kind !== 'candidates') return;
+        for (const c of pre.cards) for (const k of [c.key, c.prevKey, c.nextKey]) if (k) cmd.keys.add(k);
+        this.emitControl({ type: 'command_result', requestId, result: pre });
+      });
     } catch {
       result = { kind: 'no_match', message: 'Search failed unexpectedly; exact references still work.' };
     }
@@ -564,7 +572,7 @@ export class Session {
         truncated: d.truncated,
         changedOverlay: d.changedOverlay,
       })),
-      setup: { soniox: this.o.setup.soniox, jev: this.o.setup.jev, semantic: this.o.setup.semantic() },
+      setup: { soniox: this.o.setup.soniox, jev: this.o.setup.jev, semantic: this.o.setup.semantic(), resources: this.resourceView() },
       overlay: { url: this.overlayUrl, clients: this.overlayClients, lastPaintRttMs: this.paintRtts.at(-1) ?? null },
       metrics: {
         trackerP50Ms: pct(this.follower.computeMs, 0.5),
@@ -580,4 +588,34 @@ export class Session {
   }
 
   private candidatesView: ControlSnapshot['candidates'] = [];
+  private resourceCache: ControlSnapshot['setup']['resources'] | null = null;
+
+  private resourceView(): ControlSnapshot['setup']['resources'] {
+    if (!this.o.catalog) return [];
+    if (this.resourceCache) return this.resourceCache;
+    this.resourceCache = this.o.catalog.status().map((r) => {
+      const st = r.stage;
+      const state = st.consumers.length ? 'in use' : st.indexed ? 'imported, not used yet' : st.downloaded ? 'downloaded' : 'not imported';
+      const cov = r.coverage ? `${r.coverage.verseKeys.toLocaleString()} ayahs covered, ${r.coverage.rejectedRows} rejected rows. ` : '';
+      const used = st.consumers.length ? `Used by: ${st.consumers.join(', ')}. ` : '';
+      return { id: r.id, title: r.title, state, detail: `${cov}${used}${r.note ?? ''}`.trim() };
+    });
+    return this.resourceCache;
+  }
+}
+
+/** Connect resource relationships to the tracker and decision evidence, recording the consumers. */
+export function attachCatalog(follower: RecitationFollower, catalog: ResourceCatalog) {
+  // Candidate regions only when curated near-match edges exist (see ResourceCatalog.neighbours).
+  follower.engine.neighbours = catalog.similar || catalog.mutashabihat ? catalog.neighbours : null;
+  follower.relate = (a, b) => catalog.relationSources(a, b);
+  catalog.consume(catalog.phrases.id, 'decision.evidence');
+  if (catalog.similar) {
+    catalog.consume('qul:similar-ayah:74', 'tracker.candidates');
+    catalog.consume('qul:similar-ayah:74', 'decision.evidence');
+  }
+  if (catalog.mutashabihat) {
+    catalog.consume('qul:mutashabihat:73', 'tracker.candidates');
+    catalog.consume('qul:mutashabihat:73', 'decision.evidence');
+  }
 }

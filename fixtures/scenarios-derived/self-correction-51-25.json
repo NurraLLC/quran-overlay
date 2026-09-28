@@ -1,0 +1,26 @@
+{
+  "name": "self-correction-51-25",
+  "description": "Starts 51:25, stops after 4 words, restarts it from the beginning, continues to 51:26.",
+  "synthetic": true,
+  "seed": 7,
+  "script": [
+    {
+      "recite": "51:25",
+      "words": [
+        0,
+        4
+      ]
+    },
+    {
+      "pause": 800
+    },
+    {
+      "recite": "51:25-51:26"
+    }
+  ],
+  "expect": {
+    "mustShow": [
+      "51:26"
+    ]
+  }
+}
