@@ -110,6 +110,8 @@ export class Timeline {
     this.events.push({ t: this.t, type: 'control', action });
   }
 
+  private readonly spoken: Array<{ final: WireToken[]; prov: WireToken[]; partialT: number | null; provT: number; finalT: number }> = [];
+
   private emitWord(word: string, verseKey: string | null) {
     const start = this.t;
     const end = start + this.duration(word);
@@ -124,13 +126,43 @@ export class Timeline {
         endMs: i === pieces.length - 1 ? end : Math.round((start + end) / 2),
         confidence: 0.9,
       }));
-    this.events.push({ t: end + this.timing.provisionalLagMs, type: 'result', tokens: tokens(false) });
-    this.events.push({ t: end + this.timing.finalLagMs, type: 'result', tokens: tokens(true) });
+    this.spoken.push({
+      final: tokens(true),
+      prov: tokens(false),
+      // Like Soniox, a longer word first appears half-formed while it is still being spoken.
+      partialT: pieces.length > 1 ? Math.round((start + end) / 2) + this.timing.provisionalLagMs : null,
+      provT: end + this.timing.provisionalLagMs,
+      finalT: end + this.timing.finalLagMs,
+    });
     this.t = end + this.timing.wordGapMs;
   }
 
-  /** Events sorted by time; ties keep insertion order. */
+  /**
+   * Provider results in Soniox's protocol: each result carries newly final tokens exactly once plus
+   * the *whole* current provisional suffix (every word heard but not yet final), merged with control
+   * events in time order (controls first on ties).
+   */
   sorted(): ReplayEvent[] {
-    return this.events.map((e, i) => ({ e, i })).sort((a, b) => a.e.t - b.e.t || a.i - b.i).map((x) => x.e);
+    const times = new Set<number>();
+    for (const w of this.spoken) {
+      if (w.partialT !== null) times.add(w.partialT);
+      times.add(w.provT);
+      times.add(w.finalT);
+    }
+    const results: ReplayEvent[] = [];
+    for (const t of [...times].sort((a, b) => a - b)) {
+      const tokens: WireToken[] = [];
+      for (const w of this.spoken) if (w.finalT === t) tokens.push(...w.final);
+      for (const w of this.spoken) {
+        if (w.finalT <= t) continue;
+        if (w.provT <= t) tokens.push(...w.prov);
+        else if (w.partialT !== null && w.partialT <= t) tokens.push(w.prov[0]);
+      }
+      results.push({ t, type: 'result', tokens });
+    }
+    const controls = this.events.map((e, i) => ({ e, i }));
+    return [...controls.map((x) => ({ e: x.e, k: 0, i: x.i })), ...results.map((e, i) => ({ e, k: 1, i }))]
+      .sort((a, b) => a.e.t - b.e.t || a.k - b.k || a.i - b.i)
+      .map((x) => x.e);
   }
 }

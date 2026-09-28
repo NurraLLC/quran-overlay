@@ -1,10 +1,12 @@
-// npm run replay:session -- [capture.jsonl ...]
-// Replays real diagnostic captures through the actual app session (confirmed follower + live
-// cursor + display state) in virtual time and measures what the audience screen showed:
+// npm run replay:session -- [capture.jsonl | scenario.json | folder ...]
+// Replays captures or scenarios through the actual app session (confirmed follower + live cursor +
+// display state) in virtual time and measures what the audience screen showed:
 //   - "first word ended -> ayah on screen": from the end of each shown ayah's first recognised word
 //     (provider audio clock) to the display change (capture clock; audio starts slightly later, so
-//     values are upper bounds),
-//   - flip-backs (screen returning to an earlier ayah it already left) and blanks.
+//     values from real captures are upper bounds),
+//   - wrong displays (scenarios only: an ayah not among the last 12 recited words' ayahs),
+//   - flip-backs (screen returning to an ayah it already left; real repeats also count),
+//   - blanks, and highlight gaps (word highlight vanishing while the same ayah stays up).
 // Compares the live cursor's two-word and one-word advance on identical input.
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -48,10 +50,20 @@ class VClock implements Clock {
 const corpus = new Corpus(loadCorpus());
 const ix = buildIndex(corpus.verses);
 const resolver = new CommandResolver(corpus, null, null);
-const files = process.argv.slice(2).length ? process.argv.slice(2) : readdirSync('data/captures').filter((f) => f.endsWith('.jsonl')).map((f) => path.join('data/captures', f));
+const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+const onlyAdv = process.argv.includes('--one') ? [1 as const] : process.argv.includes('--two') ? [2 as const] : ([2, 1] as const);
+const expand = (p: string) =>
+  p.endsWith('.json') || p.endsWith('.jsonl')
+    ? [p]
+    : readdirSync(p)
+        .filter((f) => f.endsWith('.json') || f.endsWith('.jsonl'))
+        .map((f) => path.join(p, f));
+const files = args.length ? args.flatMap(expand) : expand('data/captures');
+const quiet = files.length > 8;
 
-type Result = { lat: number[]; flips: number; blanks: number; shown: string[] };
-async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
+type Result = { lat: number[]; flips: number; blanks: number; shown: string[]; wrong: string[]; gaps: number };
+
+export async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
   const clock = new VClock();
   const session = new Session({
     corpus,
@@ -66,8 +78,13 @@ async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
   (session as unknown as { liveCursor: { advanceWords: 1 | 2 } }).liveCursor.advanceWords = advanceWords;
   const changes: Array<{ t: number; key: string | null }> = [];
   let last: string | null = null;
+  let hadCursor = false;
+  let gaps = 0;
   session.onDisplay((s) => {
     const key = s.visible ? (s.verse?.key ?? null) : null;
+    const cursor = (s as unknown as { cursor: unknown }).cursor;
+    if (key === last && key !== null && hadCursor && !cursor) gaps++;
+    hadCursor = !!cursor;
     if (key !== last) {
       changes.push({ t: clock.now(), key });
       last = key;
@@ -80,6 +97,7 @@ async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
   for (const e of fx.events) {
     clock.advanceTo(e.t);
     if (e.type === 'result') session.handle({ type: 'transcript', captureEpoch: 1, seq: seq++, tokens: e.tokens as WireToken[], receivedAt: e.t });
+    else if (e.action.kind === 'manual') session.handle({ type: 'goto', key: e.action.key });
   }
   clock.advanceTo(clock.now() + 4000);
 
@@ -111,24 +129,41 @@ async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
       }
     }
   }
-  return { lat, flips, blanks, shown: seen };
+  const wrong: string[] = [];
+  if (fx.truth) {
+    const manual = new Set(fx.events.flatMap((e) => (e.type === 'control' && e.action.kind === 'manual' ? [e.action.key] : [])));
+    for (const ch of changes) {
+      if (!ch.key || manual.has(ch.key)) continue;
+      const recent = fx.truth.filter((w) => w.verseKey && w.startMs <= ch.t).slice(-12).map((w) => w.verseKey);
+      if (!recent.includes(ch.key)) wrong.push(`${ch.key}@${(ch.t / 1000).toFixed(1)}s`);
+    }
+  }
+  return { lat, flips, blanks, shown: seen, wrong, gaps };
 }
 
 const q = (xs: number[], p: number) => {
   const s = [...xs].sort((a, b) => a - b);
   return s.length ? (s[Math.min(s.length - 1, Math.floor(s.length * p))] / 1000).toFixed(2) : '—';
 };
-for (const adv of [2, 1] as const) {
+for (const adv of onlyAdv) {
   const all: number[] = [];
   let flips = 0;
   let blanks = 0;
+  let gaps = 0;
+  const wrong: string[] = [];
   console.log(`\nlive cursor advance on ${adv} word${adv > 1 ? 's' : ''}:`);
   for (const f of files) {
     const r = await run(f, adv);
     all.push(...r.lat);
     flips += r.flips;
     blanks += r.blanks;
-    console.log(`  ${path.basename(f)}: ${r.shown.join(' ')}${r.flips ? ` | flip-backs ${r.flips}` : ''}${r.blanks ? ` | blanks ${r.blanks}` : ''}`);
+    gaps += r.gaps;
+    wrong.push(...r.wrong.map((w) => `${path.basename(f)} ${w}`));
+    if (!quiet || r.wrong.length || (process.argv.includes('--flips') && r.flips)) {
+      console.log(`  ${path.basename(f)}: ${r.shown.join(' ')}${r.flips ? ` | flip-backs ${r.flips}` : ''}${r.blanks ? ` | blanks ${r.blanks}` : ''}${r.wrong.length ? ` | WRONG ${r.wrong.join(', ')}` : ''}`);
+    }
   }
-  console.log(`  => ${all.length} ayahs: first word ended -> on screen p50 ${q(all, 0.5)} s, p90 ${q(all, 0.9)} s, best ${q(all, 0)} s; flip-backs ${flips}; blanks ${blanks}`);
+  console.log(
+    `  => ${files.length} files, ${all.length} ayahs: first word ended -> on screen p50 ${q(all, 0.5)} s, p90 ${q(all, 0.9)} s, best ${q(all, 0)} s; wrong ${wrong.length}; flip-backs ${flips}; blanks ${blanks}; highlight gaps ${gaps}`,
+  );
 }

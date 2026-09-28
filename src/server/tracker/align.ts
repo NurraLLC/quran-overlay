@@ -14,6 +14,8 @@ export type Obs = {
   foreign: boolean;
   startMs: number | null;
   endMs: number | null;
+  /** The newest heard word is still forming (provisional prefix of a longer word). */
+  partial?: boolean;
 };
 
 export type Alignment = {
@@ -63,6 +65,10 @@ function sim(a: string, b: string): number {
 function pairScore(o: Obs, key: string, cons: string, w: number): { score: number; s: number } {
   if (o.foreign) return { score: -ALIGN.mismatch, s: 0 };
   if (o.key === key) return { score: w + (o.cons === cons ? 0.05 : 0), s: 1 };
+  // A still-forming word counts as the corpus word it is a substantial prefix of (≥3 letters and
+  // ≥ half the word): Soniox streams "ف" → "فلع" → "فلعلك", and waiting for the whole word cost
+  // ~0.5 s at every ayah change. Shorter prefixes get no credit.
+  if (o.partial && o.key.length >= 3 && o.key.length * 2 >= key.length && key.startsWith(o.key)) return { score: w * 0.9, s: 1 };
   const s = sim(o.key, key);
   if (s >= 0.75) return { score: w * s * 0.8, s };
   if (s >= 0.6) return { score: w * 0.3, s };

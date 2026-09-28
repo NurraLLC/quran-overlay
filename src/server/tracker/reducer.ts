@@ -129,7 +129,10 @@ export class TrackerEngine {
       const toks = tokenize(w.text);
       for (const t of toks) out.push({ ...t, startMs: w.startMs, endMs: w.endMs });
     }
-    return canonicalizeLetterNames(this.ix, out) as Obs[];
+    const obs = canonicalizeLetterNames(this.ix, out) as Obs[];
+    // Only the newest word can still be forming.
+    if (words.length && words[words.length - 1].open && obs.length) obs[obs.length - 1] = { ...obs[obs.length - 1], partial: true };
+    return obs;
   }
 
   step(finals: readonly Word[], provisional: readonly Word[] = [], useProvisional = false): StepResult {

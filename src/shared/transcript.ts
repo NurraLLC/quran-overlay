@@ -19,6 +19,8 @@ export type Word = {
   endMs: number | null;
   /** Index in the closed-final word list of this capture epoch; -1 for provisional words. */
   index: number;
+  /** Not closed yet: the provider may still extend or rewrite it (e.g. "فلع" → "فلعلك"). */
+  open?: boolean;
 };
 
 export type ApplyResult = {
@@ -135,7 +137,7 @@ export class TranscriptBuffer {
   }
 
   /** Complete current hypothesis, with the pending final subword included exactly once. */
-  liveWords(): Word[] { return [...this.closed, ...this.provisionalWords()]; }
+  liveWords(): Word[] { return [...this.closed, ...this.provisionalWords().map((w) => ({ ...w, open: true }))]; }
 
   get hasProvisional(): boolean { return this.provisional.length > 0; }
 
