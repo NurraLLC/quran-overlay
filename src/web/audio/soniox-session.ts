@@ -86,6 +86,13 @@ class TimedSource implements AudioSource {
   }
 }
 
+/**
+ * Listening stops by itself after this long without Arabic recitation (silence, noise or only
+ * English talk): audio is billed while it streams, so an idle microphone must not stay open.
+ */
+export const IDLE_STOP_MS = 60_000;
+const ARABIC = /[ء-ي]/;
+
 export class SonioxCapture {
   private timed: TimedSource | null = null;
   /** performance.now() corresponding to Soniox audio time 0 of the current stream, if known. */
@@ -101,6 +108,9 @@ export class SonioxCapture {
   private lastProcMs = 0;
   private lastResultAt = 0;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
+  private idleTimer: ReturnType<typeof setInterval> | null = null;
+  /** performance.now() of the last recognised Arabic (kept across proactive restarts). */
+  private lastArabicAt = 0;
   private deviceId: string | null = null;
   private commandOnly = false;
   readonly router = new TokenRouter();
@@ -233,6 +243,12 @@ export class SonioxCapture {
     });
     if (!this.commandOnly) {
       this.restartTimer = setTimeout(() => void this.restart(), PROACTIVE_RESTART_MS);
+      if (!this.lastArabicAt) this.lastArabicAt = performance.now();
+      this.idleTimer = setInterval(() => {
+        if (performance.now() - this.lastArabicAt < IDLE_STOP_MS) return;
+        this.stop();
+        this.setStatus({ state: 'off', detail: `Stopped listening after ${Math.round(IDLE_STOP_MS / 60_000)} minute without recitation, so nothing is used while idle. Start again when you are ready.` });
+      }, 2000);
     }
   }
 
@@ -247,6 +263,7 @@ export class SonioxCapture {
       endMs: t.end_ms,
       confidence: t.confidence,
     }));
+    if (tokens.some((t) => ARABIC.test(t.text))) this.lastArabicAt = performance.now();
     const { recitation, finalized } = this.router.route(tokens);
     if (this.router.active) this.onHearing(this.router.hearing());
     if (finalized) this.finalizeWaiter?.(false);
@@ -257,6 +274,8 @@ export class SonioxCapture {
   private teardown() {
     if (this.restartTimer) clearTimeout(this.restartTimer);
     this.restartTimer = null;
+    if (this.idleTimer) clearInterval(this.idleTimer);
+    this.idleTimer = null;
     const rec = this.recording;
     this.recording = null;
     try {
@@ -274,13 +293,16 @@ export class SonioxCapture {
     const wasCommandOnly = this.commandOnly;
     this.teardown();
     this.router.cancel();
+    this.lastArabicAt = 0;
     this.setStatus({ state: 'off', detail: null });
     if (!wasCommandOnly) this.send({ type: 'capture', captureEpoch: epoch, event: 'stopped' });
   }
 
   private async restart() {
     const device = this.deviceId;
+    const lastArabic = this.lastArabicAt;
     this.stop();
+    this.lastArabicAt = lastArabic; // a proactive reconnect is not new speech
     await this.start(device);
   }
 

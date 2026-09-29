@@ -446,7 +446,7 @@ function VoiceCard(p: {
             ? p.capture.detail
             : p.listening
               ? 'Recite and the screen follows. Or just say it in English: “go to Surah Maryam, ayah three”, “show the ayah about the orphan”, or describe one to find it here privately. Other English talk never changes the screen.'
-              : 'One microphone for both: recite to follow, or speak an English request. Audio goes to Soniox.'}
+              : (p.capture.detail ?? 'One microphone for both: recite to follow, or speak an English request. Audio goes to Soniox only while listening, and listening stops by itself after a minute without recitation.')}
       </p>
 
       <form
