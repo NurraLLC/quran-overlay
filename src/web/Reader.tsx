@@ -318,6 +318,11 @@ export function Reader() {
               <summary>How your voice is used</summary>
               <p>While the microphone is on, your voice goes to our speech-recognition provider (Soniox) and nowhere else. We do not record or keep your audio, and listening stops by itself after a minute without recitation. Reading and search never use the microphone.</p>
             </details>
+            {/* Streamers: the same following, as a broadcast overlay driven from the control page. */}
+            <a className="r-stream" href="/control">
+              <span className="r-stream-k">Streaming?</span> Put the ayah you recite on your stream, with OBS
+              <span aria-hidden="true"> →</span>
+            </a>
           </section>
         )}
         {cur && !shownSurah && <p className="r-loading">Opening {cur.surahName}…</p>}

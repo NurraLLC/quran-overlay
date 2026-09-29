@@ -471,3 +471,8 @@ details.r-privacy p { text-align: left; margin: 8px 0 0 !important; font-size: 1
 /* The recited word's meaning, sized for a stream (viewers often watch at 720p): a third of the
    Arabic size, never under 26px, on a soft dark pill so it holds over any footage. */
 .gloss { font-size: max(26px, 0.3em); padding: 0.1em 0.5em 0.14em; border-radius: 999px; background: rgba(9, 19, 23, 0.72); line-height: 1.15; }
+
+/* The welcome's way in for streamers. */
+.r-stream { display: inline-block; margin: 26px auto 0; padding: 10px 16px; border: 1px solid rgba(207, 170, 98, 0.28); border-radius: 12px; font-size: 14px; color: var(--text); text-decoration: none; }
+.r-stream:hover, .r-stream:focus-visible { border-color: var(--gold); color: var(--ivory); }
+.r-stream-k { color: var(--gold); font-weight: 650; }

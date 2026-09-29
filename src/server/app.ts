@@ -444,7 +444,15 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   // ---------- web app ----------
   if (existsSync(WEB_DIST)) {
     await app.register(fastifyStatic, { root: WEB_DIST, prefix: '/', index: false, wildcard: true });
-    const indexHtml = () => readFileSync(path.join(WEB_DIST, 'index.html'), 'utf8');
+    // Link previews need an absolute image address: the public origin, when there is one.
+    const origin = hosted?.publicOrigin?.replace(/\/+$/, '');
+    const indexHtml = () => {
+      const html = readFileSync(path.join(WEB_DIST, 'index.html'), 'utf8');
+      if (!origin) return html;
+      return html
+        .replace('content="/og.png"', `content="${origin}/og.png"`)
+        .replace('<meta property="og:type"', `<meta property="og:url" content="${origin}/" /><meta property="og:type"`);
+    };
     for (const route of ['/control', '/overlay', '/read', '/reader']) app.get(route, (_req, reply) => reply.type('text/html').send(indexHtml()));
     app.get('/', (_req, reply) => (hosted ? reply.type('text/html').send(indexHtml()) : reply.redirect('/control')));
   } else {
