@@ -10,3 +10,5 @@ playwright-report
 .env.*
 *.log
 .git
+# Secrets for the compose deployment: never inside the image.
+deploy/production.env

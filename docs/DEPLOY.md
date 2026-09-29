@@ -15,6 +15,22 @@ Reading, search and the Quran text are free in both. Only live listening is mete
 
 Measured on 2026-09-28: Soniox real-time recognition is **$0.12 per hour** of listening; a JEV decision through OpenRouter is about **$0.000015**. Audio goes from the browser straight to Soniox (with short-lived, time-capped keys), so the server carries no audio and a small VM is enough. The free allowances below bound what free visitors can cost you per day.
 
+## Quickest: one server, one command
+
+On a small Linux server with Docker (1 vCPU and 1 GB of memory is enough; audio never touches the server):
+
+1. Point your domain's DNS A record at the server.
+2. Copy the repository to the server, then `cp deploy/production.env.example deploy/production.env` and fill it in (domain, keys, free allowances).
+3. Start the app and Caddy (HTTPS certificates are obtained automatically):
+
+```bash
+docker compose -f deploy/compose.yml --env-file deploy/production.env up -d --build
+```
+
+4. Open `https://your.domain/healthz`, then the site. To update later: `git pull` and run the same command.
+
+`deploy/production.env` is git-ignored and excluded from the image; only the app container reads it. The credit ledger and signing secret live on the `qo-state` volume: back it up.
+
 ## Build and run
 
 ```bash

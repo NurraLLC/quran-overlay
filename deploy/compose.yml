@@ -1,0 +1,31 @@
+# One server, one command: the app plus Caddy for HTTPS (automatic certificates, WebSockets).
+#   cp deploy/production.env.example deploy/production.env   # then fill it in
+#   docker compose -f deploy/compose.yml --env-file deploy/production.env up -d --build
+# The app is reachable only through Caddy; its credit ledger and signing secret live on a volume.
+services:
+  app:
+    build: ..
+    restart: unless-stopped
+    env_file: production.env
+    environment:
+      QO_HOSTED: "1"
+      QO_HOST: 0.0.0.0
+      QO_TRUST_PROXY: "1"
+      QO_PUBLIC_ORIGIN: https://${QO_DOMAIN:?set QO_DOMAIN in production.env}
+    volumes:
+      - qo-state:/app/data/state
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [app]
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      QO_DOMAIN: ${QO_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+volumes:
+  qo-state:
+  caddy-data:
+  caddy-config:
