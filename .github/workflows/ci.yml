@@ -52,7 +52,7 @@ jobs:
           set -euo pipefail
           docker run -d --name reader-check -p 127.0.0.1:4317:4317 -e QO_BASE_PATH=/quran-reader quran-reader:check
           trap 'docker logs reader-check; docker rm -f reader-check' EXIT
-          curl --fail --retry 30 --retry-connrefused --retry-delay 1 http://127.0.0.1:4317/healthz
+          curl --fail --retry 30 --retry-all-errors --retry-delay 1 --max-time 5 http://127.0.0.1:4317/healthz
           docker exec reader-check npx tsx scripts/sponsor-pool.ts 1 ci-check
           curl --fail -c /tmp/reader-cookie http://127.0.0.1:4317/quran-reader/api/me
           curl --fail -b /tmp/reader-cookie http://127.0.0.1:4317/quran-reader/api/pool | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p["left"] == 3600, p'

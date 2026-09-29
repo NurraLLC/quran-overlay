@@ -20,8 +20,8 @@ The product's useful promise is simple: open the Quran, recite, and keep your pl
 | Corpus | 25/25 checks; all 6,236 ayahs and 114 surahs retained. No scripture, font or corpus changes. |
 | Browser | Nine Edge tests pass, including first-load retry, surah retry and delayed-response cancellation. Hosted `/quran-reader/` inspected in the in-app browser; About links retain the prefix; phone reading and desktop overlay screenshots inspected. |
 | Replay | 105 files, 805 ayahs; zero wrong ayahs and zero blank screens. The harness also reports 18 backward transitions and 70 highlight gaps. These were not individually adjudicated in this pass; do not describe this as flawless tracking. Its negative best-latency value makes the aggregate timing unsuitable for a new latency claim. |
-| Proxy | Official Caddy 2.11.4 portable validator accepts the production Caddyfile. Archive SHA-256 matched GitHub's release digest. Live Cloudflare forwarding remains untested. |
-| Container | Docker is unavailable locally. The new CI job must pass before deployment; source review alone is not container proof. |
+| Proxy | Official Caddy 2.11.4 accepts the production Caddyfile locally and Caddy's container validates it in CI. A local HTTP check rejected forged visitor headers from a direct caller and forwarded a simulated trusted edge's visitor address. Live Cloudflare forwarding remains untested. |
+| Container | The production Docker image built successfully in CI on `6208b8f`. The initial smoke check encountered a connection reset before the app was ready; its read-only health retry now covers that startup race. Require the complete start/fund/readback job to pass before deployment. |
 | Provider / microphone / OBS | No new paid provider calls, owner microphone recitation, or OBS-native rendering in this review. Browser silence tests use a stand-in provider and non-recitation tone. |
 
 ## Launch dependencies
