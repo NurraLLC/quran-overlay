@@ -1,0 +1,18 @@
+# Origin for the existing Sites Worker. QO_ORIGIN_TOKEN is a shared server-side secret.
+# The application is bound to loopback; only authenticated path forwarding is exposed.
+{$QO_DOMAIN} {
+  @reader {
+    path /quran-reader /quran-reader/*
+    header X-Quran-Origin-Token {$QO_ORIGIN_TOKEN}
+  }
+  handle @reader {
+    reverse_proxy 127.0.0.1:4317 {
+      header_up X-Forwarded-For {http.request.header.X-Quran-Client-IP}
+      header_up -X-Quran-Origin-Token
+      header_up -X-Quran-Client-IP
+    }
+  }
+  handle {
+    respond "Not found" 404
+  }
+}
