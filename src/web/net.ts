@@ -109,9 +109,9 @@ export async function access(): Promise<Access> {
 /** The one-line listening status: free and shared, or the personal allowance when one is configured. */
 export function listeningLine(c: import('../shared/contracts').CreditView): string {
   if (c.freePerMonth > 0) return c.available > 0 ? `${formatListening(c.available)} of listening left` : 'No listening time left';
-  if (c.limitedBy === 'pool') return 'Shared hours have run out · sponsor more';
-  if (c.limitedBy === 'share') return "Today's share recited · back tomorrow";
-  return `Free · ${Math.round(c.pool / 3600).toLocaleString()} h shared right now`;
+  if (c.limitedBy === 'pool') return 'Sponsored hours have run out · give sadaqah';
+  if (c.limitedBy === 'share') return 'You’ve used today’s hours · back tomorrow';
+  return `Free · ${Math.round(c.pool / 3600).toLocaleString()} hours sponsored`;
 }
 
 /** "9 h 41 min", "12 min", "under a minute". */

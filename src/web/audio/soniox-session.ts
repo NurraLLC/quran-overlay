@@ -202,9 +202,9 @@ export class SonioxCapture {
             const renews = body.renewsAt ? new Date(body.renewsAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', timeZone: 'UTC' }) : 'next month';
             this.noCredits =
               body.limitedBy === 'pool'
-                ? 'The shared listening hours have run out for now. Reading and search still work, and anyone can sponsor more hours for everyone.'
+                ? 'The sponsored hours have run out for now. You can still read and search, and listening comes back as soon as someone gives.'
                 : body.limitedBy === 'share'
-                  ? "You have recited today's share of the shared hours. It comes back tomorrow, so there is enough for everyone."
+                  ? "You've used today's hours. They're back tomorrow, so there's enough for everyone."
                   : body.limitedBy === 'network'
                 ? "Today's free listening on this network is used up. It comes back tomorrow."
                 : body.limitedBy === 'service'

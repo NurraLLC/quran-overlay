@@ -305,7 +305,7 @@ export function Reader() {
       ? capture.detail
       : (capture.detail ?? 'Tap the microphone and recite, or ask in English.')
     : capture.state === 'dozing'
-      ? 'Waiting for you to recite… nothing is sent while you are quiet.'
+      ? 'Listening… take your time. Nothing is sent while you’re quiet.'
       : snap.held
       ? 'Paused. The page stays here.'
       : snap.phase === 'tracking'
@@ -351,10 +351,10 @@ export function Reader() {
               <p className="r-iqra" lang="ar" dir="rtl">{toQpcHafsEncoding('ٱقۡرَأۡ')}</p>
               <figcaption className="r-iqra-meaning">
                 <span className="r-iqra-en">Recite</span>
-                <span className="r-iqra-ref">the first word revealed (96:1)</span>
+                <span className="r-iqra-ref">The first word revealed to the Prophet <bdi>ﷺ</bdi> (96:1)</span>
               </figcaption>
             </figure>
-            <h1>Recite, and the page keeps up with you.</h1>
+            <h1>Recite, and the page follows{NBSP}along.</h1>
             <p className="r-sub">Each word you recite lights up with its meaning, on your phone or on your stream.</p>
             <DemoLine />
             {cur && home ? (
@@ -369,7 +369,7 @@ export function Reader() {
             )}
             {!!saved.recited?.length && <p className="r-today">Today: {saved.recited.length} {saved.recited.length === 1 ? 'ayah' : 'ayahs'} recited</p>}
             <div className="r-try">
-              <p className="r-try-label">Start reciting, or try asking</p>
+              <p className="r-try-label">Start reciting, or ask for a surah</p>
               <div className="r-quick">
                 {TRY.map((t) => (
                   <button key={t} onClick={() => run(t)}>“{t}”</button>
@@ -378,18 +378,18 @@ export function Reader() {
             </div>
             <details className="r-privacy">
               <summary>How your voice is used</summary>
-              <p>While the microphone is on, your voice goes to our speech-recognition provider (Soniox) and nowhere else. We do not record or keep your audio, and nothing is sent during long pauses; listening stops by itself after a while without recitation. Reading and search never use the microphone.</p>
+              <p>When the microphone is on, your voice goes to our speech-recognition provider (Soniox) and nowhere else. We never record or keep it. Nothing is sent during long pauses, and listening switches itself off if you stop reciting. Reading and search never use the microphone.</p>
             </details>
             {credits && <SharedHours stats={account.sponsored} donations={account.billing?.donations ?? []} />}
             {/* Streamers: the same following, as a broadcast overlay driven from the control page. */}
             <a className="r-stream" href="/control">
-              <span className="r-stream-k">Streaming?</span> Put the ayah you recite on your stream, with OBS
+              <span className="r-stream-k">Streaming?</span> Show the ayah you’re reciting on your stream with OBS
               <span aria-hidden="true"> →</span>
             </a>
             <SurahIndex onOpen={(n) => goto(`${n}:1`)} />
             <footer className="r-brand">
               <NurraBadge />
-              <a href="/about">How and why we do this</a>
+              <a href="/about">Why we built this</a>
             </footer>
           </section>
         )}
@@ -473,7 +473,7 @@ export function Reader() {
       </main>
 
       {returned && credits && <p className="r-toast">Thank you. Your listening time is added as soon as the payment is confirmed.</p>}
-      {donated && credits && <p className="r-toast">Thank you. Your gift joins the sponsored listening as soon as the payment is confirmed. May Allah accept it.</p>}
+      {donated && credits && <p className="r-toast">JazakAllahu khayran. Your sadaqah is added as soon as the payment goes through. May Allah accept it from you.</p>}
       {menuOpen && (
         <div className="r-modal" role="dialog" aria-modal="true" aria-label="Menu" onClick={() => setMenuOpen(false)} onKeyDown={(e) => e.key === 'Escape' && setMenuOpen(false)}>
           <nav className="r-time r-menu" onClick={(e) => e.stopPropagation()}>
@@ -493,14 +493,14 @@ export function Reader() {
             )}
             {credits && !!account.billing?.donations?.length && (
               <button className="r-menu-item" onClick={() => { setMenuOpen(false); setTimeOpen('sponsor'); }}>
-                Sponsor shared hours<span>Keep listening free for everyone</span>
+                Give sadaqah<span>Keep listening free for everyone</span>
               </button>
             )}
             <a className="r-menu-item" href="/control">
               Put it on your stream<span>OBS overlay and stream controls</span>
             </a>
             <a className="r-menu-item" href="/about">
-              How and why<span>What it costs, where the money goes, and the reward of helping</span>
+              Why we built this<span>What it costs, where your sadaqah goes, and its reward</span>
             </a>
             <div className="r-menu-brand">
               <NurraBadge />
@@ -654,17 +654,17 @@ function ListeningTime({ credits, account, focus, onClose }: { credits: CreditVi
           </>
         ) : (
           <>
-            <p className="r-time-big">Free for everyone</p>
+            <p className="r-time-big">Free, through sadaqah</p>
             <p className="r-time-detail">
               {credits.limitedBy === 'pool'
-                ? 'The shared hours have run out for now. Reading and search still work, and listening opens again as soon as someone sponsors more hours.'
-                : credits.limitedBy === 'share'
-                  ? `You have recited today's share (${formatListening(credits.sharePerDay)}). It comes back tomorrow, so there is enough for everyone.`
-                  : `Everyone recites from the shared hours, up to ${formatListening(credits.sharePerDay)} a day each. You have ${formatListening(credits.available)} left today.`}
+                ? 'The sponsored hours have run out for now. You can still read and search, and listening comes back as soon as someone gives.'
+                  : credits.limitedBy === 'share'
+                  ? `You’ve used today’s ${formatListening(credits.sharePerDay)}. They’re back tomorrow, so there’s enough for everyone.`
+                  : `Everyone can recite up to ${formatListening(credits.sharePerDay)} a day, paid for by sadaqah. You have ${formatListening(credits.available)} left today.`}
             </p>
           </>
         )}
-        <p className="r-time-free">Reading, search and everything about the Quran are always free. Only live listening costs money (speech recognition, about 12 cents an hour).</p>
+        <p className="r-time-free">Reading and search are always free. Only listening costs anything: about 12 cents for each hour of recitation.</p>
         <div ref={sponsorRef}>
           <SharedHours stats={account.sponsored} donations={account.billing?.donations ?? []} defaultOpen />
         </div>

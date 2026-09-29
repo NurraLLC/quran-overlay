@@ -48,7 +48,7 @@ export function About() {
 
   useEffect(() => {
     document.documentElement.dataset.surface = 'reader';
-    document.title = 'How and why · Quran Reader';
+    document.title = 'Why we built this · Quran Reader';
     access()
       .then((a) => {
         setMe(a);
@@ -71,46 +71,44 @@ export function About() {
         <NurraBadge />
       </header>
       <main className="r-page about-page">
-        <h1>How and why</h1>
+        <h1>Why we built this</h1>
         <p className="about-lead">
-          Quran Reader follows your recitation: the ayah you are reciting appears as you recite it, each word with its meaning, on your phone or on a live stream. It is free to use, and it is made by Nurra.
+          Quran Reader listens as you recite and keeps your place: the ayah you’re on appears as you reach it, with the meaning of each word, on your phone or on your stream. It’s free, and it’s made by Nurra.
         </p>
 
         <section>
-          <h2>Why we made it</h2>
+          <h2>Why</h2>
           <p>
-            Reciting, from memory or reading along, is easier when the page keeps up with you. We wanted that for everyone: someone learning who needs to find their place, someone who wants the meaning of each word as they recite, a reciter sharing the Quran on a stream. No account, no ads, and no price in the way of opening the Quran.
+            Whether you recite from memory or read along, it helps when the page keeps your place. We wanted that for everyone: the student checking their hifz, the person who wants to understand each word as they recite, the qari sharing their tilawah on a stream. No account, no ads, and nothing standing between anyone and the Quran.
           </p>
         </section>
 
         <section>
           <h2>How it works</h2>
           <ul>
-            <li>It listens only while the microphone is on, and only while you speak: after a long pause nothing is sent. Your voice goes to our speech-recognition provider and nowhere else. We never record or keep your audio.</li>
-            <li>The Arabic text and the translation are shown exactly as published (Quran.com; Saheeh International). Nothing about the Quran is generated.</li>
+            <li>It only listens while the microphone is on and you’re reciting. During a long pause nothing is sent. Your voice goes to our speech-recognition provider and nowhere else, and we never record or keep it.</li>
+            <li>The Arabic and the translation are shown exactly as published (Quran.com, Saheeh International). Nothing about the Quran is written by a machine.</li>
             <li>The code is open. Anyone can read it, check it, or run their own copy for free: <a href={REPO}>github.com/NurraLLC/quran-overlay</a>.</li>
           </ul>
         </section>
 
         <section>
-          <h2>What it costs, and where the money goes</h2>
-          <p>Reading, search and the stream overlay cost almost nothing to run. Live listening does: speech recognition costs about 12 cents for every hour a stream is open. So:</p>
+          <h2>What it costs, and where your sadaqah goes</h2>
+          <p>Reading and search cost almost nothing to run. Listening is different: recognising recitation costs about 12 cents for every hour.</p>
           <ul>
-            <li>Listening is free for everyone. There are no accounts, plans or limits to buy past.</li>
-            <li>
-              Everyone recites from one pool of <strong>shared hours</strong>, filled by gifts (ours included). Each person can use up to two hours a day, so there is always some for the next person.
-            </li>
-            <li>A gift becomes listening at cost: 13 cents an hour covers the recognition and the payment fee, so $10 is about 76 hours of someone’s recitation. The numbers below are live.</li>
-            <li>If the pool ever runs dry, listening pauses for everyone until it is refilled, and reading and search carry on as always.</li>
+            <li>Listening is free for everyone. There are no accounts and no plans.</li>
+            <li>Every hour of listening is paid for by sadaqah, ours included. Each person can recite up to two hours a day, so there’s always enough for the next person.</li>
+            <li>Your sadaqah goes straight to recitation at cost: 13 cents an hour covers the recognition and the card fee, so $10 is about 76 hours of someone’s tilawah. The numbers below are live.</li>
+            <li>If the sponsored hours ever run out, listening pauses until someone gives again. Reading and search never stop.</li>
             <li>No ads, no selling data, no tracking.</li>
           </ul>
           {credits && <SharedHours stats={me?.sponsored} donations={donations} defaultOpen />}
         </section>
 
         <section>
-          <h2>The reward of helping</h2>
+          <h2>The reward of giving</h2>
           <p>
-            People often ask about the reward of supporting work like this. Reward is with Allah alone and we cannot promise it on His behalf; what matters is your intention. These are the texts that move us. The English is our own summary; each links to its source.
+            Reward is with Allah, and we can’t promise anything on His behalf; it is the intention that counts. These are the ayah and ahadith that remind us why this matters. The English is our own wording of each, with a link to the source.
           </p>
           {ayah && (
             <figure className="about-text">
@@ -132,13 +130,13 @@ export function About() {
               </figcaption>
             </figure>
           ))}
-          <p className="about-fine">Grades are those shown on sunnah.com. We left out narrations graded weak, including a well-known one about leaving behind a copy of the Quran.</p>
+          <p className="about-fine">Gradings are as given on sunnah.com. We left out narrations graded da’if (weak), including a well-known one about leaving behind a mushaf.</p>
         </section>
 
         <section>
           <h2>Who we are</h2>
           <p>
-            Quran Reader is a project of <a href="https://nurra.org">Nurra</a>, which builds technology for Muslim communities. Questions, corrections or ideas are welcome on <a href={`${REPO}/issues`}>GitHub</a>.
+            Quran Reader is a project of <a href="https://nurra.org">Nurra</a>, building technology for the ummah. If you spot a mistake or have an idea, please tell us on <a href={`${REPO}/issues`}>GitHub</a>.
           </p>
         </section>
 

@@ -72,37 +72,37 @@ export function SharedHours({ stats: initial, donations, defaultOpen = false }: 
   const example = donations[Math.min(1, donations.length - 1)];
 
   return (
-    <section className={`r-pool${open ? ' open' : ''}`} aria-label="Shared listening hours">
+    <section className={`r-pool${open ? ' open' : ''}`} aria-label="Sponsored recitation hours">
       <button className="r-pool-head" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span className="r-pool-line">
           <span className="r-pool-now">
-            <strong>{left.toLocaleString()}</strong> {left === 1 ? 'hour' : 'hours'} shared right now
+            <strong>{left.toLocaleString()}</strong> {left === 1 ? 'hour' : 'hours'} of recitation sponsored
           </span>
-          <span className="r-pool-cta">{open ? 'Close' : donations.length ? 'Sponsor' : 'Details'}</span>
+          <span className="r-pool-cta">{open ? 'Close' : donations.length ? 'Give sadaqah' : 'See more'}</span>
         </span>
         <span className="r-pool-track" aria-hidden="true">
           <span style={{ width: `${pct}%` }} />
         </span>
         <span className="r-pool-sub">
-          Free for everyone · {month >= goal ? `${month.toLocaleString()} hours given this month, past the goal of ${goal.toLocaleString()}` : `${month.toLocaleString()} of ${goal.toLocaleString()} hours given this month`}
+          Free for everyone through your sadaqah · {month >= goal ? `${month.toLocaleString()} hours given this month, alhamdulillah` : `${month.toLocaleString()} of ${goal.toLocaleString()} hours given this month`}
         </span>
       </button>
       {open && (
         <div className="r-pool-body">
           <p className="r-pool-why">
-            Reading is always free, and so is listening: everyone recites from these shared hours. Recognising recitation costs about 12 cents an hour, so the hours come from gifts.
-            {example ? ` ${price(example.price)} adds about ${example.hours} hours for whoever needs them next.` : ''}
+            Listening is free for everyone. Each hour of recitation costs us about 12 cents, and every one of those hours is paid for by sadaqah.
+            {example ? ` ${price(example.price)} covers about ${example.hours} hours of someone’s recitation.` : ''}
           </p>
           {stats.given > 0 && <HourField given={hours(stats.given)} used={Math.min(hours(stats.given), hours(stats.used))} />}
           <ul className="r-pool-activity">
             {stats.giftsThisMonth > 0 && (
               <li>
-                {stats.giftsThisMonth} {stats.giftsThisMonth === 1 ? 'gift' : 'gifts'} this month{stats.lastGiftAt ? `, the latest ${ago(stats.lastGiftAt)}` : ''}
+                {stats.giftsThisMonth} {stats.giftsThisMonth === 1 ? 'gift' : 'gifts'} this month{stats.lastGiftAt ? `, the most recent ${ago(stats.lastGiftAt)}` : ''}
               </li>
             )}
             {stats.recitersThisWeek > 0 && (
               <li>
-                {stats.recitersThisWeek} {stats.recitersThisWeek === 1 ? 'person' : 'people'} recited {hours(stats.recitedThisWeek) || 'under an'} {hours(stats.recitedThisWeek) === 1 ? 'hour' : 'hours'} from them this week
+                {hours(stats.recitedThisWeek) || 'Under an'} {hours(stats.recitedThisWeek) === 1 ? 'hour' : 'hours'} recited this week by {stats.recitersThisWeek} {stats.recitersThisWeek === 1 ? 'person' : 'people'}
               </li>
             )}
           </ul>
@@ -111,14 +111,14 @@ export function SharedHours({ stats: initial, donations, defaultOpen = false }: 
               {donations.map((d) => (
                 <button key={d.amountCents} disabled={busy !== null} onClick={() => void give(d.amountCents)}>
                   <strong>{busy === d.amountCents ? 'Opening…' : price(d.price)}</strong>
-                  <span>≈ {d.hours} hours</span>
+                  <span>{d.hours} hours</span>
                 </button>
               ))}
             </div>
           )}
           {note && <p className="r-note">{note}</p>}
           <a className="r-give-more" href="/about">
-            Where the money goes, and the reward of giving
+            Where your sadaqah goes, and its reward
           </a>
         </div>
       )}
@@ -138,13 +138,13 @@ function HourField({ given, used }: { given: number; used: number }) {
   }, []);
   return (
     <div className={`r-give-field${shown ? ' shown' : ''}`} ref={ref}>
-      <div className="r-give-dots" role="img" aria-label={`${given} hours given so far; ${used} already recited by others`}>
+      <div className="r-give-dots" role="img" aria-label={`${given} hours given so far, ${used} of them already recited`}>
         {Array.from({ length: dots }, (_, i) => (
           <i key={i} className={i < lit ? 'lit' : ''} style={{ transitionDelay: `${Math.min(i, 120) * 6}ms` }} />
         ))}
       </div>
       <p className="r-give-legend">
-        {given.toLocaleString()} hours given so far, each dot {per === 1 ? 'an hour' : `${per} hours`}. <span className="lit">{used.toLocaleString()} already recited</span> by someone.
+        {given.toLocaleString()} hours given so far, and <span className="lit">{used.toLocaleString()} already recited</span>. Each dot is {per === 1 ? 'an hour' : `${per} hours`}.
       </p>
     </div>
   );

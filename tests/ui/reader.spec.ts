@@ -93,9 +93,9 @@ test('how and why: costs, the reward of helping with sources, and the Nurra mark
   await page.goto(`/reader#owner=${OWNER}`);
   await expect(page.locator('.r-top')).toBeVisible();
   await page.getByRole('button', { name: /^Menu/ }).click();
-  await page.getByRole('link', { name: /^How and why/ }).click();
-  await expect(page.getByRole('heading', { name: 'How and why' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'The reward of helping' })).toBeVisible();
+  await page.getByRole('link', { name: /^Why we built this/ }).click();
+  await expect(page.getByRole('heading', { name: 'Why we built this' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'The reward of giving' })).toBeVisible();
   // Every narration links to its source; only sahih and hasan are shown.
   const refs = page.locator('a.about-ref');
   await expect(refs).toHaveCount(4);
