@@ -14,5 +14,6 @@ artifacts/
 data/models/
 data/speedlab/
 data/state/
+data/live/
 data/inbox/
 deploy/production.env

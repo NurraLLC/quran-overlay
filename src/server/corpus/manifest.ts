@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { SourceFile } from '../../shared/corpus-types';
+import { activeContent } from './active';
 
 export type SourcesManifest = { schemaVersion: 1; narration: 'hafs'; sources: SourceFile[] };
 
 export const ROOT = path.resolve(import.meta.dirname, '../../..');
-export const PROCESSED_DIR = path.join(ROOT, 'data', 'processed');
+export const PROCESSED_DIR = process.env.QO_CONTENT_STORE && existsSync(path.join(process.env.QO_CONTENT_STORE,'active.json')) ? activeContent(process.env.QO_CONTENT_STORE).path : path.join(ROOT, 'data', 'processed');
 export const PROCESSED_CORPUS = path.join(PROCESSED_DIR, 'corpus.json');
 export const PROCESSED_FONT_DIR = path.join(PROCESSED_DIR, 'fonts');
 

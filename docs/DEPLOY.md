@@ -143,7 +143,7 @@ Contributions add to the shared pool for everyone. No app account is needed. Use
 ## Before taking any payment (donations included)
 
 - [Quran Foundation's developer terms](https://api-docs.quran.com/legal/developer-terms/) (checked 2026-09-29, updated 2026-09-14) explicitly allow app donations without a separate commercial licence, subject to the terms and source-specific rights. The previous blanket requirement to obtain confirmation before payments was an extra precaution, not that rule. The Saheeh International translation is published by Dar Abul-Qasim.
-- Storage is a separate requirement: section 3.1 limits caching to one week unless permitted otherwise; eligible Content Sync resources require a sync at least every seven days. The current pinned local corpus does not implement scheduled sync. Resolve retention permission or a compliant sync/source arrangement before public hosting. Switching to QUL requires checking each resource's licence, not merely that it is downloadable.
+- Storage is a separate requirement: section 3.1 limits caching to one week unless permitted otherwise; eligible Content Sync resources require a sync at least every seven days. Public deployments use the authenticated `live` image and daily refresh described in [CONTENT_REFRESH.md](CONTENT_REFRESH.md), with a six-day freshness guard. The default bundled image is for local use and CI. Switching to QUL requires checking each resource's licence, not merely that it is downloadable.
 - The KFGQPC Uthmanic Hafs font may be used and distributed free of charge; it must not be sold or modified.
 - Show attribution (the app credits the translation and word-by-word source on screen).
 

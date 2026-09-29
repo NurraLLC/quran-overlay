@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh and validate Quran Reader source content
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+TimeoutStartSec=15min
+ExecStart=/usr/bin/docker run --rm --name quran-content-refresh --env-file /opt/quran-reader/deploy/production.env -v quran-reader-content:/app/data/live quran-reader:live npx tsx scripts/sync-content.ts

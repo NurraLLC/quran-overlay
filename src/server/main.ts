@@ -10,7 +10,8 @@ import { buildApp, normalizeBase, type HostedOptions } from './app';
 import { localLinks } from './local-links';
 import { CommandResolver } from './commands/reducer';
 import { Corpus, loadCorpus } from './corpus/load';
-import { ROOT } from './corpus/manifest';
+import { ROOT, PROCESSED_DIR } from './corpus/manifest';
+import { activeContent } from './corpus/active';
 import { JevClient, type DecisionClient, type JevGateway } from './providers/jev';
 import { SemanticRetriever } from './search/semantic';
 import { Session } from './sessions';
@@ -90,6 +91,10 @@ async function main() {
   // `--capture` is equivalent to QO_DIAGNOSTIC_CAPTURE=1 (for launchers that cannot set env vars).
   if (process.argv.includes('--capture')) process.env.QO_DIAGNOSTIC_CAPTURE = '1';
   const t0 = performance.now();
+  if(process.env.QO_REQUIRE_CONTENT_SYNC==='1') {
+    if(!process.env.QO_CONTENT_STORE)throw new Error('Live reader requires QO_CONTENT_STORE');
+    activeContent(process.env.QO_CONTENT_STORE);
+  }
   const corpus = new Corpus(loadCorpus());
   const ix = buildIndex(corpus.verses);
   const catalog = new ResourceCatalog(corpus, ix);
@@ -136,7 +141,7 @@ async function main() {
   const glosses = WordGlosses.load();
   // Built once, in the background after start-up (a few seconds); until then Latin stays Latin.
   const latin = { reader: null as LatinReader | null, get() { return this.reader; } };
-  const translitFile = path.join(ROOT, 'data', 'processed', 'translit-en.json');
+  const translitFile = path.join(PROCESSED_DIR, 'translit-en.json');
   if (existsSync(translitFile)) setTimeout(() => (latin.reader = new LatinReader(ix, corpus, JSON.parse(readFileSync(translitFile, 'utf8')).verses)), 1000);
   // Self-hosted: the control and overlay links survive restarts (OBS keeps working); tests pin their own.
   const links = hostedMode || process.env.QO_OWNER_TOKEN ? null : (() => {
@@ -162,6 +167,17 @@ async function main() {
   const { app, ownerToken } = await buildApp({ basePath: base, extraHosts: (process.env.QO_EXTRA_HOSTS ?? '').split(',').filter(Boolean), session, hosted, port, sonioxApiKey: process.env.SONIOX_API_KEY, devOrigins, ownerToken: process.env.QO_OWNER_TOKEN || links?.links.owner });
   // Loopback by default; a container or VM behind a reverse proxy sets QO_HOST=0.0.0.0.
   await app.listen({ host: process.env.QO_HOST || '127.0.0.1', port });
+  if(process.env.QO_REQUIRE_CONTENT_SYNC==='1') {
+    const watch=setInterval(()=>{
+      try { if(activeContent(process.env.QO_CONTENT_STORE!).id===corpus.id)return; } catch {}
+      console.log('Content refresh requires a reader restart.');
+      clearInterval(watch);
+      const deadline=setTimeout(()=>process.exit(1),10000);deadline.unref();
+      void app.close().finally(()=>process.exit(0));
+    },60000);
+    watch.unref();
+    app.addHook('onClose',async()=>{clearInterval(watch);});
+  }
   const ms = Math.round(performance.now() - t0);
   console.log(`Quran Reader ready in ${ms} ms — corpus ${corpus.id}: ${corpus.verses.length} ayahs / ${corpus.data.chapters.length} surahs`);
   if (process.env.QO_DIAGNOSTIC_CAPTURE === '1') console.log('Diagnostic capture ON: recognized text tokens are written to data/captures/*.jsonl (no audio).');

@@ -4,7 +4,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { ROOT } from './manifest';
+import { PROCESSED_DIR } from './manifest';
 
 export class WordGlosses {
   private constructor(
@@ -12,7 +12,7 @@ export class WordGlosses {
     readonly attribution: string,
   ) {}
 
-  static load(file = path.join(ROOT, 'data', 'processed', 'wbw-en.json')): WordGlosses | null {
+  static load(file = path.join(PROCESSED_DIR, 'wbw-en.json')): WordGlosses | null {
     if (!existsSync(file)) return null;
     try {
       const j = JSON.parse(readFileSync(file, 'utf8')) as { attribution?: string; verses?: Record<string, Array<string | null>> };

@@ -6,7 +6,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { ROOT } from '../corpus/manifest';
+import { PROCESSED_DIR } from '../corpus/manifest';
 import type { Corpus } from '../corpus/load';
 
 /** Command words around a transliterated name ("go to ... please") are not part of its sound. */
@@ -44,7 +44,7 @@ export type SoundMatch = { verseIndex: number; distance: number };
 export class Transliteration {
   private constructor(private readonly starts: Array<{ verseIndex: number; skel: string }>) {}
 
-  static load(corpus: Corpus, file = path.join(ROOT, 'data', 'processed', 'translit-en.json')): Transliteration | null {
+  static load(corpus: Corpus, file = path.join(PROCESSED_DIR, 'translit-en.json')): Transliteration | null {
     if (!existsSync(file)) return null;
     try {
       const j = JSON.parse(readFileSync(file, 'utf8')) as { verses?: Record<string, string[]> };
