@@ -95,8 +95,10 @@ describe('spoken requests from real sessions', () => {
     expect(intent('show me the verse about hiding').kind).toBe('search');
   });
 
-  it('treats "surah about ..." as a search, not a surah name', () => {
-    expect(intent('Surah about patience')).toEqual({ kind: 'search', query: 'Surah about patience' });
+  it('treats "surah about ..." / "ayah about ..." as finding a surah / an ayah, not a surah name', () => {
+    expect(intent('Surah about patience')).toEqual({ kind: 'search', query: 'patience', scope: 'surah' });
+    expect(intent('the surah about elephants')).toEqual({ kind: 'search', query: 'elephants', scope: 'surah' });
+    expect(intent('ayah about the orphan')).toEqual({ kind: 'search', query: 'the orphan', scope: 'ayah' });
   });
 
   it('never guesses between close surah names ("Fatih": Al-Fath, Fatir, Al-Fatihah)', () => {

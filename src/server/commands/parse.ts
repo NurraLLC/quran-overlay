@@ -12,7 +12,7 @@ export type Intent =
   | { kind: 'invalid_reference'; message: string }
   | { kind: 'ambiguous_chapter'; options: ChapterMatch[]; ayah: number | null }
   | { kind: 'division'; type: 'juz' | 'hizb' | 'rub' | 'manzil'; number: number }
-  | { kind: 'search'; query: string }
+  | { kind: 'search'; query: string; scope?: 'surah' | 'ayah' }
   | { kind: 'control'; action: ControlAction };
 
 /** A display/following setting spoken or typed instead of clicked. */
@@ -166,7 +166,11 @@ export function parseIntent(text: string, names: ChapterNames, currentSurah: num
   };
 
   const ci = t.findIndex((w) => CHAPTER_WORDS.has(w));
-  if (ci >= 0 && ABOUT.has(t[ci + 1] ?? '')) return { kind: 'search', query: text.trim() };
+  // "(the) surah about elephants" asks for a surah; "ayah about the orphan" for an ayah. The scope
+  // word is dropped from the query: translations mention "a surah" often enough to pollute results.
+  if (ci >= 0 && ABOUT.has(t[ci + 1] ?? '')) return { kind: 'search', query: t.slice(ci + 2).join(' ') || text.trim(), scope: 'surah' };
+  const ai = t.findIndex((w) => AYAH_WORDS.has(w));
+  if (ai >= 0 && ai <= 1 && ABOUT.has(t[ai + 1] ?? '') && t.length > ai + 2) return { kind: 'search', query: t.slice(ai + 2).join(' '), scope: 'ayah' };
   if (ci >= 0) {
     const n = numberAt(t, ci + 1);
     if (n) {

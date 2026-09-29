@@ -92,7 +92,16 @@ const SPLIT = 5; // one heard word = two corpus words
  */
 const JOIN_SIM = 0.9;
 const JOIN_MIN_SKELETON = 5;
-const skeleton = (k: string) => k.replace(/ا/g, '');
+const skeletons = new Map<string, string>();
+const skeleton = (k: string) => {
+  let s = skeletons.get(k);
+  if (s === undefined) {
+    s = k.replace(/ا/g, '');
+    if (skeletons.size > 100_000) skeletons.clear();
+    skeletons.set(k, s);
+  }
+  return s;
+};
 function joinSim(heard: string, corpus: string): number {
   if (heard[0] !== corpus[0] || Math.abs(heard.length - corpus.length) > 2) return 0;
   const a = skeleton(heard);
@@ -126,7 +135,8 @@ export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, 
   for (let i = 1; i <= m; i++) {
     const o = obs[i - 1];
     const prevObs = i >= 2 ? obs[i - 2] : null;
-    const canMerge = !!prevObs && !prevObs.foreign && !o.foreign;
+    // Built once per heard word, not per corpus cell (this loop is the tracker's hot path).
+    const mergedKey = prevObs && !prevObs.foreign && !o.foreign ? prevObs.key + o.key : null;
     const canSplit = !o.foreign;
     const f = Math.max(ALIGN.recencyFloor, ALIGN.recency ** (m - i));
     const ins = (o.foreign ? ALIGN.insForeign : ALIGN.insArabic) * f;
@@ -154,8 +164,8 @@ export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, 
         dir = LEFT;
       }
       let cellSim = ps.s;
-      if (canMerge) {
-        const js = joinSim(prevObs!.key + o.key, ix.words[pos]);
+      if (mergedKey && mergedKey[0] === ix.words[pos][0]) {
+        const js = joinSim(mergedKey, ix.words[pos]);
         const v = H[(i - 2) * W + j - 1] + w * js * 0.8 * f;
         if (js && v > best) {
           best = v;
@@ -163,7 +173,8 @@ export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, 
           cellSim = js;
         }
       }
-      if (canSplit && j >= 2) {
+      // Cheap checks first: a split must start with the same letter and be about as long.
+      if (canSplit && j >= 2 && o.key[0] === ix.words[pos - 1][0] && Math.abs(o.key.length - ix.words[pos - 1].length - ix.words[pos].length) <= 2) {
         const js = joinSim(o.key, ix.words[pos - 1] + ix.words[pos]);
         const v = H[(i - 1) * W + j - 2] + (w + ix.weight[ix.wordId[pos - 1]]) * js * 0.8 * f;
         if (js && v > best) {

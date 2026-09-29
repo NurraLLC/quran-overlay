@@ -1,4 +1,4 @@
-// npm run speedlab -- --name duha [--port 4398] [--mode hybrid] [--stt '{"timeslice":20}'] [--label x] [--shot card.png] [--idle-check] [--frames dir]
+// npm run speedlab -- --name duha [--port 4398] [--mode hybrid] [--stt '{"timeslice":20}'] [--label x] [--shot card.png] [--idle-check] [--frames dir] [--reader dir]
 // End-to-end speed and correctness through the real pipeline: WAV (see make-audio.ts) as Edge's
 // microphone -> Soniox (live) -> server -> screen. Records every screen change against the audio
 // clock and reports, per ayah, "ayah starts in the audio -> on screen", plus wrong and missed ayahs.
@@ -80,6 +80,16 @@ try {
     await reader.goto(new URL(href!, base).toString());
     let n = 0;
     const timer = setInterval(() => void reader.screenshot({ path: path.join(frames, `frame-${String(n++).padStart(3, '0')}.png`) }).catch(() => undefined), 2500);
+    setTimeout(() => clearInterval(timer), truth.durationMs + 2000);
+  }
+  const readerDir = arg('reader', '');
+  if (readerDir) {
+    // Design review: the phone reader (same session) during the run, one frame every ~2.5 s.
+    const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    const reader = await phone.newPage();
+    await reader.goto(`${base}/reader#owner=${owner}`);
+    let n = 0;
+    const timer = setInterval(() => void reader.screenshot({ path: path.join(readerDir, `reader-${String(n++).padStart(3, '0')}.png`) }).catch(() => undefined), 2500);
     setTimeout(() => clearInterval(timer), truth.durationMs + 2000);
   }
   const shot = arg('shot', '');

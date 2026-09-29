@@ -142,6 +142,12 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     return card ?? reply.code(404).send({ error: 'not found' });
   });
 
+  app.get('/api/surah/:n', async (req, reply) => {
+    if (!isOwner(req)) return reply.code(401).send({ error: 'owner' });
+    const s = o.session.surah(Number((req.params as { n: string }).n));
+    return s ?? reply.code(404).send({ error: 'not found' });
+  });
+
   app.get('/fonts/:file', async (req, reply) => {
     const file = (req.params as { file: string }).file;
     if (!/^[A-Za-z0-9_.-]+\.(ttf|otf|woff2?)$/.test(file)) return reply.code(404).send();
@@ -242,7 +248,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   if (existsSync(WEB_DIST)) {
     await app.register(fastifyStatic, { root: WEB_DIST, prefix: '/', index: false, wildcard: true });
     const indexHtml = () => readFileSync(path.join(WEB_DIST, 'index.html'), 'utf8');
-    for (const route of ['/control', '/overlay', '/read']) app.get(route, (_req, reply) => reply.type('text/html').send(indexHtml()));
+    for (const route of ['/control', '/overlay', '/read', '/reader']) app.get(route, (_req, reply) => reply.type('text/html').send(indexHtml()));
     app.get('/', (_req, reply) => reply.redirect('/control'));
   } else {
     app.get('/', (_req, reply) => reply.type('text/plain').send('Frontend not built. Run `npm run build`, or use `npm run dev`.'));

@@ -4,25 +4,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, SearchCard } from '../shared/contracts';
 import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
-import { connect } from './net';
+import { connect, exchangeOwner } from './net';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { StageFrame, VerseDisplay, useFontsReady, type LayoutInfo } from './VerseDisplay';
 
 type ChapterRow = { number: number; nameSimple: string; nameArabic: string; verseCount: number };
 type Auth = 'checking' | 'owner' | 'unauthorized';
-
-async function exchangeOwner(): Promise<void> {
-  const params = new URLSearchParams(location.hash.slice(1));
-  const token = params.get('owner');
-  if (!token) return;
-  history.replaceState(null, '', location.pathname); // capability leaves the address bar immediately
-  await fetch('/api/owner/session', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
-    credentials: 'same-origin',
-  }).catch(() => undefined);
-}
 
 function statusLine(s: ControlSnapshot): { tone: string; title: string; detail: string } {
   const key = s.display.verse ? `${s.display.verse.surahName} ${s.display.verse.key}` : null;

@@ -149,7 +149,7 @@ export const ControlClientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('mode'), mode: TrackerModeSchema }),
   z.object({ type: z.literal('start_hint'), key: z.string().max(8).nullable() }),
   z.object({ type: z.literal('uncertain_policy'), keep: z.boolean() }),
-  z.object({ type: z.literal('command'), requestId: z.string().min(1).max(64), text: z.string().max(300), source: z.enum(['typed', 'voice']) }),
+  z.object({ type: z.literal('command'), requestId: z.string().min(1).max(64), text: z.string().max(300), source: z.enum(['typed', 'voice']), show: z.boolean().optional() }),
   z.object({ type: z.literal('show_result'), requestId: z.string().min(1).max(64), key: z.string().max(8) }),
   z.object({ type: z.literal('rotate_view') }),
   /** Push-to-talk held: recitation publication pauses and in-flight location decisions are dropped. */

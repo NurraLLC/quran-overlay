@@ -46,6 +46,9 @@ export type SessionSetup = {
   semantic: () => string;
 };
 
+/** Speech that asks to find something (as opposed to talking about it). */
+const EXPLICIT_FIND = /^(please\s+)?((find|show|open|bring up|pull up|go to|take me to)\b|(the\s+|a\s+|which\s+)?(surah|sura|chapter|ayah|aya|verse)\s+(about|on|regarding|where|that|which|with|of|concerning)\b)/i;
+
 export type SessionOptions = {
   corpus: Corpus;
   ix: CorpusIndex;
@@ -152,6 +155,19 @@ export class Session {
 
   chapters() {
     return this.o.corpus.data.chapters.map((c) => ({ number: c.number, nameSimple: c.nameSimple, nameArabic: c.nameArabic, verseCount: c.verseCount }));
+  }
+
+  /** A whole surah for the reader: display Arabic, translation and word meanings per ayah. */
+  surah(n: number) {
+    const ch = this.o.corpus.chapter(n);
+    if (!ch) return null;
+    const first = this.o.corpus.verse(`${n}:1`)!.index;
+    const ayahs = [];
+    for (let i = first; i < first + ch.verseCount; i++) {
+      const v = this.o.corpus.at(i)!;
+      ayahs.push({ key: v.key, ayah: v.ayah, arabic: v.arabicDisplay, english: v.english, glosses: this.o.glosses?.get(v.key) ?? null });
+    }
+    return { number: ch.number, name: ch.nameSimple, nameArabic: ch.nameArabic, translation: this.o.corpus.data.manifest.translation.name, glossCredit: this.o.glosses?.attribution ?? null, ayahs };
   }
 
   card(key: string) {
@@ -353,7 +369,7 @@ export class Session {
         this.follower.engine.cfg = { ...this.follower.engine.cfg, keepOnUncertain: msg.keep };
         return this.queueSnapshot();
       case 'command':
-        void this.command(msg.requestId, msg.text);
+        void this.command(msg.requestId, msg.text, !!msg.show);
         return;
       case 'show_result': {
         const c = this.latestCommand;
@@ -628,6 +644,9 @@ export class Session {
     }
     // Cards and their adjacent-ayah context (browsable in the card) may be shown.
     if (result.kind === 'candidates') for (const c of result.cards) for (const k of [c.key, c.prevKey, c.nextKey]) if (k) cmd.keys.add(k);
+    // Spoken finding requests ("surah about elephants", "find the ayah about patience") show their
+    // confirmed best match; plain descriptions of a verse stay private previews.
+    if (!show && requestId.startsWith('listen:') && EXPLICIT_FIND.test(text.trim())) show = true;
     if (show && result.kind === 'candidates') {
       if (result.confirmedKey) {
         this.gotoIndex(this.o.corpus.verse(result.confirmedKey)!.index, 'command');

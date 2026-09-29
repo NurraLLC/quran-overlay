@@ -159,11 +159,26 @@ export class CommandResolver {
       case 'search': {
         const bySound = this.byOpeningSound(intent.query);
         if (bySound) return bySound;
+        if (intent.scope === 'surah') return this.surahSearch(intent.query, signal);
         return this.search(intent.query, signal, onPreliminary);
       }
       case 'control':
         return { kind: 'control', label: intent.action.label, style: intent.action.style ?? null, hold: intent.action.hold ?? null, blank: intent.action.blank ?? null };
     }
+  }
+
+  /** "Surah about X": the surahs of the best-matching ayahs, each opened at its first ayah. */
+  private async surahSearch(query: string, signal?: AbortSignal): Promise<CommandResult> {
+    const r = await this.search(query, signal);
+    if (r.kind !== 'candidates') return r;
+    // A surah named after the subject ("surah about Maryam", "... about the cave" = Al-Kahf) comes first.
+    const named = this.names.match(query.replace(/^the\s+/i, '')).filter((m) => m.distance === 0).map((m) => m.number);
+    const order = [...named.map((n) => `${n}:1`), ...(r.confirmedKey ? [r.confirmedKey] : []), ...r.cards.map((c) => c.key)];
+    const surahs = [...new Set(order.map((k) => Number(k.split(':')[0])))].slice(0, 5);
+    const cards = surahs.map((n) => this.card(this.corpus.verse(`${n}:1`)!.index, [`about ${query}`]));
+    const best = named.length === 1 ? `${named[0]}:1` : r.confirmedKey ? `${r.confirmedKey.split(':')[0]}:1` : null;
+    const name = best ? this.corpus.chapter(Number(best.split(':')[0]))!.nameSimple : null;
+    return { ...r, query, cards, confirmedKey: best, status: name ? `Surah ${name} matches “${query}”.` : r.status };
   }
 
   /**

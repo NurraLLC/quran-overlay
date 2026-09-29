@@ -58,3 +58,17 @@ export function connect(
     },
   };
 }
+
+/** Trade a one-time owner link (#owner=…) for the session cookie, and clear it from the address bar. */
+export async function exchangeOwner(): Promise<void> {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const token = params.get('owner');
+  if (!token) return;
+  history.replaceState(null, '', location.pathname); // capability leaves the address bar immediately
+  await fetch('/api/owner/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+    credentials: 'same-origin',
+  }).catch(() => undefined);
+}
