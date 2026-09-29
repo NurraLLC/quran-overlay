@@ -29,7 +29,7 @@ docker compose -f deploy/compose.yml --env-file deploy/production.env up -d --bu
 
 4. Open `https://your.domain/healthz`, then the site. To update later: `git pull` and run the same command.
 
-`deploy/production.env` is git-ignored and excluded from the image; only the app container reads it. The credit ledger and signing secret live on the `qo-state` volume: back it up.
+`deploy/production.env` is git-ignored and excluded from the image; only the app container reads it. The image does not include the optional semantic-search model (`npm run search:embed`), so meaning search uses lexical matching plus JEV; everything else is the same as a local run. The credit ledger and signing secret live on the `qo-state` volume: back it up.
 
 ## Build and run
 
