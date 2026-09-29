@@ -1,5 +1,9 @@
 # Launch handoff
 
+**Current operational state:** read [LAUNCH_STATUS.md](LAUNCH_STATUS.md) first.
+The existing Sites route is the selected architecture; Cloudflare-zone examples
+below are alternatives, not instructions to migrate nurra.org.
+
 For whoever takes the site live (Codex or a person). State on 2026-09-29. [DEPLOY.md](DEPLOY.md) is the full reference; this page is the short path, what is verified, and what is not.
 
 The [final review](FINAL_REVIEW.md) records launch fixes and fresh local evidence: 197 unit/integration tests, ten browser tests, corpus validation and the 805-ayah replay. Check CI on the final commit before deploying.
