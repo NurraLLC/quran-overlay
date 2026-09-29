@@ -36,6 +36,9 @@ function save(patch: Saved) {
   }
 }
 
+/** Requests shown on the welcome: tapping one runs it, which also teaches what can be said. */
+const TRY = ['Surah Al-Mulk', 'Surah about elephants', 'Ayat al-Kursi', 'Al-Fatihah'];
+
 const QUICK = [
   { n: 1, name: 'Al-Fatihah' },
   { n: 36, name: 'Ya-Sin' },
@@ -88,6 +91,7 @@ export function Reader() {
   }, [peek]);
   /** Listening time left (hosted service only). */
   const [credits, setCredits] = useState<CreditView | null>(null);
+  const micWrap = useRef<HTMLDivElement>(null);
   const [account, setAccount] = useState<Pick<Access, 'recoveryCode' | 'billing'>>({});
   const [timeOpen, setTimeOpen] = useState(false);
   // Back from Stripe's checkout page.
@@ -178,6 +182,25 @@ export function Reader() {
       .catch(() => undefined);
   }, [cur?.surah]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Microphone level -> ring (a CSS variable, no re-render per frame).
+  const isListening = cap.listening;
+  useEffect(() => {
+    if (!isListening) {
+      micWrap.current?.style.setProperty('--level', '0');
+      return;
+    }
+    let raf = 0;
+    let smooth = 0;
+    const tick = () => {
+      const l = cap.level();
+      smooth = l > smooth ? smooth + (l - smooth) * 0.5 : smooth + (l - smooth) * 0.12;
+      micWrap.current?.style.setProperty('--level', smooth.toFixed(3));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isListening, cap]);
+
   // Keep the recited word (or the new ayah) in view, unless the reader scrolled away on purpose.
   useEffect(() => {
     if (!follow || !cur) return;
@@ -227,6 +250,7 @@ export function Reader() {
   const heard = `${snap.heard.final} ${snap.heard.provisional}`.trim().split(/\s+/).filter(Boolean).slice(-7).join(' ');
   const r = result?.r ?? null;
   const shownSurah = surah && cur && surah.number === cur.surah ? surah : null;
+  const shownSurahForBar = shownSurah;
   const listeningElsewhere = !listening && ['recording', 'starting', 'reconnecting'].includes(snap.capture.phase);
   const status = listeningElsewhere
     ? 'Listening from another page. The reader follows along.'
@@ -261,14 +285,20 @@ export function Reader() {
             </button>
           ))}
         </div>
+        {shownSurahForBar && cur && (
+          // Where in the surah: a hairline that fills as the recitation moves through it.
+          <div className="r-progress" role="progressbar" aria-label="Position in the surah" aria-valuemin={1} aria-valuemax={shownSurahForBar.ayahs.length} aria-valuenow={cur.ayah}>
+            <span style={{ transform: `scaleX(${cur.ayah / shownSurahForBar.ayahs.length})` }} />
+          </div>
+        )}
       </header>
 
       <main className="r-page">
         {!cur && (
           <section className="r-welcome">
+            <p className="r-iqra" lang="ar" dir="rtl" aria-hidden="true">{toQpcHafsEncoding('ٱقۡرَأۡ')}</p>
             <h1>Recite, and the Quran follows you.</h1>
-            <p>Tap the microphone and start reciting any surah. Or just say it: “Go to Surah Al-Mulk”, “Show the ayah about the orphan”, “English only”. Tap any word to see its meaning.</p>
-            <p className="r-privacy">Your voice is sent to our speech-recognition provider (Soniox) only while the microphone is on. We do not record or keep your audio. Reading and search never use the microphone.</p>
+            <DemoLine />
             {saved.key && (
               <button className="r-continue" onClick={() => goto(saved.key!)}>
                 Continue at {saved.name ? `${saved.name} ` : ''}
@@ -276,16 +306,31 @@ export function Reader() {
               </button>
             )}
             {!!saved.recited?.length && <p className="r-today">Today: {saved.recited.length} {saved.recited.length === 1 ? 'ayah' : 'ayahs'} recited</p>}
-            <div className="r-quick">
-              {QUICK.map((q) => (
-                <button key={q.n} onClick={() => goto(`${q.n}:1`)}>{q.name}</button>
-              ))}
+            <div className="r-try">
+              <p className="r-try-label">Tap the microphone and recite, or try saying</p>
+              <div className="r-quick">
+                {TRY.map((t) => (
+                  <button key={t} onClick={() => run(t)}>“{t}”</button>
+                ))}
+              </div>
             </div>
+            <details className="r-privacy">
+              <summary>How your voice is used</summary>
+              <p>While the microphone is on, your voice goes to our speech-recognition provider (Soniox) and nowhere else. We do not record or keep your audio, and listening stops by itself after a minute without recitation. Reading and search never use the microphone.</p>
+            </details>
           </section>
         )}
         {cur && !shownSurah && <p className="r-loading">Opening {cur.surahName}…</p>}
         {shownSurah && (
           <>
+            <header className="r-surah">
+              <div className="r-surah-frame">
+                <span className="r-surah-ar" lang="ar" dir="rtl">سورة {shownSurah.nameArabic}</span>
+              </div>
+              <p className="r-surah-en">
+                {shownSurah.name} · {shownSurah.ayahs.length} {shownSurah.ayahs.length === 1 ? 'ayah' : 'ayahs'}
+              </p>
+            </header>
             {shownSurah.number !== 1 && shownSurah.number !== 9 && (
               <p className="r-basmala" lang="ar" dir="rtl">{toQpcHafsEncoding('بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ')}</p>
             )}
@@ -423,14 +468,18 @@ export function Reader() {
           <button className="r-kbd" onClick={() => setTyping((t) => !t)} aria-pressed={typing} aria-label="Type instead">
             <Keys />
           </button>
-          <button
-            className={`r-mic${listening ? ' live' : ''}${starting ? ' starting' : ''}`}
-            onClick={() => (listening || starting ? cap.stop() : void cap.start(null))}
-            disabled={!snap.setup.soniox}
-            aria-label={listening || starting ? 'Stop listening' : 'Start listening'}
-          >
-            {listening || starting ? <Stop /> : <Mic />}
-          </button>
+          <div className="r-mic-wrap" ref={micWrap} data-live={listening || undefined}>
+            {/* The ring follows the microphone level: proof that it hears you, before any word appears. */}
+            <span className="r-mic-ring" aria-hidden="true" />
+            <button
+              className={`r-mic${listening ? ' live' : ''}${starting ? ' starting' : ''}`}
+              onClick={() => (listening || starting ? cap.stop() : void cap.start(null))}
+              disabled={!snap.setup.soniox}
+              aria-label={listening || starting ? 'Stop listening' : 'Start listening'}
+            >
+              {listening || starting ? <Stop /> : <Mic />}
+            </button>
+          </div>
           <div className="r-status" aria-live="polite">
             {(listening || listeningElsewhere) && heard ? (
               <span className="r-heard" lang="ar" dir="auto">{heard}</span>
@@ -516,5 +565,43 @@ function ListeningTime({ credits, account, onClose }: { credits: CreditView; acc
         {note && <p className="r-note">{note}</p>}
       </section>
     </div>
+  );
+}
+
+/**
+ * The welcome's demonstration: Al-Fatihah 1:2 as the reader will show it, each word lighting up in
+ * turn with its meaning (from the word-by-word data), at an easy reciting pace. Static with reduced
+ * motion.
+ */
+function DemoLine() {
+  const [ayah, setAyah] = useState<Ayah | null>(null);
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    fetch('/api/surah/1', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s: Surah | null) => s && setAyah(s.ayahs[1]))
+      .catch(() => undefined);
+  }, []);
+  const words = ayah ? toQpcHafsEncoding(ayah.arabic).split(/\s+/).filter(Boolean) : [];
+  useEffect(() => {
+    if (!words.length || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const t = setTimeout(() => setI((n) => (n + 1) % (words.length + 1)), i === words.length ? 1600 : 1100);
+    return () => clearTimeout(t);
+  }, [i, words.length]);
+  if (!ayah) return <div className="r-demo" aria-hidden="true" />;
+  return (
+    <figure className="r-demo" aria-label="Example: each recited word lights up with its meaning">
+      <p className="r-ar" lang="ar" dir="rtl" aria-hidden="true">
+        {words.map((w, k) => (
+          <span key={k}>
+            <span className={`r-word${k === i ? ' active' : ''}${k < i ? ' passed' : ''}`}>
+              {w}
+              {k === i && ayah.glosses?.[k] && <span className="r-gloss" lang="en" dir="ltr">{ayah.glosses[k]}</span>}
+            </span>{' '}
+          </span>
+        ))}
+      </p>
+      <figcaption>The word you are reciting lights up, with its meaning.</figcaption>
+    </figure>
   );
 }

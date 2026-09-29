@@ -58,18 +58,46 @@ const TIMESLICE_MS = TUNING.timeslice ?? 60;
  */
 class TimedSource implements AudioSource {
   firstChunkAt: number | null = null;
+  private meter: { ctx: AudioContext; analyser: AnalyserNode; buf: Float32Array } | null = null;
   constructor(private readonly inner: MicrophoneSource) {}
-  start(handlers: AudioSourceHandlers) {
-    return this.inner.start({
+  async start(handlers: AudioSourceHandlers) {
+    await this.inner.start({
       ...handlers,
       onData: (chunk) => {
         if (this.firstChunkAt === null) this.firstChunkAt = performance.now();
         handlers.onData(chunk);
       },
     });
+    this.attachMeter();
+  }
+  /** A level meter on the same microphone stream (for "it hears me" feedback; no audio leaves). */
+  private attachMeter() {
+    try {
+      const stream = (this.inner as unknown as { stream?: MediaStream | null }).stream;
+      if (!stream || this.meter) return;
+      const ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      this.meter = { ctx, analyser, buf: new Float32Array(analyser.fftSize) };
+    } catch {
+      this.meter = null; // no meter is fine; listening works without it
+    }
+  }
+  /** Current input level, 0..1 (speech sits around 0.2–0.7). */
+  level(): number {
+    const m = this.meter;
+    if (!m) return 0;
+    m.analyser.getFloatTimeDomainData(m.buf as Float32Array<ArrayBuffer>);
+    let sum = 0;
+    for (const v of m.buf) sum += v * v;
+    const rms = Math.sqrt(sum / m.buf.length);
+    return Math.min(1, Math.max(0, (20 * Math.log10(rms + 1e-8) + 60) / 45));
   }
   stop() {
     this.inner.stop();
+    void this.meter?.ctx.close().catch(() => undefined);
+    this.meter = null;
   }
   pause() {
     this.inner.pause();
@@ -107,6 +135,11 @@ const RESET_MIN_GAP_MS = 15_000;
 
 export class SonioxCapture {
   private timed: TimedSource | null = null;
+  /** Microphone input level 0..1 while listening (0 when not listening). */
+  level(): number {
+    return this.recording ? (this.timed?.level() ?? 0) : 0;
+  }
+
   /** performance.now() corresponding to Soniox audio time 0 of the current stream, if known. */
   get audioOrigin(): number | null {
     return this.timed?.audioOrigin ?? null;

@@ -388,3 +388,40 @@ button.r-credits { align-self: flex-start; background: none; border: none; paddi
 .r-continue { display: block; margin: 0 auto 14px; padding: 14px 22px; border-radius: 999px; background: #3a3220; border-color: var(--gold-dim); color: #f6dfa8; font-size: 16px; font-weight: 600; }
 .r-today { margin: 0 0 18px !important; font-size: 13.5px; color: var(--follow) !important; }
 .r-ayah:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+/* ---------------- reader design pass ---------------- */
+.r-welcome { padding-top: 7vh; }
+.r-iqra { margin: 0 0 4px; font-family: 'Uthmanic Hafs', serif; font-size: clamp(64px, 20vw, 104px); line-height: 1.3; color: var(--gold);
+  text-shadow: 0 0 40px rgba(207, 170, 98, 0.25); }
+.r-demo { margin: 18px auto 26px; padding: 14px 16px 12px; max-width: 30rem; min-height: 148px; border: 1px solid rgba(207, 170, 98, 0.22); border-radius: 18px; background: rgba(21, 40, 47, 0.45); }
+.r-demo .r-ar { text-align: center; font-size: clamp(26px, 7vw, 34px); line-height: 2.3; }
+.r-demo figcaption { margin-top: 2px; font-size: 13px; color: var(--muted); }
+.r-try { margin-top: 6px; }
+.r-try-label { margin: 0 0 10px !important; font-size: 14px; color: var(--text) !important; }
+.r-quick button { font-size: 14.5px; }
+details.r-privacy { margin: 22px auto 0; max-width: 30rem; font-size: 13px; color: var(--muted); }
+details.r-privacy summary { cursor: pointer; }
+details.r-privacy p { text-align: left; margin: 8px 0 0 !important; font-size: 13px; }
+
+.r-surah { text-align: center; margin: 10px 0 14px; }
+.r-surah-frame { position: relative; display: inline-block; padding: 8px 34px; border: 1.5px solid rgba(207, 170, 98, 0.55); border-radius: 999px; }
+.r-surah-frame::before, .r-surah-frame::after { content: ''; position: absolute; top: 50%; width: 9px; height: 9px; background: var(--gold); transform: translateY(-50%) rotate(45deg); }
+.r-surah-frame::before { left: -5px; }
+.r-surah-frame::after { right: -5px; }
+.r-surah-ar { font-family: 'Uthmanic Hafs', serif; font-size: clamp(26px, 7vw, 34px); line-height: 1.5; color: var(--gold); }
+.r-surah-en { margin: 8px 0 0; font: 600 12.5px/1.2 var(--ui); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+.r-top { position: sticky; }
+.r-progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: transparent; overflow: hidden; }
+.r-progress span { display: block; height: 100%; background: linear-gradient(90deg, rgba(207, 170, 98, 0.35), var(--gold)); transform-origin: 0 50%; transition: transform 420ms ease; }
+
+.r-mic-wrap { position: relative; flex: none; --level: 0; }
+.r-mic-ring { position: absolute; inset: -7px; border-radius: 50%; border: 3px solid var(--follow); opacity: 0; transform: scale(1); pointer-events: none; transition: opacity 200ms ease; }
+.r-mic-wrap[data-live] .r-mic-ring { opacity: calc(0.25 + var(--level) * 0.75); transform: scale(calc(1 + var(--level) * 0.2)); }
+.r-mic.live { animation: none; }
+@media (prefers-reduced-motion: reduce) { .r-mic-wrap[data-live] .r-mic-ring { transform: none; } .r-progress span { transition: none; } }
+/* design pass, round 2 (after inspecting frames) */
+.r-welcome .r-iqra { color: var(--gold); text-shadow: 0 0 28px rgba(207, 170, 98, 0.18); }
+.r-dock { background: linear-gradient(180deg, rgba(10, 20, 24, 0) 0, var(--ink-0) 26px); }
+.r-mic-ring { border-width: 3px; box-shadow: 0 0 0 0 rgba(111, 179, 159, 0); }
+.r-mic-wrap[data-live] .r-mic-ring { opacity: calc(0.45 + var(--level) * 0.55); box-shadow: 0 0 calc(var(--level) * 26px) rgba(111, 179, 159, 0.55); transition: opacity 120ms linear; }
