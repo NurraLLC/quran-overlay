@@ -75,6 +75,14 @@ test('shared lifetime totals, donation readback, and browser audio through the p
     await page.goto(`${base}/quran-reader/?donated=1`);
     await expect(panel).toContainText('176 h'); // webhook replay never adds it twice
     await expect(panel).toContainText('151 h');
+    await expect(page.locator('.r-toast')).toBeVisible();
+    await page.getByRole('button', { name: 'Dismiss thank-you message' }).click();
+    await expect(page.locator('.r-toast')).toHaveCount(0);
+    await page.goto(`${base}/quran-reader/?donated=1`);
+    await expect(page.locator('.r-toast')).toBeVisible();
+    await expect(page.locator('.r-toast')).toHaveCount(0, { timeout: 10_000 });
+    await page.reload();
+    await expect(page.locator('.r-toast')).toHaveCount(0);
     await page.getByRole('button', { name: 'Start listening', exact: true }).click();
     await expect.poll(() => bytes).toBeGreaterThan(0); // real browser SDK -> app -> local provider
     await expect(page.getByRole('button', { name: 'Stop listening', exact: true })).toBeVisible();

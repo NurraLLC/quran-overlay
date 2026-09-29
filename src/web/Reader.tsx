@@ -111,7 +111,13 @@ export function Reader() {
   const [funding, setFunding] = useState<Pick<Access, 'billing' | 'sponsored'>>({});
   const [timeOpen, setTimeOpen] = useState<false | 'time' | 'sponsor'>(false);
   // Back from Stripe's checkout page.
-  const [donated] = useState(() => new URLSearchParams(location.search).has('donated'));
+  const [donated, setDonated] = useState(() => new URLSearchParams(location.search).has('donated'));
+  const showSupportThanks = donated && !!credits;
+  useEffect(() => {
+    if (!showSupportThanks) return;
+    const timer = setTimeout(() => setDonated(false), 8000);
+    return () => clearTimeout(timer);
+  }, [showSupportThanks]);
   const sock = useRef<ReturnType<typeof connect> | null>(null);
   const lastRequest = useRef<string | null>(null);
   const send = useCallback((m: ControlClientMessage) => sock.current?.send(m) ?? false, []);
@@ -496,7 +502,7 @@ export function Reader() {
         )}
       </main>
 
-      {donated && credits && <p className="r-toast">JazakAllahu khayran for supporting Quran Reader. Shared hours are added after Stripe confirms payment.</p>}
+      {showSupportThanks && <div className="r-toast" role="status"><span>JazakAllahu khayran for supporting Quran Reader. Shared hours are added after Stripe confirms payment.</span><button aria-label="Dismiss thank-you message" onClick={() => setDonated(false)}>×</button></div>}
       {menuOpen && (
         <div className="r-modal" role="dialog" aria-modal="true" aria-label="Menu" onClick={() => setMenuOpen(false)} onKeyDown={(e) => e.key === 'Escape' && setMenuOpen(false)}>
           <nav className="r-time r-menu" onClick={(e) => e.stopPropagation()}>
