@@ -12,6 +12,7 @@ import { Session } from './sessions';
 import { TRACKER_MODES, type TrackerMode } from './tracker/follower';
 import { buildIndex } from './tracker/index';
 import { ResourceCatalog } from './resources/catalog';
+import { WordGlosses } from './corpus/wbw';
 
 function loadEnvFile() {
   const file = path.join(ROOT, '.env');
@@ -86,6 +87,7 @@ async function main() {
     overlayUrl: (view) => `${publicOrigin}/overlay#view=${view}`,
     captureDir: process.env.QO_DIAGNOSTIC_CAPTURE === '1' ? path.join(ROOT, 'data', 'captures') : null,
     catalog,
+    glosses: WordGlosses.load(),
   });
   // QO_OWNER_TOKEN exists only so automated browser tests can open the control page; normal runs
   // generate a fresh random capability each start.

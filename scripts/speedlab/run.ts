@@ -1,4 +1,4 @@
-// npm run speedlab -- --name duha [--port 4398] [--mode hybrid] [--stt '{"timeslice":20}'] [--label x] [--shot card.png]
+// npm run speedlab -- --name duha [--port 4398] [--mode hybrid] [--stt '{"timeslice":20}'] [--label x] [--shot card.png] [--idle-check] [--frames dir]
 // End-to-end speed and correctness through the real pipeline: WAV (see make-audio.ts) as Edge's
 // microphone -> Soniox (live) -> server -> screen. Records every screen change against the audio
 // clock and reports, per ayah, "ayah starts in the audio -> on screen", plus wrong and missed ayahs.
@@ -72,6 +72,16 @@ try {
   })()`);
   await page.getByRole('button', { name: 'Start listening' }).click();
   await page.waitForFunction(() => (window as unknown as { __qoAudioOrigin?: () => number | null }).__qoAudioOrigin?.() != null, undefined, { timeout: 20000 });
+  const frames = arg('frames', '');
+  if (frames) {
+    // Design review: the audience reading screen, one frame every ~2.5 s of the run.
+    const href = await page.locator('a[href*="/overlay#"]').first().getAttribute('href');
+    const reader = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    await reader.goto(new URL(href!, base).toString());
+    let n = 0;
+    const timer = setInterval(() => void reader.screenshot({ path: path.join(frames, `frame-${String(n++).padStart(3, '0')}.png`) }).catch(() => undefined), 2500);
+    setTimeout(() => clearInterval(timer), truth.durationMs + 2000);
+  }
   const shot = arg('shot', '');
   if (shot) {
     // Mid-run picture of the control card while listening (design review).
@@ -83,6 +93,16 @@ try {
   const log = await page.evaluate(() => (window as unknown as { __qoLog: Array<{ t: number; key: string | null }> }).__qoLog);
   const antLog = await page.evaluate(() => (window as unknown as { __qoAntLog: Array<{ t: number; key: string | null }> }).__qoAntLog);
   const meter = await page.locator('.speed').innerText().catch(() => '');
+  if (process.argv.includes('--idle-check')) {
+    // After the recitation ends the fake microphone is silent: listening must stop by itself.
+    const t0 = Date.now();
+    const stopped = await page
+      .getByRole('button', { name: 'Start listening' })
+      .waitFor({ timeout: 80_000 })
+      .then(() => true, () => false);
+    const note = await page.locator('.voice-card .hint').first().innerText().catch(() => '');
+    console.log(`idle check: ${stopped ? `stopped by itself ${((Date.now() - t0) / 1000).toFixed(0)} s after the audio ended (+2.5 s)` : 'STILL LISTENING after 80 s'} — "${note.slice(0, 90)}"`);
+  }
   await page.getByRole('button', { name: 'Stop listening' }).click().catch(() => undefined);
 
   // Audio time of each screen change.

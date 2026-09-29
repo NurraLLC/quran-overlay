@@ -46,6 +46,9 @@ export const DisplayVerseSchema = z.object({
   surahName: z.string(),
   surahNameArabic: z.string(),
   translationName: z.string(),
+  /** Word-by-word English, one entry per display token (null for a pause mark); absent if unavailable. */
+  glosses: z.array(z.string().nullable()).nullable().optional(),
+  glossCredit: z.string().nullable().optional(),
 });
 export type DisplayVerse = z.infer<typeof DisplayVerseSchema>;
 

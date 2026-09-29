@@ -366,6 +366,8 @@ export function VerseDisplay({
   const relOf = (ayah: number) => (ayah < currentInGroup ? 'past' : ayah > currentInGroup ? 'future' : 'current');
   // The reciter has reached the last word: what comes next brightens (preview line or next ayah in the passage).
   const anticipating = !!state.cursor && state.cursor.to >= displayWords.length - 1;
+  // Meaning of the word being recited (word-by-word data), in Arabic + English only.
+  const gloss = lang === 'both' && state.cursor && v?.glosses ? v.glosses.slice(state.cursor.from, state.cursor.to + 1).filter(Boolean).join(' ') || null : null;
   const focusText = state.cursor ? displayWords.slice(state.cursor.from, state.cursor.to + 1).join(' ') : lastFocus.current?.key === v?.key ? lastFocus.current?.text : null;
   return (
     <div className="stage" data-bg={state.style.background} data-layout={layout} data-reading={mode} data-lang={lang} data-preview={preview || undefined}>
@@ -376,6 +378,7 @@ export function VerseDisplay({
               {mode === 'word' ? (
                 <div className="focus-word" data-active={!!state.cursor}>
                   {focusText || <span className="focus-wait" lang="en" dir="ltr">Ready to follow</span>}
+                  {gloss && <div className="focus-gloss" lang="en" dir="ltr">{gloss}</div>}
                 </div>
               ) : plan.arabicPages[arabicPage].map((line, i) => (
                 <div className="line" key={i}>
@@ -391,7 +394,10 @@ export function VerseDisplay({
                     const text = meta?.mark ? word.slice(0, word.length - meta.mark.length - 1) : word;
                     return (
                       <span key={index}>
-                        <span className={cls} data-word-index={w} aria-current={active ? 'true' : undefined}>{text}</span>
+                        <span className={`${cls}${gloss && active && w === state.cursor!.from ? ' has-gloss' : ''}`} data-word-index={w} aria-current={active ? 'true' : undefined}>
+                          {text}
+                          {gloss && active && w === state.cursor!.from && <span className="gloss" lang="en" dir="ltr">{gloss}</span>}
+                        </span>
                         {meta?.mark && <>{NBSP}<span className={`quran-word ayah-${rel}${upNext ? ' ayah-upnext' : ''} ayah-mark`}>{meta.mark}</span></>}
                         {j < line.length - 1 ? ' ' : ''}
                       </span>
@@ -453,7 +459,7 @@ export function VerseDisplay({
                   <span className="ref-name">{v.surahName}</span>
                   <span className="ref-key">{v.key}</span>
                 </span>
-                {lang !== 'arabic' && <span className="ref-credit">{v.translationName}</span>}
+                {lang !== 'arabic' && <span className="ref-credit">{v.translationName}{lang === 'both' && v.glosses && v.glossCredit ? ` · ${v.glossCredit}` : ''}</span>}
               </footer>
             )}
             {plan.next && state.next && (

@@ -278,3 +278,10 @@ button.stop { background: #4a2620; border-color: #8a4a3e; color: #ffe0d8; }
 .next-en { font-family: var(--serif); line-height: 1.42; }
 .next-en.next-cut { -webkit-mask-image: linear-gradient(to right, #000 70%, transparent 98%); mask-image: linear-gradient(to right, #000 70%, transparent 98%); }
 @media (prefers-reduced-motion: reduce) { .passage .en-word, .en-progress span { transition: none; } }
+
+/* Word-by-word meaning under the word being recited (Arabic + English). */
+.has-gloss { position: relative; }
+.gloss { position: absolute; left: 50%; top: calc(100% + 0.06em); transform: translateX(-50%); white-space: nowrap; pointer-events: none;
+  font: 600 0.25em/1.2 var(--ui); letter-spacing: 0.01em; color: #f3d898; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.85); }
+.focus-word { display: flex; flex-direction: column; align-items: center; }
+.focus-gloss { margin-top: 18px; font: 600 40px/1.3 var(--ui); color: #f3d898; }

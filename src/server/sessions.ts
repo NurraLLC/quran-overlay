@@ -8,6 +8,7 @@
 //   Manual navigation always publishes (it is explicit), and re-anchors the tracker.
 
 import { shortGroup } from './corpus/groups';
+import type { WordGlosses } from './corpus/wbw';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, mkdirSync, statSync } from 'node:fs';
 import { EOL } from 'node:os';
@@ -58,6 +59,8 @@ export type SessionOptions = {
   captureDir?: string | null;
   /** Resource relationships (collision neighbours, topics, divisions); optional. */
   catalog?: ResourceCatalog | null;
+  /** Word-by-word English glosses (optional resource). */
+  glosses?: WordGlosses | null;
 };
 
 const CAPTURE_MAX_BYTES = 20 * 1024 * 1024;
@@ -190,6 +193,8 @@ export class Session {
               surahName: ch.nameSimple,
               surahNameArabic: ch.nameArabic,
               translationName: this.o.corpus.data.manifest.translation.name,
+              glosses: this.o.glosses?.get(v.key) ?? null,
+              glossCredit: this.o.glosses ? this.o.glosses.attribution : null,
             }
           : null,
       style: this.style,
