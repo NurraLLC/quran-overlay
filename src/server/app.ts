@@ -250,6 +250,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
       sponsored: hosted.credits.poolStats(),
       billing: hosted.billing
         ? {
+            testMode: hosted.billing.testMode,
             donations: hosted.billing.donations.amountsCents.map((c) => ({ amountCents: c, price: formatPrice(c, hosted.billing!.donations.currency), hours: hosted.billing!.sponsoredHours(c) })),
           }
         : null,

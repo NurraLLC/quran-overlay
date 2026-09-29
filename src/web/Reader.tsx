@@ -404,7 +404,7 @@ export function Reader() {
               <summary>How your voice is used</summary>
               <p>{credits ? 'When the microphone is on, your voice passes through our server to Soniox for speech recognition. This lets us stop unused streams and protect the shared hours.' : 'When the microphone is on, your voice goes directly to Soniox for speech recognition.'} We never record or keep your audio. Nothing is sent during long pauses. Reading, word meanings and translations never need the microphone.</p>
             </details>
-            {credits && <SharedHours stats={funding.sponsored} donations={funding.billing?.donations ?? []} />}
+            {credits && <SharedHours stats={funding.sponsored} donations={funding.billing?.donations ?? []} testMode={funding.billing?.testMode} />}
             {/* Streamers: the same following, as a broadcast overlay driven from the control page. */}
             <a className="r-stream" href={u('/control')}>
               <span className="r-stream-k">Streaming?</span> Show the ayah you’re reciting on your stream with OBS
@@ -642,7 +642,7 @@ function ListeningTime({ credits, funding, focus, onClose }: { credits: CreditVi
         <button className="r-close" onClick={onClose} aria-label="Close" autoFocus>×</button>
         <h2>{focus === 'sponsor' ? 'Support Quran Reader' : 'Free for everyone'}</h2>
         <p className="r-time-detail">Help someone else recite. Community contributions cover one shared pool of listening hours.</p>
-        <SharedHours stats={funding.sponsored} donations={funding.billing?.donations ?? []} defaultOpen />
+        <SharedHours stats={funding.sponsored} donations={funding.billing?.donations ?? []} testMode={funding.billing?.testMode} defaultOpen />
         <p className="r-time-free">Reading, word meanings and translations are always free.</p>
         <p className="r-time-detail">
           {credits.limitedBy === 'pool' ? 'Shared listening hours are unavailable right now.' : credits.limitedBy === 'share'

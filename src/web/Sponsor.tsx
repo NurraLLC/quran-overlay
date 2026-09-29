@@ -38,7 +38,7 @@ function useLivePool(initial: PoolStats | undefined): PoolStats | undefined {
   return stats;
 }
 
-export function SharedHours({ stats: initial, donations, defaultOpen = false }: { stats: PoolStats | undefined; donations: Donation[]; defaultOpen?: boolean }) {
+export function SharedHours({ stats: initial, donations, testMode = false, defaultOpen = false }: { stats: PoolStats | undefined; donations: Donation[]; testMode?: boolean; defaultOpen?: boolean }) {
   const stats = useLivePool(initial);
   const [open, setOpen] = useState(defaultOpen);
   const [busy, setBusy] = useState<number | null>(null);
@@ -83,6 +83,8 @@ export function SharedHours({ stats: initial, donations, defaultOpen = false }: 
           </p>
           <p className="r-pool-sub">One-time support for Quran Reader, operated by Nurra LLC. No subscription or reader account. Contributions are not tax-deductible charitable donations.</p>
           {donations.length > 0 && (
+            <>
+            {testMode && <p className="r-support-status" role="status">Test checkout — no real money. Use Stripe test details only. These hours belong to the test pool.</p>}
             <div className="r-give-amounts">
               {donations.map((d) => (
                 <button key={d.amountCents} disabled={busy !== null} onClick={() => void give(d.amountCents)}>
@@ -91,6 +93,7 @@ export function SharedHours({ stats: initial, donations, defaultOpen = false }: 
                 </button>
               ))}
             </div>
+            </>
           )}
           {!donations.length && <p className="r-support-status" role="status">Online contributions aren’t open yet. We’re setting up payments. You can already use the reader and share it with others.</p>}
           {donations.length > 0 && <p className="r-pool-sub">Choose an amount to continue to Stripe’s secure checkout.</p>}

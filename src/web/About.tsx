@@ -120,7 +120,7 @@ export function About() {
             <li>No accounts, no ads, no selling data, and no public donor names.</li>
           </ul>
           <p>Payments go to Nurra LLC to support this service. They are voluntary, one-time contributions, not tax-deductible charitable donations.</p>
-          {credits && <SharedHours stats={me?.sponsored} donations={donations} defaultOpen />}
+          {credits && <SharedHours stats={me?.sponsored} donations={donations} testMode={me?.billing?.testMode} defaultOpen />}
           {me?.mode === 'local' && <p className="r-support-status">This is a self-hosted copy. It uses your own listening service and doesn’t collect contributions.</p>}
         </section>
 

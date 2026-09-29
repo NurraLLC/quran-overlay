@@ -29,6 +29,8 @@ export class StripeBilling {
     readonly donations: Donations = DEFAULT_DONATIONS,
   ) {}
 
+  get testMode(): boolean { return !/^(sk|rk)_live_/.test(this.secretKey); }
+
   /** Hours of listening a donation adds to the sponsored pool. */
   sponsoredHours(amountCents: number): number {
     return Math.floor(amountCents / this.donations.centsPerHour);

@@ -59,6 +59,7 @@ test('shared lifetime totals, donation readback, and browser audio through the p
     await page.locator('.r-support-nav').getByRole('button', { name: /Support Quran Reader/ }).click();
     const support = page.getByRole('dialog', { name: 'Support Quran Reader' });
     await expect(support).toContainText('not tax-deductible');
+    await expect(support.getByRole('status')).toContainText('Test checkout — no real money');
     await page.route('**/api/billing/donate', (r) => r.fulfill({ status: 502, json: { error: 'The payment page could not be opened. Please try again.' } }), { times: 1 });
     await support.getByRole('button', { name: '$10 Add 76 shared hours' }).click();
     await expect(support.getByRole('alert')).toContainText('Please try again');

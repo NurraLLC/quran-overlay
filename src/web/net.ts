@@ -92,7 +92,7 @@ export type Access = {
   owner: boolean;
   credits?: import('../shared/contracts').CreditView;
   /** Hosted with donations enabled: gifts to the community pool. */
-  billing?: { donations?: Donation[] } | null;
+  billing?: { donations?: Donation[]; testMode?: boolean } | null;
   /** Hosted: the shared pool's story (seconds, counts; totals only). */
   sponsored?: PoolStats;
 };
