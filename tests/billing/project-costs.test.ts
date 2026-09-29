@@ -3,6 +3,20 @@ import { CreditStore } from '../../src/server/billing/credits';
 
 const config = { freeSecondsPerMonth: 0, ipDailyFreeSeconds: 0, globalDailyFreeSeconds: 0, holdMinSeconds: 20, holdMaxSeconds: 1200, costCentsPerHour: 10 };
 describe('shared project expenses', () => {
+  it('commits funding and fees together and preserves pre-imported receipts', () => {
+    const store = new CreditStore(':memory:', config);
+    try {
+      store.recordCost('conflict', 'hosting', 500_000);
+      const before = store.poolStats();
+      expect(() => store.grantPool(360_000, 'gift', 1000, 'usd', Date.now(), { id: 'conflict', usdMicros: 500_000 })).toThrow();
+      expect(store.poolStats()).toEqual(before);
+      store.recordCost('stripe:txn', 'payment_fees', 500_000);
+      store.grantPool(360_000, 'gift', 1000, 'usd', Date.now(), { id: 'stripe:txn', usdMicros: 500_000 });
+      expect(store.poolStats()).toMatchObject({ given: 360_000, costs: 36_000, left: 324_000 });
+      store.grantPool(360_000, 'gift', 1000, 'usd', Date.now(), { id: 'stripe:txn', usdMicros: 500_000 });
+      expect(store.poolSeconds()).toBe(324_000);
+    } finally { store.close(); }
+  });
   it('deducts fees once, supports corrections, and separates expenses from recitation', () => {
     const store = new CreditStore(':memory:', config);
     try {

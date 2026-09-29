@@ -149,11 +149,22 @@ export class CreditStore {
    * Sponsored time added to the shared pool (a donation, or the owner). With an `id` (the payment's
    * id) a repeated delivery adds nothing; returns whether time was added.
    */
-  grantPool(seconds: number, id: string, amountCents: number | null = null, currency: string | null = null, now = Date.now()): boolean {
+  grantPool(seconds: number, id: string, amountCents: number | null = null, currency: string | null = null, now = Date.now(), fee?: { id: string; usdMicros: number }): boolean {
+    const rate = this.cfg.costCentsPerHour ?? 13;
+    if (fee && (!fee.id || !Number.isSafeInteger(fee.usdMicros) || fee.usdMicros < 0 || fee.usdMicros > 1e12 || !Number.isFinite(rate) || rate < 1)) throw new Error('Invalid payment fee');
     this.db.exec('BEGIN');
     try {
       const added = this.db.prepare('INSERT OR IGNORE INTO pool_gifts (id, seconds, amount_cents, currency, at) VALUES (?, ?, ?, ?, ?)').run(id, Math.round(seconds), amountCents, currency, now).changes > 0;
       if (added) this.db.prepare('UPDATE pool SET seconds = seconds + ? WHERE id = 1').run(Math.round(seconds));
+      // Funding and its cost become visible together. A retry repairs a fee missing on an older
+      // grant without repeating the grant; an operator-imported matching receipt is not doubled.
+      if (fee) {
+        const old = this.db.prepare('SELECT category, seconds FROM pool_costs WHERE id = ?').get(fee.id) as { category: string; seconds: number } | undefined;
+        if (old && old.category !== 'payment_fees') throw new Error('Receipt category cannot change');
+        const costSeconds = Math.ceil(fee.usdMicros * 3600 / (rate * 10_000));
+        this.db.prepare("INSERT INTO pool_costs VALUES (?, 'payment_fees', ?, ?, ?) ON CONFLICT(id) DO UPDATE SET usd_micros=excluded.usd_micros, seconds=excluded.seconds, at=excluded.at").run(fee.id, fee.usdMicros, costSeconds, now);
+        this.db.prepare('UPDATE pool SET seconds = seconds - ? WHERE id = 1').run(costSeconds - (old?.seconds ?? 0));
+      }
       this.db.exec('COMMIT');
       return added;
     } catch (e) {

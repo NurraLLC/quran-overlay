@@ -286,7 +286,15 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     const event = hosted.billing.verify(raw, req.headers['stripe-signature'] as string | undefined);
     if (!event) return reply.code(400).send({ error: 'signature' });
     const g = hosted.billing.gift(event);
-    if (g) hosted.credits.grantPool(g.seconds, `stripe:${g.paymentId}`, g.amountCents, g.currency);
+    if (g) {
+      try {
+        const fee = await hosted.billing.feeFor(g);
+        hosted.credits.grantPool(g.seconds, `stripe:${g.paymentId}`, g.amountCents, g.currency, Date.now(), fee);
+      } catch {
+        // Stripe retries: never silently credit gross funds when their fee is still unknown.
+        return reply.code(503).send({ error: 'Payment accounting pending; retry delivery.' });
+      }
+    }
     return { received: true };
   });
 

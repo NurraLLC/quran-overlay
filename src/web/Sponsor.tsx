@@ -80,7 +80,7 @@ export function SharedHours({ stats: initial, donations, testMode = false, defau
         <div className="r-pool-body">
           <p className="r-pool-why">
             Support listening, hosting, payment fees, and other running costs. This budget is shown as equivalent listening hours.
-            {example ? ` ${price(example.price)} adds ${example.hours} shared hours.` : ''}
+            {example ? ` ${price(example.price)} represents about ${example.hours} hours before fees and project costs.` : ''}
           </p>
           <p className="r-pool-sub">One-time support for Quran Reader, operated by Nurra LLC. No subscription or reader account. Contributions are not tax-deductible charitable donations.</p>
           {donations.length > 0 && (
@@ -90,7 +90,7 @@ export function SharedHours({ stats: initial, donations, testMode = false, defau
               {donations.map((d) => (
                 <button key={d.amountCents} disabled={busy !== null} onClick={() => void give(d.amountCents)}>
                   <strong>{busy === d.amountCents ? 'Opening…' : price(d.price)}</strong>
-                  <span>Add {d.hours} shared hours</span>
+                  <span>About {d.hours} hours before costs</span>
                 </button>
               ))}
             </div>

@@ -33,6 +33,8 @@ test('shared lifetime totals, donation readback, and browser audio through the p
   const hub = new SessionHub(() => new Session({ corpus, ix, resolver, decisionClient: null, mode: 'deterministic', setup: { soniox: true, jev: { provider: null, configured: false, detail: '' }, semantic: () => '' }, overlayUrl: (v) => `${base}/quran-reader/overlay#view=${v}` }));
   let checkout: URLSearchParams | null = null;
   const billing = new StripeBilling('test-only', 'webhook-test-only', (async (_u, init) => {
+    if (init?.method !== 'POST') return new Response(JSON.stringify({ id: 'checkout-test-gift', payment_status: 'paid', amount_total: 1000, currency: 'usd', livemode: false,
+      payment_intent: { latest_charge: { paid: true, balance_transaction: { id: 'txn_fixture', amount: 1000, fee: 59, net: 941, currency: 'usd' } } } }));
     checkout = new URLSearchParams(String(init?.body));
     return new Response(JSON.stringify({ url: 'https://checkout.stripe.com/test-only' }));
   }) as typeof fetch);
@@ -61,9 +63,9 @@ test('shared lifetime totals, donation readback, and browser audio through the p
     await expect(support).toContainText('not tax-deductible');
     await expect(support.getByRole('status')).toContainText('Test checkout — no real money');
     await page.route('**/api/billing/donate', (r) => r.fulfill({ status: 502, json: { error: 'The payment page could not be opened. Please try again.' } }), { times: 1 });
-    await support.getByRole('button', { name: '$10 Add 76 shared hours' }).click();
+    await support.getByRole('button', { name: '$10 About 76 hours before costs' }).click();
     await expect(support.getByRole('alert')).toContainText('Please try again');
-    await support.getByRole('button', { name: '$10 Add 76 shared hours' }).click();
+    await support.getByRole('button', { name: '$10 About 76 hours before costs' }).click();
     await expect(page).toHaveURL('https://checkout.stripe.com/test-only');
     expect(checkout!.get('line_items[0][price_data][unit_amount]')).toBe('1000');
     expect(checkout!.get('line_items[0][price_data][product_data][description]')).toContain('Nurra LLC');
@@ -74,7 +76,7 @@ test('shared lifetime totals, donation readback, and browser audio through the p
     }
     await page.goto(`${base}/quran-reader/?donated=1`);
     await expect(panel).toContainText('176 h'); // webhook replay never adds it twice
-    await expect(panel).toContainText('151 h');
+    await expect(panel).toContainText('147 h'); // actual processing fee reduces available hours
     await expect(page.locator('.r-toast')).toBeVisible();
     await page.getByRole('button', { name: 'Dismiss thank-you message' }).click();
     await expect(page.locator('.r-toast')).toHaveCount(0);

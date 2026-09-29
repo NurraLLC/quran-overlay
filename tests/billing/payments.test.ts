@@ -17,6 +17,7 @@ let base = '';
 let origin = '';
 let credits: CreditStore;
 const stripeCalls: Array<{ url: string; body: URLSearchParams }> = [];
+let feeUnavailable = false;
 
 beforeAll(async () => {
   const { corpus, ix } = fullCorpus();
@@ -27,6 +28,12 @@ beforeAll(async () => {
       new Session({ corpus, ix, resolver, decisionClient: null, mode: 'deterministic', setup: { soniox: true, jev: { provider: null, configured: false, detail: '' }, semantic: () => 'unavailable' }, overlayUrl: (v) => `${origin}/overlay#view=${v}` }),
   );
   const stripeFetch = (async (url: string, init: RequestInit) => {
+    if (init.method !== 'POST') {
+      if (feeUnavailable) return new Response('{}', { status: 503 });
+      const id = new URL(url).pathname.split('/').at(-1)!;
+      return new Response(JSON.stringify({ id, payment_status: 'paid', amount_total: 1000, currency: 'usd', livemode: false,
+        payment_intent: { latest_charge: { paid: true, balance_transaction: { id: `txn_${id}`, amount: 1000, fee: 59, net: 941, currency: 'usd' } } } }));
+    }
     stripeCalls.push({ url, body: new URLSearchParams(String(init.body)) });
     return new Response(JSON.stringify({ id: 'cs_test_1', url: 'https://checkout.stripe.com/c/pay/cs_test_1' }), { status: 200 });
   }) as unknown as typeof fetch;
@@ -72,6 +79,14 @@ describe('no public accounts or personal purchases', () => {
 });
 
 describe('sponsoring listening for others', () => {
+  it('rejects mismatched payment mode, amount, currency and incomplete fee records', async () => {
+    const good = { id: 'cs_fee', payment_status: 'paid', amount_total: 1000, currency: 'usd', livemode: false,
+      payment_intent: { latest_charge: { paid: true, balance_transaction: { id: 'txn_fee', amount: 1000, fee: 59, net: 941, currency: 'usd' } } } };
+    for (const override of [{ livemode: true }, { amount_total: 500 }, { currency: 'eur' }, { id: 'wrong' }, { payment_status: 'unpaid' }, { payment_intent: { latest_charge: { paid: true, balance_transaction: null } } }]) {
+      const billing = new StripeBilling('sk_test_fixture', WEBHOOK, (async () => new Response(JSON.stringify({ ...good, ...override }))) as typeof fetch);
+      await expect(billing.feeFor({ paymentId: 'cs_fee', amountCents: 1000, currency: 'usd' })).rejects.toThrow();
+    }
+  });
   type Donation = { amountCents: number; price: string; hours: number };
   const donationEvent = (over: Record<string, unknown> = {}) =>
     JSON.stringify({
@@ -104,7 +119,22 @@ describe('sponsoring listening for others', () => {
     expect((await me()).body.credits.pool).toBe(before);
     expect((await webhook(donationEvent())).status).toBe(200);
     expect((await webhook(donationEvent())).status).toBe(200); // a retried delivery adds nothing
-    expect((await me()).body.credits.pool).toBe(before + 76 * 3600);
+    expect((await me()).body.credits.pool).toBe(before + Math.floor(1000 * 3600 / 13) - Math.ceil(59 * 3600 / 13));
+  });
+
+  it('retries unavailable fee accounting without exposing a partial grant', async () => {
+    const before = credits.poolStats();
+    const payload = donationEvent({ id: 'cs_retry' });
+    feeUnavailable = true;
+    try { expect((await webhook(payload)).status).toBe(503); }
+    finally { feeUnavailable = false; }
+    expect(credits.poolStats()).toEqual(before);
+    expect((await webhook(payload)).status).toBe(200);
+    const after = credits.poolStats();
+    expect(after.given - before.given).toBe(Math.floor(1000 * 3600 / 13));
+    expect(after.costUsdMicros - before.costUsdMicros).toBe(590_000);
+    expect((await webhook(payload)).status).toBe(200);
+    expect(credits.poolStats()).toEqual(after);
   });
 
   it('lets anyone whose own time is gone keep listening from the pool, up to the daily amount', async () => {

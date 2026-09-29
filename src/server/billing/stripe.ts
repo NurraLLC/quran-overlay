@@ -50,7 +50,7 @@ export class StripeBilling {
       'line_items[0][price_data][currency]': this.donations.currency,
       'line_items[0][price_data][unit_amount]': String(amountCents),
       'line_items[0][price_data][product_data][name]': 'Support Quran Reader',
-      'line_items[0][price_data][product_data][description]': `One-time contribution to Nurra LLC. Adds ${this.sponsoredHours(amountCents)} shared listening hours. Not a tax-deductible charitable donation.`,
+      'line_items[0][price_data][product_data][description]': `One-time contribution to Nurra LLC. About ${this.sponsoredHours(amountCents)} hour equivalents before fees and project costs. Not a tax-deductible charitable donation.`,
     });
     return this.createSession(form);
   }
@@ -64,7 +64,22 @@ export class StripeBilling {
     if (!this.donations.amountsCents.includes(amount)) return null;
     // What was paid must be what was offered (a tampered or stale session adds nothing).
     if (s.amount_total !== amount || s.currency !== this.donations.currency) return null;
-    return { amountCents: amount, currency: this.donations.currency, seconds: this.sponsoredHours(amount) * 3600, paymentId: s.id };
+    return { amountCents: amount, currency: this.donations.currency, seconds: Math.floor(amount * 3600 / this.donations.centsPerHour), paymentId: s.id };
+  }
+
+  /** Read the actual fee from Stripe, never infer it from an advertised percentage. A missing
+   * balance transaction is retryable: the webhook must not acknowledge unaccounted funding.
+   */
+  async feeFor(gift: { paymentId: string; amountCents: number; currency: string }): Promise<{ id: string; usdMicros: number }> {
+    const res = await this.fetchImpl(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(gift.paymentId)}?expand%5B%5D=payment_intent.latest_charge.balance_transaction`, {
+      headers: { Authorization: `Bearer ${this.secretKey}` }, signal: AbortSignal.timeout(10_000), redirect: 'error',
+    });
+    if (!res.ok) throw new Error('Stripe fee lookup unavailable');
+    const session = await res.json() as { id?: string; payment_status?: string; amount_total?: number; currency?: string; livemode?: boolean; payment_intent?: { latest_charge?: { paid?: boolean; balance_transaction?: { id?: string; amount?: number; fee?: number; net?: number; currency?: string } } } };
+    const charge = session.payment_intent?.latest_charge;
+    const balance = charge?.balance_transaction;
+    if (session.id !== gift.paymentId || session.payment_status !== 'paid' || session.amount_total !== gift.amountCents || session.currency !== gift.currency || session.livemode !== !this.testMode || !charge?.paid || !balance?.id || balance.currency !== 'usd' || balance.amount !== gift.amountCents || !Number.isSafeInteger(balance.fee) || balance.fee! < 0 || balance.fee! > 1_000_000 || balance.net !== balance.amount! - balance.fee!) throw new Error('Stripe fee not ready or inconsistent');
+    return { id: `stripe:${balance.id}`, usdMicros: balance.fee! * 10_000 };
   }
 
   private async createSession(form: URLSearchParams): Promise<string> {
