@@ -84,6 +84,9 @@ export type PoolStats = {
   given: number;
   used: number;
   left: number;
+  costs?: number;
+  costUsdMicros?: number;
+  centsPerHour?: number;
 };
 /** A donation to the shared sponsored-listening pool, and the hours it adds. */
 export type Donation = { amountCents: number; price: string; hours: number };

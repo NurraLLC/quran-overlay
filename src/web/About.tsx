@@ -115,7 +115,7 @@ export function About() {
           <ul>
             <li>Listening is free for everyone. There are no accounts and no plans.</li>
             <li>Listening draws from a shared pool funded by community contributions, including our own. Daily limits help more people share those hours.</li>
-            <li>Contributions add listening hours to the shared pool. The number of hours each amount adds is shown before checkout. Recognition costs and payment fees can vary. The pool totals below update as people contribute and recite.</li>
+            <li>Contributions support the whole project. We show the shared budget as equivalent listening hours. Listening, payment fees, hosting, and other recorded running costs reduce that balance. Actual listening time is shown separately.</li>
             <li>If the sponsored hours ever run out, listening pauses until someone gives again. Reading and search never stop.</li>
             <li>No accounts, no ads, no selling data, and no public donor names.</li>
           </ul>

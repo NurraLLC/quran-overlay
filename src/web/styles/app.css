@@ -589,6 +589,7 @@ a.about-ref:hover { text-decoration: underline; }
 .r-pool { margin: 28px auto 0; max-width: 34rem; border: 1px solid var(--line); border-radius: 16px; background: var(--ink-1); text-align: left; overflow: hidden; }
 .r-pool.open { border-color: rgba(207, 170, 98, 0.45); }
 .r-pool-overview { padding: 16px 16px 0; }
+.r-budget-note { margin: 10px 16px !important; font-size: 12px; color: var(--muted); line-height: 1.5; }
 .r-pool-title { margin: 0 0 14px !important; font: 650 14px/1.4 var(--ui); color: var(--text); }
 .r-pool-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
 .r-pool-totals dt { font-size: 12px; line-height: 1.45; min-height: 2.9em; color: var(--muted); margin-bottom: 7px; }

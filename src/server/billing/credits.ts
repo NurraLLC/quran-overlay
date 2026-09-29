@@ -1,5 +1,6 @@
 // Listening credits for the hosted service. One credit is one second of live listening, the only
-// unit this app meters (the provider invoice itself is token-based).
+// unit used for listening admission (the provider invoice itself is token-based). Additional
+// recorded project costs reduce the same pool through an explicit USD-to-hours conversion.
 //
 // Hosted audio goes through a server-owned relay. Each provider key has a time reservation and
 // a provider-enforced maximum. The relay closes the upstream before settling elapsed time;
@@ -16,6 +17,8 @@ import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
 export type CreditConfig = {
+  /** Display conversion for operating costs, in USD cents per equivalent listening hour. */
+  costCentsPerHour?: number;
   /** Free listening per visitor per calendar month (UTC). */
   freeSecondsPerMonth: number;
   /** Free listening per network (IP) per UTC day, across all visitors on it. */
@@ -103,6 +106,7 @@ export class CreditStore {
       CREATE TABLE IF NOT EXISTS pool (id INTEGER PRIMARY KEY CHECK (id = 1), seconds INTEGER NOT NULL);
       INSERT OR IGNORE INTO pool (id, seconds) VALUES (1, 0);
       CREATE TABLE IF NOT EXISTS pool_gifts (id TEXT PRIMARY KEY, seconds INTEGER NOT NULL, amount_cents INTEGER, currency TEXT, at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS pool_costs (id TEXT PRIMARY KEY, category TEXT NOT NULL, usd_micros INTEGER NOT NULL, seconds INTEGER NOT NULL, at INTEGER NOT NULL);
     `);
     // Ledgers from before sponsored time gain the column (existing rows drew nothing from the pool).
     const cols = this.db.prepare('PRAGMA table_info(holds)').all() as Array<{ name: string }>;
@@ -116,6 +120,29 @@ export class CreditStore {
   /** Seconds left in the shared sponsored pool. */
   poolSeconds(): number {
     return this.num('SELECT seconds AS n FROM pool WHERE id = 1');
+  }
+
+  /** Record an additional project expense once. Receipt corrections replace, rather than repeat, it.
+   * Recognition already deducted by listening settlement must not be entered here a second time.
+   * Private receipt IDs never appear in public totals. Negative balances remain visible.
+   */
+  recordCost(id: string, category: 'hosting' | 'payment_fees' | 'ai' | 'other', usdMicros: number, now = Date.now()): boolean {
+    if (!id.trim() || id.length > 200 || !['hosting', 'payment_fees', 'ai', 'other'].includes(category) || !Number.isSafeInteger(usdMicros) || usdMicros < 0 || usdMicros > 1e12) throw new Error('Invalid project expense');
+    const rate = this.cfg.costCentsPerHour ?? 13;
+    if (!Number.isFinite(rate) || rate < 1) throw new Error('Invalid hour conversion rate');
+    const seconds = Math.ceil(usdMicros * 3600 / (rate * 10_000));
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const old = this.db.prepare('SELECT category, usd_micros, seconds FROM pool_costs WHERE id = ?').get(id) as { category: string; usd_micros: number; seconds: number } | undefined;
+      if (old && old.category !== category) throw new Error('Receipt category cannot change');
+      const changed = !old || old.usd_micros !== usdMicros;
+      if (changed) {
+        this.db.prepare('INSERT INTO pool_costs VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET usd_micros=excluded.usd_micros, seconds=excluded.seconds, at=excluded.at').run(id, category, usdMicros, seconds, now);
+        this.db.prepare('UPDATE pool SET seconds = seconds - ? WHERE id = 1').run(seconds - (old?.seconds ?? 0));
+      }
+      this.db.exec('COMMIT');
+      return changed;
+    } catch (e) { this.db.exec('ROLLBACK'); throw e; }
   }
 
   /**
@@ -154,10 +181,14 @@ export class CreditStore {
    * Lifetime community totals. No monthly targets, donor identities or leaderboards.
    */
   poolStats(now = Date.now()) {
+    const costs = this.num('SELECT SUM(seconds) AS n FROM pool_costs');
     return {
       given: this.num('SELECT SUM(seconds) AS n FROM pool_gifts'),
       used: this.num('SELECT SUM(pool_seconds) AS n FROM holds'),
       left: this.poolSeconds(),
+      costs,
+      costUsdMicros: this.num('SELECT SUM(usd_micros) AS n FROM pool_costs'),
+      centsPerHour: this.cfg.costCentsPerHour ?? 13,
     };
   }
 
@@ -300,7 +331,7 @@ export class CreditStore {
         first = false;
       }
       if (paid) this.db.prepare('UPDATE users SET paid_seconds = paid_seconds - ? WHERE id = ?').run(paid, userId);
-      if (pooled) this.db.prepare('UPDATE pool SET seconds = MAX(0, seconds - ?) WHERE id = 1').run(pooled);
+      if (pooled) this.db.prepare('UPDATE pool SET seconds = seconds - ? WHERE id = 1').run(pooled);
       this.db.exec('COMMIT');
     } catch (e) {
       this.db.exec('ROLLBACK');

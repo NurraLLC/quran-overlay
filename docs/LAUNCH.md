@@ -30,6 +30,8 @@ The [final review](FINAL_REVIEW.md) records launch fixes and fresh local evidenc
 
 ## What the owner provides
 
+Update: nurra.org is already hosted on ChatGPT Sites. The owner selected a $10 starting project budget, covering all project costs rather than recognition alone. See [PROJECT_BUDGET.md](PROJECT_BUDGET.md) for the accounting changes and unresolved backend compatibility; do not purchase another host or copy sandbox hours into production by following the older example below.
+
 The owner completes sign-up, passwords and payment details. Open the relevant provider pages for them when needed.
 
 - A Linux server with Docker and persistent storage. Hosted audio now passes through a bounded relay; measure bandwidth and concurrency on the selected server.

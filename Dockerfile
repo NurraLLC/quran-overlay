@@ -26,6 +26,7 @@ COPY --from=build /app/package.json /app/package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/src ./src
 COPY --from=build /app/scripts/sponsor-pool.ts ./scripts/sponsor-pool.ts
+COPY --from=build /app/scripts/project-cost.ts ./scripts/project-cost.ts
 COPY --from=build /app/corpus ./corpus
 COPY --from=build /app/tsconfig.json ./
 COPY --from=build /app/dist ./dist

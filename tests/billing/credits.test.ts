@@ -181,6 +181,6 @@ describe('free for everyone from the shared pool', () => {
     expect(store.balance('u2', 'ip1', T0 + 301 * S)).toMatchObject({ sponsored: 100 });
     expect(store.balance('u3', 'ip2', T0 + 301 * S)).toMatchObject({ sponsored: 300 });
     const s = store.poolStats(T0 + 400 * S);
-    expect(s).toEqual({ given: 10_000, used: 300, left: 9_700 });
+    expect(s).toMatchObject({ given: 10_000, used: 300, left: 9_700, costs: 0 });
   });
 });
