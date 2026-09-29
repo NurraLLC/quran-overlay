@@ -558,6 +558,9 @@ function OutputCard({ snap, send, copied, onCopy }: { snap: ControlSnapshot; sen
         <input type="checkbox" checked={s.showNext} onChange={(e) => send({ type: 'style', patch: { showNext: e.target.checked } })} /> Show the next ayah, dimmed (full frame)
       </label>
       <label className="row">
+        <input type="checkbox" checked={s.groupShort} onChange={(e) => send({ type: 'style', patch: { groupShort: e.target.checked } })} /> Show short ayahs together (full frame)
+      </label>
+      <label className="row">
         Arabic size
         <input type="range" min={0.8} max={1.25} step={0.05} value={s.arabicScale} onChange={(e) => send({ type: 'style', patch: { arabicScale: Number(e.target.value) } })} />
       </label>

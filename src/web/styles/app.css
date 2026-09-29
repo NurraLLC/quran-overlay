@@ -252,3 +252,17 @@ button.stop { background: #4a2620; border-color: #8a4a3e; color: #ffe0d8; }
 .start-point { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
 .start-point summary { cursor: pointer; color: var(--muted); font-size: 13.5px; }
 .start-point .start-from { margin-top: 10px; }
+
+/* Short ayahs together: one passage, the current ayah bright, the rest quieter. Only the
+   highlight moves inside a passage; the text itself stays still. */
+.passage .quran-word { transition: opacity 320ms ease, color 320ms ease; }
+.passage .ayah-past { opacity: 0.55; }
+.passage .ayah-future { opacity: 0.42; }
+.passage .ayah-mark { color: var(--gold); }
+.passage .ayah-future.ayah-upnext { opacity: 0.72; }
+.stage[data-reading='follow'] .passage .ayah-mark { color: var(--gold); }
+.passage .ayah-future.ayah-upnext { opacity: 0.72; }
+.stage[data-bg='transparent'] .passage .ayah-past { opacity: 1; color: rgba(236, 228, 210, 0.72); }
+.stage[data-bg='transparent'] .passage .ayah-future { opacity: 1; color: rgba(236, 228, 210, 0.55); }
+.stage[data-bg='transparent'] .passage .ayah-future.ayah-upnext { color: rgba(250, 232, 190, 0.85); }
+@media (prefers-reduced-motion: reduce) { .passage .quran-word { transition: none; } }

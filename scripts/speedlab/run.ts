@@ -64,7 +64,7 @@ try {
       const label = el ? el.getAttribute('aria-label') : null;
       const key = label ? label.split(' ').pop() : null;
       if (key !== last) { window.__qoLog.push({ t: performance.now(), key }); last = key; }
-      const ant = !!document.querySelector('.panel-on .next-ayah[data-anticipate]');
+      const ant = !!document.querySelector('.panel-on .next-ayah[data-anticipate], .panel-on .ayah-upnext');
       if (ant !== window.__qoAnt) { window.__qoAnt = ant; if (ant) window.__qoAntLog.push({ t: performance.now(), key }); }
       requestAnimationFrame(tick);
     };

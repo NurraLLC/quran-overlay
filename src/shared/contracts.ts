@@ -16,6 +16,8 @@ export const DisplayStyleSchema = z.object({
   showReference: z.boolean(),
   /** The following ayah, dimmed under the current one, so readers see what comes next. */
   showNext: z.boolean().default(true),
+  /** Short consecutive ayahs share the screen as one passage (the current one highlighted). */
+  groupShort: z.boolean().default(true),
   arabicScale: z.number().min(0.8).max(1.25),
   /** Seconds per translation page when a translation overflows; 0 = broadcaster pages manually. */
   translationPageSeconds: z.number().int().min(0).max(60),
@@ -29,6 +31,7 @@ export const DEFAULT_STYLE: DisplayStyle = {
   showTranslation: true,
   showReference: true,
   showNext: true,
+  groupShort: true,
   arabicScale: 1,
   translationPageSeconds: 0,
 };
@@ -59,6 +62,11 @@ export const DisplayStateSchema = z.object({
   progress: z.number().min(0).max(1).nullable(),
   /** Display-word coordinates, validated against the selected display script. */
   cursor: z.object({ from: z.number().int().nonnegative(), to: z.number().int().nonnegative(), provisional: z.boolean() }).nullable().optional(),
+  /** Short ayahs shown together with the current one, in order (it is among them); null = alone. */
+  group: z
+    .array(z.object({ key: z.string().regex(/^\d{1,3}:\d{1,3}$/), ayah: z.number().int().min(1).max(286), arabic: z.string().min(1) }))
+    .nullable()
+    .optional(),
   /** The ayah after the current one (a preview, never a claim about where the reciter is). */
   next: z
     .object({

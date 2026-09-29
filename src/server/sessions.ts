@@ -7,6 +7,7 @@
 //   Blank           → audience sees nothing; tracking continues underneath.
 //   Manual navigation always publishes (it is explicit), and re-anchors the tracker.
 
+import { shortGroup } from './corpus/groups';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, mkdirSync, statSync } from 'node:fs';
 import { EOL } from 'node:os';
@@ -168,7 +169,11 @@ export class Session {
   private buildDisplay(): DisplayState {
     const v = this.displayVerse === null ? null : this.o.corpus.at(this.displayVerse)!;
     const ch = v ? this.o.corpus.chapter(v.surah)! : null;
-    const n = v && this.style.showNext && this.style.readingMode !== 'word' ? this.o.corpus.at(this.displayVerse! + 1) : undefined;
+    const grouped = v && this.style.groupShort && this.style.readingMode !== 'word' ? shortGroup(this.o.corpus, this.displayVerse!) : [];
+    const group = grouped.length > 1 ? grouped.map((i) => this.o.corpus.at(i)!) : null;
+    // Within a group the upcoming ayahs are already on screen; preview only what follows the group.
+    const nextIndex = group ? (grouped.at(-1) === this.displayVerse ? this.displayVerse! + 1 : -1) : (this.displayVerse ?? -2) + 1;
+    const n = v && this.style.showNext && this.style.readingMode !== 'word' && nextIndex >= 0 ? this.o.corpus.at(nextIndex) : undefined;
     return {
       v: PROTOCOL_VERSION,
       revision: this.revision,
@@ -192,6 +197,7 @@ export class Session {
       arabicPage: this.arabicPage,
       progress: this.progress,
       cursor: this.cursor,
+      group: group ? group.map((g) => ({ key: g.key, ayah: g.ayah, arabic: g.arabicDisplay })) : null,
       next: n ? { key: n.key, surah: n.surah, ayah: n.ayah, arabic: n.arabicDisplay, surahName: n.surah !== v!.surah ? this.o.corpus.chapter(n.surah)!.nameSimple : null } : null,
     };
   }

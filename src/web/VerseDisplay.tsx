@@ -68,6 +68,8 @@ function chunk<T>(xs: T[], n: number): T[][] {
   return out.length ? out : [[]];
 }
 
+/** No-break space: binds an ayah-end ornament to the word before it. */
+const NBSP = String.fromCharCode(0xa0);
 const AR_LH = 1.95;
 const EN_LH = 1.42;
 
@@ -81,6 +83,9 @@ type Plan = {
   arabicPageWordStarts: number[];
   /** The dimmed next-ayah line: its first measured line, and whether the ayah continues past it. */
   next: { px: number; words: string[]; cut: boolean } | null;
+  /** Short-ayah passage: for each Arabic word, which grouped ayah it belongs to, its index in that
+   *  ayah, and (on an ayah's last word) the end ornament bound to it. null = the current ayah alone. */
+  wordMeta: Array<{ ayah: number; index: number; mark?: string }> | null;
 };
 
 type Geometry = { width: number; height: number; refH: number; gap: number };
@@ -91,11 +96,27 @@ const LOWER: Geometry = { width: 1600, height: 318, refH: 48, gap: 16 };
 const NEXT_H = 160;
 const NEXT_W = 1480;
 
-function planFor(state: DisplayState): Plan | null {
+function planFor(state: DisplayState, useGroup = true): Plan | null {
   const v = state.verse;
   if (!v) return null;
   const scale = state.style.arabicScale;
-  const arWords = toQpcHafsEncoding(v.arabic).split(/\s+/).filter(Boolean);
+  const group = useGroup && state.group && state.group.length > 1 && state.style.readingMode !== 'word' ? state.group : null;
+  let arWords = toQpcHafsEncoding(v.arabic).split(/\s+/).filter(Boolean);
+  let wordMeta: Plan['wordMeta'] = null;
+  if (group) {
+    // One continuous passage, each ayah closed by its numbered ornament, as on a mushaf line.
+    arWords = [];
+    wordMeta = [];
+    // The ornament is bound to the ayah's last word (no-break space) so a line never starts with it.
+    group.forEach((g, gi) => {
+      const ws = toQpcHafsEncoding(g.arabic).split(/\s+/).filter(Boolean);
+      ws.forEach((w, wi) => {
+        const mark = wi === ws.length - 1 ? arabicNumber(g.ayah) : undefined;
+        arWords.push(mark ? `${w}${NBSP}${mark}` : w);
+        wordMeta!.push({ ayah: gi, index: wi, mark });
+      });
+    });
+  }
   const enWords = state.style.showTranslation ? v.english.split(/\s+/).filter(Boolean) : [];
 
   const tryFit = (g: Geometry, arMax: number, arMin: number, enMax: number, enMin: number) => {
@@ -126,9 +147,11 @@ function planFor(state: DisplayState): Plan | null {
     englishPages: [fit.el],
     arabicPageWordStarts: [0],
     next,
+    wordMeta,
   });
 
   if (state.style.layout === 'lowerthird' && state.style.readingMode !== 'word') {
+    if (group) return planFor(state, false);
     const fit = tryFit(LOWER, Math.round(62 * scale), Math.round(46 * scale), 30, 26);
     if (fit) return single(fit, 'lowerthird', false);
   }
@@ -138,8 +161,10 @@ function planFor(state: DisplayState): Plan | null {
     const withNext = tryFit({ ...FULL, height: FULL.height - NEXT_H }, Math.round(108 * scale), Math.round(64 * scale), 44, 31);
     if (withNext) return single(withNext, 'fullframe', promoted, nextLine(withNext.a));
   }
-  const fit = tryFit(FULL, Math.round(108 * scale), Math.round(54 * scale), 44, 31);
+  // A passage of short ayahs is only worth it at a comfortable size; otherwise show the ayah alone.
+  const fit = tryFit(FULL, Math.round(108 * scale), Math.round((group ? 64 : 54) * scale), 44, 31);
   if (fit) return single(fit, 'fullframe', promoted);
+  if (group) return planFor(state, false);
 
   // Deliberate paging: fixed comfortable sizes; Arabic and translation page independently.
   const a = Math.round(58 * scale);
@@ -166,6 +191,7 @@ function planFor(state: DisplayState): Plan | null {
     englishPages: el.length ? chunk(el, enLinesPerPage) : [[]],
     arabicPageWordStarts: starts,
     next: null,
+    wordMeta: null,
   };
 }
 
@@ -203,15 +229,19 @@ export function VerseDisplay({
   useLayoutEffect(() => {
     if (v && state.cursor) lastFocus.current = { key: v.key, text: toQpcHafsEncoding(v.arabic).split(/\s+/).filter(Boolean).slice(state.cursor.from, state.cursor.to + 1).join(' ') };
   }, [v?.key, state.cursor?.from, state.cursor?.to]);
-  const planKey = v ? `${v.key}|${state.next?.key}|${state.style.layout}|${state.style.readingMode}|${state.style.arabicScale}|${state.style.showTranslation}` : '';
+  const planKey = v ? `${v.key}|${state.group?.map((g) => g.key).join(',')}|${state.next?.key}|${state.style.layout}|${state.style.readingMode}|${state.style.arabicScale}|${state.style.showTranslation}` : '';
   // Layout is computed synchronously from measured line boxes before paint.
   const plan = useMemo(() => (fontsReady && v ? planFor(state) : null), [planKey, fontsReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reading forward: when the new ayah is the one that was previewed, it rises out of the preview
   // line into place (a teleprompter scroll); any other change (jump, search) simply cuts.
+  // A passage of short ayahs stays in place while the highlight moves through it: the article is
+  // keyed by the passage, and only a new passage (or single ayah) arrives.
+  const firstKey = plan?.wordMeta && state.group ? state.group[0].key : (v?.key ?? null);
+  const articleKey = plan?.wordMeta && state.group ? `group:${firstKey}` : firstKey;
   const flow = useRef<{ key: string | null; nextKey: string | null; arrived: boolean }>({ key: null, nextKey: null, arrived: false });
-  if ((v?.key ?? null) !== flow.current.key) flow.current = { key: v?.key ?? null, nextKey: state.next?.key ?? null, arrived: !!v && v.key === flow.current.nextKey };
-  else flow.current.nextKey = state.next?.key ?? null;
+  if (articleKey !== flow.current.key) flow.current = { key: articleKey, nextKey: state.next?.key ?? null, arrived: !!firstKey && firstKey === flow.current.nextKey };
+  else if (state.next) flow.current.nextKey = state.next.key;
 
   const lastReported = useRef('');
   useLayoutEffect(() => {
@@ -252,12 +282,15 @@ export function VerseDisplay({
   const layout = plan?.layout ?? state.style.layout;
   const mode = state.style.readingMode ?? 'follow';
   const displayWords = v ? toQpcHafsEncoding(v.arabic).split(/\s+/).filter(Boolean) : [];
+  const currentInGroup = plan?.wordMeta && state.group && v ? state.group.findIndex((g) => g.key === v.key) : 0;
+  // The reciter has reached the last word: what comes next brightens (preview line or next ayah in the passage).
+  const anticipating = !!state.cursor && state.cursor.to >= displayWords.length - 1;
   const focusText = state.cursor ? displayWords.slice(state.cursor.from, state.cursor.to + 1).join(' ') : lastFocus.current?.key === v?.key ? lastFocus.current?.text : null;
   return (
     <div className="stage" data-bg={state.style.background} data-layout={layout} data-reading={mode} data-preview={preview || undefined}>
       <div className={`panel ${visible ? 'panel-on' : 'panel-off'}`} aria-hidden={!visible}>
         {visible && plan && v && (
-          <article className={`verse${flow.current.arrived ? ' arrive' : ''}`} key={v.key} aria-label={`${v.surahName} ${v.key}`}>
+          <article className={`verse${flow.current.arrived ? ' arrive' : ''}${plan.wordMeta ? ' passage' : ''}`} key={articleKey ?? v.key} aria-label={`${v.surahName} ${v.key}`}>
             <div className={`arabic ${mode === 'word' ? 'word-focus' : ''}`} lang="ar" dir="rtl" style={{ fontSize: mode === 'word' ? 128 * state.style.arabicScale : plan.arabicPx }}>
               {mode === 'word' ? (
                 <div className="focus-word" data-active={!!state.cursor}>
@@ -267,9 +300,21 @@ export function VerseDisplay({
                 <div className="line" key={i}>
                   {line.map((word, j) => {
                     const index = plan.arabicPageWordStarts[arabicPage] + plan.arabicPages[arabicPage].slice(0, i).reduce((n, l) => n + l.length, 0) + j;
-                    const active = mode === 'follow' && !!state.cursor && index >= state.cursor.from && index <= state.cursor.to;
-                    const passed = mode === 'follow' && !!state.cursor && index < state.cursor.from;
-                    return <span key={index}><span className={`quran-word${active ? ' active-word' : ''}${passed ? ' passed-word' : ''}`} data-word-index={index} aria-current={active ? 'true' : undefined}>{word}</span>{j < line.length - 1 ? ' ' : ''}</span>;
+                    const meta = plan.wordMeta?.[index];
+                    const rel = !meta ? 'current' : meta.ayah < currentInGroup ? 'past' : meta.ayah > currentInGroup ? 'future' : 'current';
+                    const w = meta ? meta.index : index;
+                    const active = mode === 'follow' && rel === 'current' && w >= 0 && !!state.cursor && w >= state.cursor.from && w <= state.cursor.to;
+                    const passed = mode === 'follow' && rel === 'current' && w >= 0 && !!state.cursor && w < state.cursor.from;
+                    const upNext = anticipating && !!meta && meta.ayah === currentInGroup + 1;
+                    const cls = `quran-word${meta ? ` ayah-${rel}${upNext ? ' ayah-upnext' : ''}` : ''}${active ? ' active-word' : ''}${passed ? ' passed-word' : ''}`;
+                    const text = meta?.mark ? word.slice(0, word.length - meta.mark.length - 1) : word;
+                    return (
+                      <span key={index}>
+                        <span className={cls} data-word-index={w} aria-current={active ? 'true' : undefined}>{text}</span>
+                        {meta?.mark && <>{NBSP}<span className={`quran-word ayah-${rel}${upNext ? ' ayah-upnext' : ''} ayah-mark`}>{meta.mark}</span></>}
+                        {j < line.length - 1 ? ' ' : ''}
+                      </span>
+                    );
                   })}
                 </div>
               ))}
@@ -315,7 +360,7 @@ export function VerseDisplay({
                 className="next-ayah"
                 aria-label={`Next: ${state.next.key}`}
                 // The reciter has reached the last word: what comes next brightens, without moving.
-                data-anticipate={(!!state.cursor && state.cursor.to >= displayWords.length - 1) || undefined}
+                data-anticipate={anticipating || undefined}
               >
                 {state.next.surahName && <div className="next-label">Next surah · {state.next.surahName}</div>}
                 <div className={`next-line${plan.next.cut ? ' next-cut' : ''}`} lang="ar" dir="rtl" style={{ fontSize: plan.next.px }}>
