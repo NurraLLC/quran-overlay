@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { DisplayStateSchema, type DisplayState, type OverlayServerMessage } from '../shared/contracts';
-import { connect } from './net';
+import { connect, u } from './net';
 import { StageFrame, VerseDisplay, useFontsReady } from './VerseDisplay';
 
 function readCapability(): { view: string | null; bg: string | null } {
@@ -34,7 +34,7 @@ export function Overlay() {
       setDenied(true);
       return;
     }
-    sock.current = connect('/ws/overlay', {
+    sock.current = connect(u('/ws/overlay'), {
       onOpen: (send) => send({ type: 'hello', view, role: 'overlay' }),
       shouldRetry: (code) => code !== 4401,
       onMessage: (data) => {

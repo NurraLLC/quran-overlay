@@ -6,6 +6,13 @@ export type Socket = {
   close(): void;
 };
 
+/**
+ * The path the app is served under ("" at a site's root, "/quran-reader" on nurra.org), as the
+ * server tells the page. Every request and link goes through u().
+ */
+export const BASE = (typeof document !== 'undefined' ? document.querySelector<HTMLMetaElement>('meta[name="qo-base"]')?.content ?? '' : '').replace(/\/+$/, '');
+export const u = (path: string) => `${BASE}${path}`;
+
 export function connect(
   path: string,
   handlers: {
@@ -65,7 +72,7 @@ export async function exchangeOwner(): Promise<void> {
   const token = params.get('owner');
   if (!token) return;
   history.replaceState(null, '', location.pathname); // capability leaves the address bar immediately
-  await fetch('/api/owner/session', {
+  await fetch(u('/api/owner/session'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token }),
@@ -102,7 +109,7 @@ export type Access = {
 /** Local: trade the owner link for the cookie. Hosted: get (or be issued) this visitor's identity. */
 export async function access(): Promise<Access> {
   await exchangeOwner();
-  const r = await fetch('/api/me', { credentials: 'same-origin' });
+  const r = await fetch(u('/api/me'), { credentials: 'same-origin' });
   return (await r.json()) as Access;
 }
 

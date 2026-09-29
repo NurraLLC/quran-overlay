@@ -60,7 +60,9 @@ QO_HOSTED=1 QO_HOST=127.0.0.1 npm start
 | `SONIOX_API_KEY` | yes | Speech recognition (server-side only; browsers get temporary keys) |
 | `OPENROUTER_API_KEY` | recommended | JEV for spoken requests and meaning search (works without, with less understanding) |
 | `QO_HOSTED` | `1` | Turn on visitors and credits |
-| `QO_PUBLIC_ORIGIN` | yes, when public | e.g. `https://quran.example`; allowed Host/Origin, Secure cookies, overlay and payment links |
+| `QO_PUBLIC_ORIGIN` | yes, when public | e.g. `https://quran.example` (or `https://nurra.org` under a path); allowed Host/Origin, Secure cookies, overlay and payment links |
+| `QO_BASE_PATH` | no | Serve under a path of another site, e.g. `/quran-reader` |
+| `QO_EXTRA_HOSTS` | no | Extra Host names to accept, comma-separated: the name a proxy in front forwards to |
 | `QO_TRUST_PROXY` | `1` behind a proxy | Take the visitor address from `X-Forwarded-For` (per-network free cap) |
 | `QO_HOST` | `0.0.0.0` in a container | Listen address (default loopback) |
 | `PORT` | no | Default 4317 |
@@ -78,6 +80,33 @@ QO_HOSTED=1 QO_HOST=127.0.0.1 npm start
 | `QO_SPONSOR_CENTS_PER_HOUR` | no | What a donated hour costs (default 13: $0.12 streamed hour plus the payment fee) |
 
 Keep `data/state` on a persistent volume and back it up: it holds the credit ledger and the visitor-signing secret (losing the secret signs every visitor out, and bought time becomes reachable only through their saved recovery codes).
+
+## At nurra.org/quran-reader
+
+The app can live under a path of another site. nurra.org is behind Cloudflare, so Cloudflare sends
+`nurra.org/quran-reader*` to the Quran Reader server and everything else to the main site. (A plain
+rewrite on the main site's host is not enough if that host cannot pass WebSockets through; listening
+needs them.)
+
+1. Give the Quran Reader server its own name, e.g. `reader-origin.nurra.org` (DNS A record to the
+   server), and run it as in *Quickest* with:
+
+   ```
+   QO_DOMAIN=reader-origin.nurra.org
+   QO_PUBLIC_ORIGIN=https://nurra.org
+   QO_BASE_PATH=/quran-reader
+   QO_EXTRA_HOSTS=reader-origin.nurra.org
+   ```
+
+2. In Cloudflare, create a Worker from [deploy/cloudflare-worker.js](../deploy/cloudflare-worker.js),
+   set its variable `ORIGIN` to `reader-origin.nurra.org`, and add the route `nurra.org/quran-reader*`.
+   The Worker keeps the path (the app accepts it with or without the prefix), passes WebSockets
+   through, and sets the visitor's real address for the per-network limits.
+3. Open `https://nurra.org/quran-reader/`. The OBS link, the payment return pages and link previews
+   all carry `/quran-reader`.
+
+Every address the app gives the browser carries `QO_BASE_PATH`; it can also be served at a
+domain's root (leave it empty).
 
 ## HTTPS reverse proxy
 

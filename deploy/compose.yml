@@ -11,7 +11,7 @@ services:
       QO_HOSTED: "1"
       QO_HOST: 0.0.0.0
       QO_TRUST_PROXY: "1"
-      QO_PUBLIC_ORIGIN: https://${QO_DOMAIN:?set QO_DOMAIN in production.env}
+      # QO_PUBLIC_ORIGIN, QO_BASE_PATH and QO_EXTRA_HOSTS come from production.env.
     volumes:
       - qo-state:/app/data/state
   caddy:
@@ -20,7 +20,7 @@ services:
     depends_on: [app]
     ports: ["80:80", "443:443", "443:443/udp"]
     environment:
-      QO_DOMAIN: ${QO_DOMAIN}
+      QO_DOMAIN: ${QO_DOMAIN:?set QO_DOMAIN in production.env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

@@ -20,7 +20,7 @@ State on 2026-09-29, for whoever takes the hosted site live (Codex or a person).
 Needs from the owner (do not create accounts or handle their passwords):
 
 - A small Linux server with Docker (1 vCPU, 1–2 GB memory is plenty: the app uses about 280 MB; audio never touches the server).
-- A domain or subdomain with its DNS A record pointing at the server.
+- Where it will live. Planned: **nurra.org/quran-reader** (see *At nurra.org/quran-reader* in DEPLOY.md: a server name such as reader-origin.nurra.org, and a Cloudflare Worker route). A subdomain such as quran.nurra.org also works and needs no Worker.
 - A Soniox API key and an OpenRouter API key made for the site, each with a spending limit set in that provider's dashboard.
 
 Then, on the server:

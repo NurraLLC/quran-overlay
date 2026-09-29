@@ -21,6 +21,10 @@
     <meta property="og:image:alt" content="Al-Fatihah 1:2 with its first word highlighted and its meaning, All praises and thanks, underneath" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preload" href="/fonts/UthmanicHafs_V22.ttf" as="font" type="font/ttf" crossorigin />
+    <!-- In the page (not the stylesheet) so the server can serve it under a base path. -->
+    <style>
+      @font-face { font-family: 'Uthmanic Hafs'; src: url('/fonts/UthmanicHafs_V22.ttf') format('truetype'); font-display: block; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

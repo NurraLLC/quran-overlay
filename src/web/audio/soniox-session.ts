@@ -8,6 +8,7 @@ import type { ControlClientMessage } from '../../shared/contracts';
 import type { WireToken } from '../../shared/transcript';
 import { TokenRouter, type CommandCapture } from './command-lane';
 import { MicError, MicStreamSource, SharedMic } from './mic';
+import { u } from '../net';
 
 /** Restart before the explicit per-stream cap minted by the server (3 h), without replaying captions. */
 const PROACTIVE_RESTART_MS = 175 * 60 * 1000;
@@ -195,7 +196,7 @@ export class SonioxCapture {
   private client() {
     return new SonioxClient({
       config: async () => {
-        const res = await fetch('/api/soniox/temporary-key', { method: 'POST', credentials: 'same-origin' });
+        const res = await fetch(u('/api/soniox/temporary-key'), { method: 'POST', credentials: 'same-origin' });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string; limitedBy?: string | null; renewsAt?: number };
           if (body.error === 'NO_CREDITS') {

@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView } from '../shared/contracts';
 import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
-import { access, connect, formatListening, listeningLine, type Access } from './net';
+import { access, connect, formatListening, listeningLine, type Access, u } from './net';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { arabicNumber } from './VerseDisplay';
 import { NurraBadge } from './Nurra';
@@ -128,7 +128,7 @@ export function Reader() {
         setAccount({ recoveryCode: s.recoveryCode, billing: s.billing, sponsored: s.sponsored });
         if (new URLSearchParams(location.search).has('paid') || new URLSearchParams(location.search).has('donated') || new URLSearchParams(location.search).has('canceled')) history.replaceState(null, '', location.pathname);
         setAuth('owner');
-        sock.current = connect('/ws/control', {
+        sock.current = connect(u('/ws/control'), {
           onStatus: (_st, code) => code === 4401 && setAuth('unauthorized'),
           shouldRetry: (code) => code !== 4401,
           onMessage: (data) => {
@@ -190,7 +190,7 @@ export function Reader() {
   // The surah being read, fetched once per surah.
   useEffect(() => {
     if (!cur || surah?.number === cur.surah) return;
-    fetch(`/api/surah/${cur.surah}`, { credentials: 'same-origin' })
+    fetch(u(`/api/surah/${cur.surah}`), { credentials: 'same-origin' })
       .then((r) => (r.ok ? r.json() : null))
       .then((s: Surah | null) => s && setSurah(s))
       .catch(() => undefined);
@@ -382,14 +382,14 @@ export function Reader() {
             </details>
             {credits && <SharedHours stats={account.sponsored} donations={account.billing?.donations ?? []} />}
             {/* Streamers: the same following, as a broadcast overlay driven from the control page. */}
-            <a className="r-stream" href="/control">
+            <a className="r-stream" href={u('/control')}>
               <span className="r-stream-k">Streaming?</span> Show the ayah you’re reciting on your stream with OBS
               <span aria-hidden="true"> →</span>
             </a>
             <SurahIndex onOpen={(n) => goto(`${n}:1`)} />
             <footer className="r-brand">
               <NurraBadge />
-              <a href="/about">Why we built this</a>
+              <a href={u('/about')}>Why we built this</a>
             </footer>
           </section>
         )}
@@ -496,10 +496,10 @@ export function Reader() {
                 Give sadaqah<span>Keep listening free for everyone</span>
               </button>
             )}
-            <a className="r-menu-item" href="/control">
+            <a className="r-menu-item" href={u('/control')}>
               Put it on your stream<span>OBS overlay and stream controls</span>
             </a>
-            <a className="r-menu-item" href="/about">
+            <a className="r-menu-item" href={u('/about')}>
               Why we built this<span>What it costs, where your sadaqah goes, and its reward</span>
             </a>
             <div className="r-menu-brand">
@@ -626,7 +626,7 @@ function ListeningTime({ credits, account, focus, onClose }: { credits: CreditVi
   const buy = async (pack: string) => {
     setBusy(pack);
     setNote(null);
-    const r = await fetch('/api/billing/checkout', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pack }) }).catch(() => null);
+    const r = await fetch(u('/api/billing/checkout'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pack }) }).catch(() => null);
     const body = (await r?.json().catch(() => ({}))) as { url?: string; error?: string };
     if (body?.url) location.href = body.url;
     else {
@@ -635,7 +635,7 @@ function ListeningTime({ credits, account, focus, onClose }: { credits: CreditVi
     }
   };
   const restore = async () => {
-    const r = await fetch('/api/me/restore', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code.trim() }) }).catch(() => null);
+    const r = await fetch(u('/api/me/restore'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code.trim() }) }).catch(() => null);
     if (r?.ok) location.reload();
     else setNote(((await r?.json().catch(() => ({}))) as { error?: string })?.error ?? 'That code did not work.');
   };
@@ -707,7 +707,7 @@ function DemoLine() {
   const [ayah, setAyah] = useState<Ayah | null>(null);
   const [i, setI] = useState(0);
   useEffect(() => {
-    fetch('/api/surah/1', { credentials: 'same-origin' })
+    fetch(u('/api/surah/1'), { credentials: 'same-origin' })
       .then((r) => (r.ok ? r.json() : null))
       .then((s: Surah | null) => s && setAyah(s.ayahs[1]))
       .catch(() => undefined);
@@ -743,7 +743,7 @@ function SurahIndex({ onOpen }: { onOpen: (n: number) => void }) {
   const [q, setQ] = useState('');
   const [all, setAll] = useState(false);
   useEffect(() => {
-    fetch('/api/chapters', { credentials: 'same-origin' })
+    fetch(u('/api/chapters'), { credentials: 'same-origin' })
       .then((r) => (r.ok ? r.json() : null))
       .then((l: ChapterRow[] | null) => l && setList(l))
       .catch(() => undefined);

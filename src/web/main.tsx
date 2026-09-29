@@ -5,7 +5,9 @@ import { Overlay } from './Overlay';
 import { Reader } from './Reader';
 import './styles/app.css';
 
-const path = location.pathname.replace(/\/+$/, '');
+import { BASE } from './net';
+
+const path = (location.pathname.startsWith(BASE) ? location.pathname.slice(BASE.length) : location.pathname).replace(/\/+$/, '');
 const root = createRoot(document.getElementById('root')!);
 if (path === '/overlay' || path === '/read') root.render(<Overlay />);
 // The hosted service serves its home page at "/" (a self-hosted server redirects "/" to /control).

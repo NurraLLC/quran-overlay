@@ -44,6 +44,14 @@ export type HostedOptions = {
 };
 
 export type AppOptions = {
+  /**
+   * Serve under a path of another site (e.g. "/quran-reader" on nurra.org). Requests with or
+   * without the prefix both work (a proxy may strip it or not); every address the browser is given
+   * carries it.
+   */
+  basePath?: string;
+  /** Extra Host names to accept, e.g. the origin name a proxy in front forwards to ("reader-origin.nurra.org"). */
+  extraHosts?: string[];
   /** Local mode: the one session. Not used when `hosted` is set. */
   session?: Session;
   hosted?: HostedOptions;
@@ -124,6 +132,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     allowedOrigins.add(d);
     allowedHosts.add(new URL(d).host);
   }
+  for (const h of o.extraHosts ?? []) if (h.trim()) allowedHosts.add(h.trim().toLowerCase());
   const hosted = o.hosted ?? null;
   const secureCookie = !!hosted?.publicOrigin?.startsWith('https:');
   const visitorCookie = (value: string) => `${VISITOR_COOKIE}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000${secureCookie ? '; Secure' : ''}`;
@@ -136,7 +145,12 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   const exchangeLimit = new RateLimit(20, 60_000);
 
   // Request logging stays off: URLs could carry capabilities in misconfigured clients.
-  const app = Fastify({ logger: false, bodyLimit: 16_384 });
+  const base = normalizeBase(o.basePath);
+  const app = Fastify({
+    logger: false,
+    bodyLimit: 16_384,
+    rewriteUrl: base ? (req) => stripBase(req.url ?? '/', base) : undefined,
+  });
   await app.register(fastifyWebsocket, { options: { maxPayload: 256 * 1024 } });
 
   // JSON bodies keep their exact text: the payment webhook's signature covers the raw bytes.
@@ -263,7 +277,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     const pack = hosted.billing.pack(String((req.body as { pack?: unknown } | undefined)?.pack ?? ''));
     if (!pack) return reply.code(400).send({ error: 'unknown pack' });
     try {
-      return { url: await hosted.billing.checkout(id, pack, hosted.publicOrigin ?? `http://${req.headers.host}`) };
+      return { url: await hosted.billing.checkout(id, pack, `${hosted.publicOrigin ?? `http://${req.headers.host}`}${base}`) };
     } catch {
       return reply.code(502).send({ error: 'The payment page could not be opened. Please try again.' });
     }
@@ -279,7 +293,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     const amount = Number((req.body as { amountCents?: unknown } | undefined)?.amountCents);
     if (!hosted.billing.donations.amountsCents.includes(amount)) return reply.code(400).send({ error: 'unknown amount' });
     try {
-      return { url: await hosted.billing.checkoutDonation(id, amount, hosted.publicOrigin ?? `http://${req.headers.host}`) };
+      return { url: await hosted.billing.checkoutDonation(id, amount, `${hosted.publicOrigin ?? `http://${req.headers.host}`}${base}`) };
     } catch {
       return reply.code(502).send({ error: 'The payment page could not be opened. Please try again.' });
     }
@@ -478,14 +492,24 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     // Link previews need an absolute image address: the public origin, when there is one.
     const origin = hosted?.publicOrigin?.replace(/\/+$/, '');
     const indexHtml = () => {
-      const html = readFileSync(path.join(WEB_DIST, 'index.html'), 'utf8');
-      if (!origin) return html;
+      let html = readFileSync(path.join(WEB_DIST, 'index.html'), 'utf8');
+      if (origin) {
+        html = html
+          .replace(/content="\.?\/og\.png"/, `content="${origin}${base}/og.png"`)
+          .replace('<meta property="og:type"', `<meta property="og:url" content="${origin}${base}/" /><meta property="og:type"`);
+      }
+      // Every page, script, font and icon address under the base path; the page learns it too.
       return html
-        .replace('content="/og.png"', `content="${origin}/og.png"`)
-        .replace('<meta property="og:type"', `<meta property="og:url" content="${origin}/" /><meta property="og:type"`);
+        .replace(/(href|src|content)="\.?\//g, (_m, attr: string) => `${attr}="${base}/`)
+        .replace(/url\((['"]?)\/fonts\//g, (_m, q: string) => `url(${q}${base}/fonts/`)
+        .replace('<head>', `<head>\n    <meta name="qo-base" content="${base}" />`);
     };
     for (const route of ['/control', '/overlay', '/read', '/reader', '/about']) app.get(route, (_req, reply) => reply.type('text/html').send(indexHtml()));
-    app.get('/', (_req, reply) => (hosted ? reply.type('text/html').send(indexHtml()) : reply.redirect('/control')));
+    app.get('/', (_req, reply) => (hosted ? reply.type('text/html').send(indexHtml()) : reply.redirect(`${base}/control`)));
+    // The installable app's manifest, with its start page and icons under the base path.
+    app.get('/manifest.webmanifest', (_req, reply) =>
+      reply.type('application/manifest+json').send(readFileSync(path.join(WEB_DIST, 'manifest.webmanifest'), 'utf8').replace(/": "\//g, `": "${base}/`)),
+    );
   } else {
     app.get('/', (_req, reply) => reply.type('text/plain').send('Frontend not built. Run `npm run build`, or use `npm run dev`.'));
   }
@@ -504,4 +528,21 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   }
 
   return { app, ownerToken };
+}
+
+/** "/quran-reader" from "quran-reader/", "/quran-reader" or "" (no base). */
+export function normalizeBase(p: string | undefined): string {
+  const t = (p ?? '').trim().replace(/^\/*/, '/').replace(/\/+$/, '');
+  return t === '/' ? '' : t;
+}
+
+/** The app's own path for a request that may or may not carry the base prefix. */
+export function stripBase(url: string, base: string): string {
+  if (!base) return url;
+  if (url === base) return '/';
+  if (url.startsWith(`${base}/`) || url.startsWith(`${base}?`) || url.startsWith(`${base}#`)) {
+    const rest = url.slice(base.length);
+    return rest.startsWith('/') ? rest : `/${rest}`;
+  }
+  return url;
 }

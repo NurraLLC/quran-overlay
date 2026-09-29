@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView, SearchCard } from '../shared/contracts';
 import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
-import { access, connect, formatListening, listeningLine } from './net';
+import { access, connect, formatListening, listeningLine, u } from './net';
 import { NurraBadge } from './Nurra';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { StageFrame, VerseDisplay, useFontsReady, type LayoutInfo } from './VerseDisplay';
@@ -123,11 +123,11 @@ export function Control() {
         if (!s.owner) return setAuth('unauthorized');
         if (s.credits) setCredits(s.credits);
         setAuth('owner');
-        fetch('/api/chapters', { credentials: 'same-origin' })
+        fetch(u('/api/chapters'), { credentials: 'same-origin' })
           .then((r) => r.json())
           .then(setChapters)
           .catch(() => undefined);
-        sock.current = connect('/ws/control', {
+        sock.current = connect(u('/ws/control'), {
           onStatus: (st, code) => {
             setConn(st);
             if (code === 4401) setAuth('unauthorized');
@@ -520,7 +520,7 @@ function ResultCard({ card, confirmed, onShow }: { card: SearchCard; confirmed: 
   useEffect(() => setShown(card), [card.key]); // eslint-disable-line react-hooks/exhaustive-deps
   const go = (key: string | null) => {
     if (!key) return;
-    fetch(`/api/verse/${key}`, { credentials: 'same-origin' })
+    fetch(u(`/api/verse/${key}`), { credentials: 'same-origin' })
       .then((r) => (r.ok ? r.json() : null))
       .then((c: SearchCard | null) => c && setShown(c))
       .catch(() => undefined);
@@ -614,7 +614,7 @@ function OutputCard({ snap, send, copied, onCopy }: { snap: ControlSnapshot; sen
         {snap.corpus.verses.toLocaleString()} ayahs · {snap.corpus.chapters} surahs · {snap.corpus.attribution}. Decisions: {snap.setup.jev.detail} Semantic search: {snap.setup.semantic}.
       </p>
       <p className="fine control-brand">
-        <NurraBadge /> <a href="/about">How and why</a>
+        <NurraBadge /> <a href={u('/about')}>How and why</a>
       </p>
     </section>
   );

@@ -5,10 +5,11 @@
 // people give and recite. Totals and counts only, never who.
 import { useEffect, useRef, useState } from 'react';
 import type { Donation, PoolStats } from './net';
+import { u } from './net';
 
 /** Opens Stripe's page for a gift; returns an error to show if it could not. */
 export async function openDonation(amountCents: number): Promise<string | null> {
-  const r = await fetch('/api/billing/donate', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amountCents }) }).catch(() => null);
+  const r = await fetch(u('/api/billing/donate'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amountCents }) }).catch(() => null);
   const body = (await r?.json().catch(() => ({}))) as { url?: string; error?: string };
   if (body?.url) {
     location.href = body.url;
@@ -39,7 +40,7 @@ function useLivePool(initial: PoolStats | undefined): PoolStats | undefined {
   useEffect(() => {
     const tick = () => {
       if (document.visibilityState !== 'visible') return;
-      fetch('/api/pool', { credentials: 'same-origin' })
+      fetch(u('/api/pool'), { credentials: 'same-origin' })
         .then((r) => (r.ok ? r.json() : null))
         .then((s: PoolStats | null) => s && setStats(s))
         .catch(() => undefined);
@@ -117,7 +118,7 @@ export function SharedHours({ stats: initial, donations, defaultOpen = false }: 
             </div>
           )}
           {note && <p className="r-note">{note}</p>}
-          <a className="r-give-more" href="/about">
+          <a className="r-give-more" href={u('/about')}>
             Where your sadaqah goes, and its reward
           </a>
         </div>

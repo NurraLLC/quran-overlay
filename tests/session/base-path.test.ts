@@ -1,0 +1,66 @@
+// Served under a path of another site (nurra.org/quran-reader): every address the browser gets
+// carries the prefix, and requests work with or without it (a proxy may strip it or not).
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { existsSync } from 'node:fs';
+import type { FastifyInstance } from 'fastify';
+import { buildApp, normalizeBase, stripBase } from '../../src/server/app';
+import { CommandResolver } from '../../src/server/commands/reducer';
+import { Session } from '../../src/server/sessions';
+import { fullCorpus } from '../helpers';
+
+describe('base path helpers', () => {
+  it('normalizes and strips', () => {
+    expect(normalizeBase('quran-reader/')).toBe('/quran-reader');
+    expect(normalizeBase('/')).toBe('');
+    expect(normalizeBase(undefined)).toBe('');
+    expect(stripBase('/quran-reader', '/quran-reader')).toBe('/');
+    expect(stripBase('/quran-reader/api/me', '/quran-reader')).toBe('/api/me');
+    expect(stripBase('/quran-reader?x=1', '/quran-reader')).toBe('/?x=1');
+    expect(stripBase('/api/me', '/quran-reader')).toBe('/api/me');
+    expect(stripBase('/quran-readers', '/quran-reader')).toBe('/quran-readers');
+  });
+});
+
+describe.skipIf(!existsSync('dist/web/index.html'))('serving under /quran-reader', () => {
+  let app: FastifyInstance;
+  let base = '';
+  beforeAll(async () => {
+    const { corpus, ix } = fullCorpus();
+    const session = new Session({ corpus, ix, resolver: new CommandResolver(corpus, null, null), decisionClient: null, mode: 'deterministic', setup: { soniox: false, jev: { provider: null, configured: false, detail: '' }, semantic: () => '' }, overlayUrl: (v) => v });
+    const port = 46170 + Math.floor(Math.random() * 500);
+    ({ app } = await buildApp({ basePath: '/quran-reader', extraHosts: ['reader-origin.test'], session, port, ownerToken: 'base-path-test-owner-token-000001' }));
+    await app.listen({ host: '127.0.0.1', port });
+    base = `http://127.0.0.1:${port}`;
+  });
+  afterAll(async () => app?.close());
+
+  it('gives the page addresses under the base, and answers with or without it', async () => {
+    const html = await (await fetch(`${base}/quran-reader/reader`)).text();
+    expect(html).toContain('<meta name="qo-base" content="/quran-reader" />');
+    expect(html).toMatch(/src="\/quran-reader\/assets\/index-[^"]+\.js"/);
+    expect(html).toContain('href="/quran-reader/manifest.webmanifest"');
+    expect(html).toMatch(/url\(['"]?\/quran-reader\/fonts\/UthmanicHafs_V22\.ttf/);
+    expect(html).not.toMatch(/(src|href)="\.\//);
+    const manifest = await (await fetch(`${base}/quran-reader/manifest.webmanifest`)).json();
+    expect(manifest.start_url).toBe('/quran-reader/');
+    expect(manifest.icons[0].src).toBe('/quran-reader/icon-192.png');
+    expect((await fetch(`${base}/quran-reader/api/owner/status`)).status).toBe(200);
+    expect((await fetch(`${base}/api/owner/status`)).status).toBe(200); // a proxy that strips the prefix
+    const home = await fetch(`${base}/quran-reader`, { redirect: 'manual' });
+    expect(home.headers.get('location')).toBe('/quran-reader/control');
+  });
+
+  it('accepts the origin name a proxy forwards to, and no other host', async () => {
+    const http = await import('node:http');
+    const status = (host: string) =>
+      new Promise<number>((resolve, reject) => {
+        const u = new URL(`${base}/quran-reader/api/owner/status`);
+        http.get({ hostname: u.hostname, port: u.port, path: u.pathname, headers: { host } }, (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        }).on('error', reject);
+      });
+    expect(await status('reader-origin.test')).toBe(200);
+    expect(await status('evil.example')).toBe(421);
+  });
+});

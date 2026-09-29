@@ -6,7 +6,7 @@ import type { CreditView, SearchCard } from '../shared/contracts';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { NurraBadge } from './Nurra';
 import { SharedHours } from './Sponsor';
-import { access, type Access } from './net';
+import { access, type Access, u } from './net';
 
 const REPO = 'https://github.com/NurraLLC/quran-overlay';
 
@@ -52,7 +52,7 @@ export function About() {
     access()
       .then((a) => {
         setMe(a);
-        return fetch('/api/verse/2:261', { credentials: 'same-origin' });
+        return fetch(u('/api/verse/2:261'), { credentials: 'same-origin' });
       })
       .then((r) => (r.ok ? r.json() : null))
       .then((c: SearchCard | null) => c && setAyah(c))

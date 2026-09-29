@@ -1,9 +1,3 @@
-@font-face {
-  font-family: 'Uthmanic Hafs';
-  src: url('/fonts/UthmanicHafs_V22.ttf') format('truetype');
-  font-display: block;
-}
-
 :root {
   --ink-0: #0a1418;
   --ink-1: #0f1e23;

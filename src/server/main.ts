@@ -6,7 +6,7 @@ import { VisitorIdentity } from './billing/identity';
 import { parseDonations, parsePacks, StripeBilling } from './billing/stripe';
 import net from 'node:net';
 import path from 'node:path';
-import { buildApp, type HostedOptions } from './app';
+import { buildApp, normalizeBase, type HostedOptions } from './app';
 import { localLinks } from './local-links';
 import { CommandResolver } from './commands/reducer';
 import { Corpus, loadCorpus } from './corpus/load';
@@ -106,6 +106,8 @@ async function main() {
   }
   const devOrigins = process.env.QO_DEV === '1' ? ['http://127.0.0.1:5173', 'http://localhost:5173'] : [];
   const publicOrigin = process.env.QO_DEV === '1' ? 'http://127.0.0.1:5173' : `http://127.0.0.1:${port}`;
+  // Served under a path of another site, e.g. nurra.org/quran-reader (QO_BASE_PATH=/quran-reader).
+  const base = normalizeBase(process.env.QO_BASE_PATH);
 
   const hostedMode = process.env.QO_HOSTED === '1';
   const sessionOptions = (hosted: boolean): ConstructorParameters<typeof Session>[0] => ({
@@ -122,7 +124,7 @@ async function main() {
         return s.state === 'ready' ? `ready (${s.model}, warm-up ${s.warmupMs} ms)` : s.state === 'loading' ? 'loading' : `${s.state}: ${'reason' in s ? s.reason : ''}`;
       },
     },
-    overlayUrl: (view) => `${hosted && process.env.QO_PUBLIC_ORIGIN ? process.env.QO_PUBLIC_ORIGIN : publicOrigin}/overlay#view=${view}`,
+    overlayUrl: (view) => `${hosted && process.env.QO_PUBLIC_ORIGIN ? process.env.QO_PUBLIC_ORIGIN : publicOrigin}${base}/overlay#view=${view}`,
     // Diagnostic transcripts are never written for visitors of the hosted service.
     captureDir: !hosted && process.env.QO_DIAGNOSTIC_CAPTURE === '1' ? path.join(ROOT, 'data', 'captures') : null,
     catalog,
@@ -144,7 +146,7 @@ async function main() {
   const hosted = hostedMode ? hostedSetup(() => new Session(sessionOptions(true))) : undefined;
   // QO_OWNER_TOKEN exists only so automated browser tests can open the control page; self-hosted
   // runs keep a random capability in data/state (see local-links.ts).
-  const { app, ownerToken } = await buildApp({ session, hosted, port, sonioxApiKey: process.env.SONIOX_API_KEY, devOrigins, ownerToken: process.env.QO_OWNER_TOKEN || links?.links.owner });
+  const { app, ownerToken } = await buildApp({ basePath: base, extraHosts: (process.env.QO_EXTRA_HOSTS ?? '').split(',').filter(Boolean), session, hosted, port, sonioxApiKey: process.env.SONIOX_API_KEY, devOrigins, ownerToken: process.env.QO_OWNER_TOKEN || links?.links.owner });
   // Loopback by default; a container or VM behind a reverse proxy sets QO_HOST=0.0.0.0.
   await app.listen({ host: process.env.QO_HOST || '127.0.0.1', port });
   const ms = Math.round(performance.now() - t0);
@@ -157,8 +159,8 @@ async function main() {
     console.log(`\nHosted mode: every visitor gets their own session and ${h(c.freeSecondsPerMonth)} of free listening per month (${h(c.ipDailyFreeSeconds)} per network per day, ${h(c.globalDailyFreeSeconds)} per day overall).`);
     console.log(`Sponsored listening: ${h(hosted.credits.poolSeconds())} in the pool, up to ${h(c.poolDailySecondsPerVisitor ?? 3600)} per visitor per day once their own time is gone; donations ${hosted.billing ? 'on' : 'off'}.`);
     console.log(`Buying listening time: ${hosted.billing ? `on (${hosted.billing.packs.map((p) => p.label).join(', ')})` : 'off (set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET)'}.`);
-    console.log(`Open: ${process.env.QO_PUBLIC_ORIGIN || publicOrigin}/\n`);
-  } else console.log(`\nOpen the control page (keep this link private):\n  ${publicOrigin}/control#owner=${ownerToken}\n`);
+    console.log(`Open: ${process.env.QO_PUBLIC_ORIGIN || publicOrigin}${base}/\n`);
+  } else console.log(`\nOpen the control page (keep this link private):\n  ${publicOrigin}${base}/control#owner=${ownerToken}\n`);
 }
 
 main().catch((e) => {

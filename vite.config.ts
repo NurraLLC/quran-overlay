@@ -5,6 +5,8 @@ const backend = `http://127.0.0.1:${process.env.PORT ?? 4317}`;
 
 export default defineConfig({
   root: 'src/web',
+  // Relative asset addresses: the server anchors them under QO_BASE_PATH when it serves the page.
+  base: './',
   // Web app manifest and icons (installable reader).
   publicDir: 'public',
   plugins: [react()],
