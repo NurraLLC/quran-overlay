@@ -90,6 +90,8 @@ type Plan = {
   enMeta: Array<{ ayah: number; mark?: string }> | null;
   /** Several short ayahs share the screen (Arabic or English). */
   passage: boolean;
+  /** A surah's opening screen: a framed surah-name banner above the text. */
+  banner: boolean;
 };
 
 type Geometry = { width: number; height: number; refH: number; gap: number };
@@ -98,6 +100,11 @@ const FULL: Geometry = { width: 1560, height: 812, refH: 64, gap: 34 };
 const LOWER: Geometry = { width: 1600, height: 318, refH: 48, gap: 16 };
 /** Height kept for the next-ayah preview (hairline, optional surah label, one Arabic line). */
 const NEXT_H = 160;
+/** Height the surah banner takes on a surah's opening screen (full frame only). */
+const BANNER_H = 118;
+
+/** The screen that opens a surah (its first ayah, or a passage that starts there). */
+const opensSurah = (state: DisplayState, group: boolean) => (group && state.group ? state.group[0].ayah : state.verse!.ayah) === 1;
 const NEXT_W = 1480;
 
 function planFor(state: DisplayState, useGroup = true): Plan | null {
@@ -124,6 +131,8 @@ function planFor(state: DisplayState, useGroup = true): Plan | null {
   }
   const enWords = state.style.language === 'both' ? v.english.split(/\s+/).filter(Boolean) : [];
 
+  const banner = opensSurah(state, !!group) && !(state.style.layout === 'lowerthird' && state.style.readingMode !== 'word') && state.style.readingMode !== 'word';
+  const FULLB: Geometry = banner ? { ...FULL, height: FULL.height - BANNER_H } : FULL;
   const tryFit = (g: Geometry, arMax: number, arMin: number, enMax: number, enMin: number) => {
     for (let a = arMax; a >= arMin; a -= 2) {
       const e = Math.max(enMin, Math.min(enMax, Math.round(a * 0.5)));
@@ -155,6 +164,7 @@ function planFor(state: DisplayState, useGroup = true): Plan | null {
     wordMeta,
     enMeta: null,
     passage: !!wordMeta,
+    banner: banner && layout === 'fullframe',
   });
 
   if (state.style.layout === 'lowerthird' && state.style.readingMode !== 'word') {
@@ -165,11 +175,11 @@ function planFor(state: DisplayState, useGroup = true): Plan | null {
   const promoted = state.style.layout === 'lowerthird';
   // The preview only takes space the current ayah can spare at a comfortable size.
   if (state.next && state.style.readingMode !== 'word') {
-    const withNext = tryFit({ ...FULL, height: FULL.height - NEXT_H }, Math.round(108 * scale), Math.round(64 * scale), 44, 31);
+    const withNext = tryFit({ ...FULLB, height: FULLB.height - NEXT_H }, Math.round(108 * scale), Math.round(64 * scale), 44, 31);
     if (withNext) return single(withNext, 'fullframe', promoted, nextLine(withNext.a));
   }
   // A passage of short ayahs is only worth it at a comfortable size; otherwise show the ayah alone.
-  const fit = tryFit(FULL, Math.round(108 * scale), Math.round((group ? 64 : 54) * scale), 44, 31);
+  const fit = tryFit(FULLB, Math.round(108 * scale), Math.round((group ? 64 : 54) * scale), 44, 31);
   if (fit) return single(fit, 'fullframe', promoted);
   if (group) return planFor(state, false);
 
@@ -201,6 +211,7 @@ function planFor(state: DisplayState, useGroup = true): Plan | null {
     wordMeta: null,
     enMeta: null,
     passage: false,
+    banner: false,
   };
 }
 
@@ -226,6 +237,8 @@ function planEnglish(state: DisplayState, useGroup: boolean): Plan {
     });
   });
   const lower = state.style.layout === 'lowerthird';
+  const banner = !lower && opensSurah(state, !!group);
+  const bannerH = banner ? BANNER_H : 0;
   const fit = (g: Geometry, height: number, max: number, min: number) => {
     for (let e = max; e >= min; e -= 2) {
       const lines = measureLines(measureWords, ENGLISH_FONT, e, EN_LH, g.width, false);
@@ -252,6 +265,7 @@ function planEnglish(state: DisplayState, useGroup: boolean): Plan {
     wordMeta: null,
     enMeta,
     passage: !!group,
+    banner: banner && layout === 'fullframe',
   });
   if (lower && !group) {
     const f = fit(LOWER, LOWER.height, 44, 30);
@@ -259,10 +273,10 @@ function planEnglish(state: DisplayState, useGroup: boolean): Plan {
   }
   if (lower && group) return planEnglish(state, false);
   if (state.next) {
-    const f = fit(FULL, FULL.height - NEXT_H, EN_ONLY_MAX, group ? 48 : 44);
+    const f = fit(FULL, FULL.height - NEXT_H - bannerH, EN_ONLY_MAX, group ? 48 : 44);
     if (f) return plan('fullframe', f.e, [f.lines], nextLine(f.e));
   }
-  const f = fit(FULL, FULL.height, EN_ONLY_MAX, group ? 48 : EN_ONLY_MIN);
+  const f = fit(FULL, FULL.height - bannerH, EN_ONLY_MAX, group ? 48 : EN_ONLY_MIN);
   if (f) return plan('fullframe', f.e, [f.lines], null);
   if (group) return planEnglish(state, false);
   const lines = measureLines(measureWords, ENGLISH_FONT, EN_ONLY_MIN, EN_LH, FULL.width, false);
@@ -374,6 +388,14 @@ export function VerseDisplay({
       <div className={`panel ${visible ? 'panel-on' : 'panel-off'}`} aria-hidden={!visible}>
         {visible && plan && v && (
           <article className={`verse${flow.current.arrived ? ' arrive' : ''}${plan.passage ? ' passage' : ''}`} key={articleKey ?? v.key} aria-label={`${v.surahName} ${v.key}`}>
+            {plan.banner && (
+              <header className="surah-banner" aria-label={`Surah ${v.surahName}`}>
+                <span className="sb-frame">
+                  <span className="sb-ar" lang="ar" dir="rtl">سورة {v.surahNameArabic}</span>
+                </span>
+                <span className="sb-en">{v.surahName}</span>
+              </header>
+            )}
             {lang !== 'english' && <div className={`arabic ${mode === 'word' ? 'word-focus' : ''}`} lang="ar" dir="rtl" style={{ fontSize: mode === 'word' ? 128 * state.style.arabicScale : plan.arabicPx }}>
               {mode === 'word' ? (
                 <div className="focus-word" data-active={!!state.cursor}>

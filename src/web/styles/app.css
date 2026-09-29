@@ -425,3 +425,45 @@ details.r-privacy p { text-align: left; margin: 8px 0 0 !important; font-size: 1
 .r-dock { background: linear-gradient(180deg, rgba(10, 20, 24, 0) 0, var(--ink-0) 26px); }
 .r-mic-ring { border-width: 3px; box-shadow: 0 0 0 0 rgba(111, 179, 159, 0); }
 .r-mic-wrap[data-live] .r-mic-ring { opacity: calc(0.45 + var(--level) * 0.55); box-shadow: 0 0 calc(var(--level) * 26px) rgba(111, 179, 159, 0.55); transition: opacity 120ms linear; }
+
+/* ---------------- overlay design pass ---------------- */
+/* Follow / word view on the shaded background: a feathered vignette behind the text instead of a
+   box. It darkens the footage where the words are and fades to nothing, so no edge is ever drawn
+   across the stream. It lives in a layer behind the text (never fading the text itself). */
+.stage[data-reading='follow'][data-bg='scrim'] .panel,
+.stage[data-reading='word'][data-bg='scrim'] .panel { background: none; }
+.stage[data-reading='follow'][data-bg='scrim'] .panel::after,
+.stage[data-reading='word'][data-bg='scrim'] .panel::after {
+  content: ''; position: absolute; pointer-events: none; z-index: 0;
+  inset: -84px -120px;
+  background: radial-gradient(ellipse 62% 58% at 50% 50%, rgba(9, 19, 23, 0.84) 0%, rgba(9, 19, 23, 0.72) 42%, rgba(9, 19, 23, 0.34) 72%, rgba(9, 19, 23, 0) 100%);
+}
+.stage[data-layout='lowerthird'][data-reading='follow'][data-bg='scrim'] .panel::after {
+  inset: -140px -120px -56px;
+  background: radial-gradient(ellipse 64% 72% at 50% 64%, rgba(9, 19, 23, 0.84) 0%, rgba(9, 19, 23, 0.7) 46%, rgba(9, 19, 23, 0.3) 74%, rgba(9, 19, 23, 0) 100%);
+}
+.stage[data-bg='scrim'] .verse { z-index: 1; }
+
+/* A surah's opening screen: the framed name, as a mushaf marks the start of a surah. */
+.surah-banner { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 18px; }
+.sb-frame { position: relative; display: inline-block; padding: 4px 56px; border: 2px solid rgba(207, 170, 98, 0.6); border-radius: 999px; }
+.sb-frame::before, .sb-frame::after { content: ''; position: absolute; top: 50%; width: 14px; height: 14px; background: var(--gold); transform: translateY(-50%) rotate(45deg); }
+.sb-frame::before { left: -8px; }
+.sb-frame::after { right: -8px; }
+.sb-ar { font-family: 'Uthmanic Hafs', serif; font-size: 52px; line-height: 1.45; color: var(--gold); }
+.sb-en { font: 600 20px/1 var(--ui); letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold-dim); }
+.stage[data-bg='transparent'] .sb-en { color: #e6d3a6; }
+/* overlay pass, round 2 (after inspecting frames over bright footage) */
+.stage[data-reading='follow'][data-bg='scrim'] .panel::after,
+.stage[data-reading='word'][data-bg='scrim'] .panel::after {
+  background: radial-gradient(ellipse 72% 76% at 50% 50%, rgba(9, 19, 23, 0.84) 0%, rgba(9, 19, 23, 0.74) 48%, rgba(9, 19, 23, 0.36) 76%, rgba(9, 19, 23, 0) 100%);
+}
+/* Lower third: the ellipse is fully faded before the top of its layer, so no edge is drawn. */
+.stage[data-layout='lowerthird'][data-reading='follow'][data-bg='scrim'] .panel::after {
+  inset: -260px -120px -56px;
+  background: radial-gradient(ellipse 66% 62% at 50% 76%, rgba(9, 19, 23, 0.84) 0%, rgba(9, 19, 23, 0.7) 50%, rgba(9, 19, 23, 0.3) 78%, rgba(9, 19, 23, 0) 100%);
+}
+.stage[data-bg='transparent'] .sb-frame { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.75)); }
+.stage[data-bg='transparent'] .sb-ar { color: #f6e3b4; }
+.stage[data-bg='transparent'] .sb-frame { border-color: rgba(246, 227, 180, 0.8); }
+.stage[data-bg='transparent'] .sb-frame::before, .stage[data-bg='transparent'] .sb-frame::after { background: #f6e3b4; }
