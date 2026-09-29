@@ -13,11 +13,12 @@ It works as a personal reader on your phone or computer, and as an OBS/Twitch ov
 
 ## What it does
 
-- **Follows recitation fast.** About one second from the start of an ayah to it being on screen (median 0.9–1.0 s, measured end to end through the real microphone path and Soniox), with **zero wrong ayahs** across 58 test scenarios and the recorded sessions. Word-by-word highlighting as you recite, a heads-up when you reach an ayah's last word, and the next ayah waiting dimmed below.
-- **Understands how people actually recite.** Speech-recognition word splits ("ولا الآخرة" for "وللآخرة"), a basmala before a surah, one-word openings ("والضحى", "يس"), plainly read (unmelodic) recitation, and ayahs named by their sound in English letters ("go to inna fatahna").
+- **Follows recitation fast.** About one second from the start of an ayah to it being on screen (median 0.9–1.0 s, measured end to end through the real microphone path and Soniox), with **zero wrong ayahs** across 56 test scenarios and 48 recorded sessions (805 ayahs). Word-by-word highlighting as you recite, a heads-up when you reach an ayah's last word, and the next ayah waiting dimmed below.
+- **Understands how people actually recite.** Going back a few words after a breath, speech-recognition word splits ("ولا الآخرة" for "وللآخرة"), a basmala before a surah, one-word openings ("والضحى", "يس"), plainly read (unmelodic) recitation, and ayahs named by their sound in English letters ("go to inna fatahna").
 - **Talk to it.** English requests are recognised while you recite and never disturb following: references, surah names (asking when names are close, never guessing), natural-language finding ("surah about elephants" opens Al-Fil), and display commands ("Arabic only", "word by word", "pause", "hide").
 - **Reads beautifully.** Short ayahs share the screen as one mushaf-style passage; long ayahs are paged, never shrunk; Arabic + English, Arabic only, or English only; word-by-word meanings; ornaments, reduced-motion support, legible over any stream footage.
-- **Free, with an optional hosted service.** Run it yourself with your own keys, unlimited. The hosted mode gives every visitor their own session and a free monthly allowance of listening time; reading and search are always free. Gifts fill a shared pool of sponsored listening for people whose free time runs out, and the site's *How and why* page (`/about`) explains the costs, where the money goes and why we do it (see [docs/DEPLOY.md](docs/DEPLOY.md)).
+- **Free for everyone, through sadaqah.** On the hosted site (nurra.org/quran-reader) listening is paid for by a pool of sponsored hours that donations fill, shown live on the start page; reading and search are always free, and *Why we built this* (`/about`) explains the costs and where sadaqah goes. Run it yourself with your own keys, unlimited (see [docs/DEPLOY.md](docs/DEPLOY.md)).
+- **Made for streams.** An OBS overlay driven from a control page: full frame or lower third, transparent, shaded or solid, your own highlight colour, and a small "Quran Overlay by Nurra" credit (can be turned off).
 
 <p>
   <img src="docs/screenshots/overlay-english-passage.webp" width="49%" alt="English-only mode: Al-Ikhlas as an English passage with ayah ornaments, the current ayah bright">
@@ -169,7 +170,8 @@ Set `QO_DIAGNOSTIC_CAPTURE=1` to write recognized text tokens (never audio) to `
 
 | Evidence layer | Status |
 |---|---|
-| Source and tests | 174 tests + typecheck + production build pass, locally and in CI (tracker, going back after a breath, commands, Arabic-script surah requests, sound search, credits, hosted isolation, payments); 4 browser tests (control, reading screen, reader menu and following). |
+| Source and tests | 189 tests + typecheck + production build pass, locally and in CI (tracker, going back after a breath, commands, Arabic-script surah requests, sound search, sponsored hours and donations with Stripe mocked, hosted isolation, serving under a base path); 6 browser tests (control, reading screen, reader menu and following, "Why we built this", live following, the silence skipper with a fake microphone). |
+| Hosted at a path | The hosted site under `/quran-reader` was run and checked in a browser (every request under the prefix, live connection, OBS link). The Cloudflare Worker that puts it at nurra.org/quran-reader has not run yet. |
 | Corpus | 25/25 validation checks; all 6,236 ayahs present in display, search and English with matching keys. |
 | Replay (synthetic) | 19 hand-authored scenarios over real corpus text, three modes: deterministic 0 wrong displays, 168/178 ayahs shown; hybrid identical with a *simulated* decider; jev_required 0 wrong but slower (see `docs/BENCHMARK.md`). Streams use assumed provider timing and error rates. |
 | Browser | Playwright walkthrough in Edge (control page + separate reading screen): privacy of search, show/pause/resume, hide/unhide, paging, lower-third promotion, reload recovery. Frames reviewed visually. |

@@ -1,29 +1,45 @@
 # Launch handoff
 
-State on 2026-09-29, for whoever takes the hosted site live (Codex or a person). Read [DEPLOY.md](DEPLOY.md) for the full reference; this page is the short path and what is and is not verified.
+For whoever takes the site live (Codex or a person). State on 2026-09-29. [DEPLOY.md](DEPLOY.md) is the full reference; this page is the short path, what is verified, and what is not.
 
-## Where things stand
+## What is being launched
 
-- Code: public at https://github.com/NurraLLC/quran-reader (`main`), MIT. CI (typecheck, 189 tests, build, corpus fetch and validation) passes.
-- Local use and streaming work now: `npm start`, open the printed control link, copy the OBS overlay link. Self-hosted links survive restarts (`data/state/local-links.json`).
-- Hosted mode (`QO_HOSTED=1`) was run locally and walked through as a visitor: reader home page, listening-time credits, streamer link to the control page, link-preview card.
-- Latest owner live session (Ya-Sin, Al-Baqarah, Ar-Rahman) found three problems; all fixed and verified by replaying its capture, not yet by a new live session: going back a few words after a breath, the highlight blinking on elongated words, and "go to Surah Rahman" arriving in Arabic script.
+**Quran Reader**, a Nurra project, at **https://nurra.org/quran-reader/**. Code: https://github.com/NurraLLC/quran-reader (public, MIT; `main`).
 
-## Not yet verified (do these first)
+- The start page is a phone-friendly reader: recite and the page follows along, each word with its meaning. The control page (`/quran-reader/control`) drives the OBS overlay for streamers.
+- Listening is **free for everyone**, paid for by sadaqah: one pool of sponsored hours that donations (and Nurra) fill. Each person may recite 2 hours a day, each network 4. When the pool is empty, listening pauses for everyone and the page says so; reading and search never stop. Nothing is spent beyond the hours put in.
+- `/quran-reader/about` ("Why we built this") explains the costs, where sadaqah goes, and the reward of giving (Quran 2:261 and four sahih/hasan narrations, linked to sunnah.com).
 
-1. **The Docker image has never been built.** Docker was not available on the development machine. `deploy/compose.yml` and `deploy/Caddyfile` were checked for syntax only; the image runs the same steps CI runs.
-2. **OBS itself.** The overlay is the page verified in Edge; not yet loaded as an OBS browser source.
-3. **A fresh live recitation test** of today's fixes (the owner does this; do not generate recitation with TTS).
+## Verified
 
-## Go live
+- CI: typecheck, 189 unit tests, build, and corpus fetch with validation all pass. Six browser tests pass locally (`npm run test:ui`): control page, reading screen, reader menu and following, the "Why we built this" page, live word following, and the silence skipper.
+- Tracking: replaying every recorded session and scenario (105 files, 805 ayahs) shows 0 wrong ayahs and 0 blank screens.
+- The hosted site under `/quran-reader`, run locally in a browser: every request stayed under the prefix (font, scripts, API, live connection, links), and the OBS link and share card carry it.
+- Silence skipper: a real browser with a fake microphone (tone, 11 s of silence, tone) and a stand-in provider. The stream closed after 8 s of silence and reopened when the voice returned.
+- Donations and packs: tested against a mocked Stripe (signed webhooks, one grant per payment, tampered amounts rejected). They have never run against real Stripe.
 
-Needs from the owner (do not create accounts or handle their passwords):
+## Not verified yet (do these first)
 
-- A small Linux server with Docker (1 vCPU, 1–2 GB memory is plenty: the app uses about 280 MB; audio never touches the server).
-- Where it will live. Planned: **nurra.org/quran-reader** (see *At nurra.org/quran-reader* in DEPLOY.md: a server name such as reader-origin.nurra.org, and a Cloudflare Worker route). A subdomain such as quran.nurra.org also works and needs no Worker.
+1. **The Docker image has never been built.** Docker was not available on the development machine. `deploy/compose.yml` and `deploy/Caddyfile` were only checked for syntax; the image runs the same steps CI runs.
+2. **The Cloudflare Worker has never run.** Check that the live connection (WebSocket) works through it: opening a surah from the list uses it.
+3. **Stripe for real.** Use test mode first. Live keys only after Quran Foundation confirms (below).
+4. **OBS.** The overlay is the page verified in Edge; it has not been loaded as an OBS browser source.
+5. **Live recitation by the owner.** Today's tracker fixes and the silence skipper have not had a live session yet. Do not generate recitation with TTS; the owner tests by reciting.
+
+## What the owner provides
+
+Do not create accounts or handle the owner's passwords.
+
+- A small Linux server with Docker (1 vCPU and 1–2 GB of memory is plenty; audio never touches the server).
+- A DNS name for that server, e.g. `reader-origin.nurra.org` (an A record to the server).
+- Access to nurra.org's Cloudflare, to add the Worker and its route.
 - A Soniox API key and an OpenRouter API key made for the site, each with a spending limit set in that provider's dashboard.
+- The hours to start the pool with (100 hours is $12 of recognition).
+- Later, for donations: Stripe keys (test mode first).
 
-Then, on the server:
+## Steps
+
+On the server:
 
 ```bash
 git clone https://github.com/NurraLLC/quran-reader.git && cd quran-reader
@@ -33,45 +49,61 @@ git clone https://github.com/NurraLLC/quran-reader.git && cd quran-reader
 cp deploy/production.env.example deploy/production.env
 ```
 
-Fill in `deploy/production.env` (domain, keys; keep the conservative `QO_FREE_HOURS_PER_SERVICE_DAY`), then:
+In `deploy/production.env`, set the keys and these values for nurra.org:
+
+```
+QO_DOMAIN=reader-origin.nurra.org
+QO_PUBLIC_ORIGIN=https://nurra.org
+QO_BASE_PATH=/quran-reader
+QO_EXTRA_HOSTS=reader-origin.nurra.org
+```
+
+Start the app and Caddy (the HTTPS certificate for `reader-origin.nurra.org` is obtained automatically):
 
 ```bash
 docker compose -f deploy/compose.yml --env-file deploy/production.env up -d --build
 ```
 
-Then fill the shared hours (listening is free for everyone from this pool; nothing is spent that was not put in):
+Fill the pool:
 
 ```bash
 docker compose -f deploy/compose.yml --env-file deploy/production.env exec app npx tsx scripts/sponsor-pool.ts 100 launch
 ```
 
+In Cloudflare, create a Worker from [deploy/cloudflare-worker.js](../deploy/cloudflare-worker.js), give it the variable `ORIGIN` = `reader-origin.nurra.org`, and add the route `nurra.org/quran-reader*`.
+
+Later, for donations: in Stripe (test mode first), add the webhook `https://nurra.org/quran-reader/api/billing/webhook` for `checkout.session.completed` and `checkout.session.async_payment_succeeded`, then set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` and run the same `up` command again.
+
 ## Check after deploy
 
-- `https://<domain>/healthz` returns `{"ok":true}`.
-- The home page loads over HTTPS, the microphone prompt appears when tapping the mic, and the listening-time line shows the free allowance.
-- Typed requests work without the microphone: `2:255`, `surah about elephants`, `Ar-Rahman`.
-- Menu → Put it on your stream → Copy OBS overlay link; the link opens and shows the ayah on screen.
-- Sharing the URL shows the preview card (the image address must be `https://<domain>/og.png`).
-- `docker compose ... logs app` shows the start banner with `Hosted mode` and no errors.
-- Back up the `qo-state` volume (credit ledger and visitor-signing secret).
+- `https://reader-origin.nurra.org/healthz` returns `{"ok":true}`.
+- `https://nurra.org/quran-reader/` loads. In the browser's network tab every request stays under `/quran-reader/` with no 404s, and the Arabic shows in the Uthmani font.
+- The sponsored bar shows the hours you added ("100 hours of recitation sponsored").
+- Opening a surah from the list works (this uses the live connection through the Worker).
+- The microphone: allow it and recite, and the page follows. After 8 seconds of silence the status reads "Listening… take your time", and it continues when you recite again.
+- Typed requests work: `2:255`, `surah about elephants`, `Ar-Rahman`.
+- Control page → Copy OBS overlay link: it starts with `https://nurra.org/quran-reader/overlay` and shows the ayah.
+- A shared link shows the preview card (image `https://nurra.org/quran-reader/og.png`).
+- `docker compose ... logs app` shows `Hosted mode` and no errors. (Its `Sponsored listening` line is written at start, so it shows the pool as it was then; the site's bar is live.)
+- Back up the `qo-state` volume. It holds the pool and the visitor-signing secret.
 
 ## Monthly cost
 
 | Item | Cost |
 |---|---|
-| Server (small VM) | about $4–6 |
-| Domain | $0 on a subdomain you own; otherwise about $1 a month |
+| Listening (Soniox, $0.12 per hour a stream is open) | exactly the sponsored hours used, and never more than were put in: 100 hours is $12. The silence skipper closes the stream during pauses longer than 8 s. |
+| Server | about $4–6 |
+| Domain | $0 (nurra.org) |
 | GitHub, CI | $0 (public repository) |
-| Speech recognition (Soniox, $0.12 per hour a stream is open, pauses included) | the only real variable; see below. The silence skipper closes the stream after 8 s without voice: about 11% of recorded listening time, plus the silent minute before listening stops by itself |
-| Spoken requests and meaning search (JEV via OpenRouter, about $0.000015 each) | cents: 10,000 requests ≈ $0.15 |
-| Payments (Stripe) | nothing unless something is sold or given (their per-payment fee) |
+| Spoken requests and meaning search (JEV via OpenRouter, about $0.000015 each) | cents |
+| Stripe | its per-payment fee on donations only |
 
-Listening is the only cost that grows with use, and `QO_FREE_HOURS_PER_SERVICE_DAY` caps it: 25 hours a day (the template's value) is at most about $3 a day, $90 a month, and only if the site is used that much every day. Realistic early use is far below: 50 people listening 2 hours a month each is 100 hours, $12. Reading, search and the overlay cost nothing per use. Expect roughly **$5–20 a month** at launch, with a hard ceiling you choose.
-
-Funding free listening: hour packs ($5 for 20 h leaves about $2.35 after costs) and donations to the shared sponsored pool (at cost: $10 adds about 76 hours anyone can recite from once their own time runs out). The site's `/about` page explains this to visitors, with the Islamic texts on the reward of such giving (only sahih and hasan narrations, linked to sunnah.com).
+Expect about $5–20 a month at launch. For scale: someone reciting 2 hours every day uses about $7 of recognition a month.
 
 ## Rules that still apply
 
-- Never commit or print keys, `deploy/production.env`, `.env`, captures or `data/state`.
-- Do not enable payments until Quran Foundation has confirmed paid use (developers@quran.com); the site launches free.
-- Zero wrong ayahs on screen is the floor. Tracker changes are checked with `npm test`, `npx tsx scripts/replay-session.ts fixtures/scenarios fixtures/scenarios-derived data/captures --one` (wrong must stay 0) and the browser tests (`npm run test:ui`, which starts its own server on port 4399).
+- Never commit or print keys, `deploy/production.env`, `.env`, captures or `data/state`. Do not stage `AGENTS.md`, `CLAUDE.md` or `outputs/`.
+- Donations and payments go live only after Quran Foundation confirms the use of its content (developers@quran.com). Use Stripe test mode until then.
+- Zero wrong ayahs on screen is the floor. Tracker changes are checked with `npm test`, with `npx tsx scripts/replay-session.ts fixtures/scenarios fixtures/scenarios-derived data/captures --one` (wrong must stay 0), and with `npm run test:ui` (its own server on port 4399).
+- Words on the site are written for people: sadaqah, tilawah, ayah, ahadith, the Prophet ﷺ; no invented terms, and no promises of reward on Allah's behalf.
+- The Nurra mark is the current wordmark (from nurra-mobile, `NurraWordmarkFinal`), already in `src/web/Nurra.tsx`. Not the older Britannic Bold one in nurra-web.
