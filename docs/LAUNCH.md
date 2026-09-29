@@ -22,9 +22,9 @@ The [final review](FINAL_REVIEW.md) records launch fixes and fresh local evidenc
 
 ## Not verified yet (do these first)
 
-1. **Check CI on the latest commit.** The image, Caddy validation, startup, pool funding and pool readback passed on `4c870ae`. Subsequent hosted-audio changes need that same check on their own commit.
+1. **Check CI on the latest commit.** The image, Caddy validation, startup, pool funding and pool readback passed with the hosted audio relay on `5581706`. Check subsequent changes on their own commit.
 2. **The Cloudflare Worker has never run.** Check that the live connection (WebSocket) works through it: opening a surah from the list uses it.
-3. **Stripe for real.** Use test mode first. Live keys only after Quran Foundation confirms (below).
+3. **Stripe for real.** Use test mode first. Verify business/payment activation and the content requirements below before live payments.
 4. **OBS.** The overlay is the page verified in Edge; it has not been loaded as an OBS browser source.
 5. **Live recitation by the owner.** Today's tracker fixes and the silence skipper have not had a live session yet. Do not generate recitation with TTS; the owner tests by reciting.
 
@@ -108,7 +108,7 @@ These are planning estimates, not a spending guarantee. [Soniox bills by tokens]
 ## Rules that still apply
 
 - Never commit or print keys, `deploy/production.env`, `.env`, captures or `data/state`. Do not stage `AGENTS.md`, `CLAUDE.md` or `outputs/`.
-- Donations and payments go live only after Quran Foundation confirms the use of its content (developers@quran.com). Use Stripe test mode until then.
+- Quran Foundation permits app donations under its developer terms; no blanket separate confirmation is required. Resolve the current pinned-corpus retention/sync arrangement and source-specific rights before public hosting (see DEPLOY.md). Verify Stripe checkout in test mode before enabling live payments.
 - Zero wrong ayahs on screen is the floor. Tracker changes are checked with `npm test`, with `npx tsx scripts/replay-session.ts fixtures/scenarios fixtures/scenarios-derived data/captures --one` (wrong must stay 0), and with `npm run test:ui` (its own server on port 4399).
 - Words on the site are written for people: sadaqah, tilawah, ayah, ahadith, the Prophet ﷺ; no invented terms, and no promises of reward on Allah's behalf.
 - The Nurra mark is the current wordmark (from nurra-mobile, `NurraWordmarkFinal`), already in `src/web/Nurra.tsx`. Not the older Britannic Bold one in nurra-web.

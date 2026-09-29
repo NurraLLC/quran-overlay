@@ -363,6 +363,8 @@ export function Reader() {
         )}
       </header>
 
+      {credits && <div className="r-support-nav"><button onClick={() => setTimeOpen('sponsor')}>Support Quran Reader <span aria-hidden="true">↗</span></button></div>}
+
       <main className="r-page">
         {cur && !home && !shownSurah && <div className="r-note" role="status">
           {surahFailed ? <><p>Couldn’t load this surah. Check your connection and try again.</p><button onClick={() => setSurahRetry((n) => n + 1)}>Try again</button></> : <p>Opening {cur.surahName}…</p>}
@@ -494,7 +496,7 @@ export function Reader() {
         )}
       </main>
 
-      {donated && credits && <p className="r-toast">JazakAllahu khayran. Your sadaqah is added as soon as the payment goes through. May Allah accept it from you.</p>}
+      {donated && credits && <p className="r-toast">JazakAllahu khayran for supporting Quran Reader. Shared hours are added after Stripe confirms payment.</p>}
       {menuOpen && (
         <div className="r-modal" role="dialog" aria-modal="true" aria-label="Menu" onClick={() => setMenuOpen(false)} onKeyDown={(e) => e.key === 'Escape' && setMenuOpen(false)}>
           <nav className="r-time r-menu" onClick={(e) => e.stopPropagation()}>
@@ -512,16 +514,16 @@ export function Reader() {
             ) : (
               <p className="r-menu-item r-menu-static">Listening time<span>Unlimited: this reader runs on your own computer, with your own key</span></p>
             )}
-            {credits && !!funding.billing?.donations?.length && (
+            {credits && (
               <button className="r-menu-item" onClick={() => { setMenuOpen(false); setTimeOpen('sponsor'); }}>
-                Give sadaqah<span>Keep listening free for everyone</span>
+                Support Quran Reader<span>Help cover shared listening hours</span>
               </button>
             )}
             <a className="r-menu-item" href={u('/control')}>
               Put it on your stream<span>OBS overlay and stream controls</span>
             </a>
             <a className="r-menu-item" href={u('/about')}>
-              Why we built this<span>What it costs, where your sadaqah goes, and its reward</span>
+              Why we built this<span>Our purpose, the overlay, and community support</span>
             </a>
             <div className="r-menu-brand">
               <NurraBadge />
@@ -633,13 +635,13 @@ export function Reader() {
 }
 
 /** Community-funded listening, without accounts or personal purchases. */
-function ListeningTime({ credits, funding, onClose }: { credits: CreditView; funding: Pick<Access, 'billing' | 'sponsored'>; focus: 'time' | 'sponsor'; onClose: () => void }) {
+function ListeningTime({ credits, funding, focus, onClose }: { credits: CreditView; funding: Pick<Access, 'billing' | 'sponsored'>; focus: 'time' | 'sponsor'; onClose: () => void }) {
   return (
-    <div className="r-modal" role="dialog" aria-modal="true" aria-label="Listening" onClick={onClose}>
+    <div className="r-modal" role="dialog" aria-modal="true" aria-label={focus === 'sponsor' ? 'Support Quran Reader' : 'Listening'} onClick={onClose} onKeyDown={(e) => e.key === 'Escape' && onClose()}>
       <section className="r-time" onClick={(e) => e.stopPropagation()}>
-        <button className="r-close" onClick={onClose} aria-label="Close">×</button>
-        <h2>Free for everyone</h2>
-        <p className="r-time-detail">No account or subscription. Sadaqah supports one shared pool of listening hours.</p>
+        <button className="r-close" onClick={onClose} aria-label="Close" autoFocus>×</button>
+        <h2>{focus === 'sponsor' ? 'Support Quran Reader' : 'Free for everyone'}</h2>
+        <p className="r-time-detail">Help someone else recite. Community contributions cover one shared pool of listening hours.</p>
         <SharedHours stats={funding.sponsored} donations={funding.billing?.donations ?? []} defaultOpen />
         <p className="r-time-free">Reading, word meanings and translations are always free.</p>
         <p className="r-time-detail">

@@ -136,13 +136,14 @@ Hosted audio uses `/ws/speech` as well as `/ws/control`. Both must pass through 
 
 1. In the Stripe dashboard, add a webhook endpoint for `checkout.session.completed` and `checkout.session.async_payment_succeeded` at `https://<public origin><base path>/api/billing/webhook` (for nurra.org: `https://nurra.org/quran-reader/api/billing/webhook`).
 2. Set `STRIPE_SECRET_KEY` and that endpoint's `STRIPE_WEBHOOK_SECRET`. Use test-mode keys first; Stripe's test cards complete a real flow without charging anyone.
-3. Donations are Stripe Checkout line items created per gift; no products need to exist in Stripe.
+3. Contributions are Stripe Checkout line items created per payment; no products need to exist in Stripe. The public action is **Support Quran Reader**. Checkout identifies Nurra LLC, the shared hours added, and that contributions are not tax-deductible charitable donations.
 
-Donations add to the shared pool for everyone. Nothing is sold to an individual reader; no app account is needed to read or give.
+Contributions add to the shared pool for everyone. No app account is needed. Use Nurra LLC's verified Stripe business details and a business bank account for payouts. The support entry stays visible without keys, but explains that online contributions are not open; it never fabricates an active checkout. Test a completed payment, cancellation, declined payment, and duplicate webhook before enabling live checkout. A creator's fundraiser for another organization uses that organization's own payment link, separate from this pool.
 
 ## Before taking any payment (donations included)
 
-- The corpus text and translation come from the Quran.com API. Quran Foundation's developer terms allow paid, subscription and freemium apps that only display their content in-app without reselling it; confirm your use with them (developers@quran.com) before enabling donations or payments. The Saheeh International translation is published by Dar Abul-Qasim.
+- [Quran Foundation's developer terms](https://api-docs.quran.com/legal/developer-terms/) (checked 2026-09-29, updated 2026-09-14) explicitly allow app donations without a separate commercial licence, subject to the terms and source-specific rights. The previous blanket requirement to obtain confirmation before payments was an extra precaution, not that rule. The Saheeh International translation is published by Dar Abul-Qasim.
+- Storage is a separate requirement: section 3.1 limits caching to one week unless permitted otherwise; eligible Content Sync resources require a sync at least every seven days. The current pinned local corpus does not implement scheduled sync. Resolve retention permission or a compliant sync/source arrangement before public hosting. Switching to QUL requires checking each resource's licence, not merely that it is downloadable.
 - The KFGQPC Uthmanic Hafs font may be used and distributed free of charge; it must not be sold or modified.
 - Show attribution (the app credits the translation and word-by-word source on screen).
 

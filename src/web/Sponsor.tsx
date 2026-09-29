@@ -59,7 +59,7 @@ export function SharedHours({ stats: initial, donations, defaultOpen = false }: 
   return (
     <section className={`r-pool${open ? ' open' : ''}`} aria-label="Sponsored recitation hours">
       <div className="r-pool-overview">
-        <p className="r-pool-title">Your sadaqah keeps recitation free.</p>
+        <p className="r-pool-title">Community support keeps recitation free.</p>
         <dl className="r-pool-totals">
           <div><dt>Community funded</dt><dd>{duration(stats.given)}</dd></div>
           <div><dt>Used for listening</dt><dd>{duration(stats.used)}</dd></div>
@@ -69,7 +69,7 @@ export function SharedHours({ stats: initial, donations, defaultOpen = false }: 
       <button className="r-pool-head" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span className="r-pool-line">
           <span className="r-pool-now">Shared by everyone</span>
-          <span className="r-pool-cta">{open ? 'Close details' : donations.length ? 'Give sadaqah' : 'See details'}</span>
+          <span className="r-pool-cta">{open ? 'Close details' : 'Support Quran Reader'}</span>
         </span>
         <span className="r-pool-track" aria-hidden="true">
           <span style={{ width: `${pct}%` }} />
@@ -78,10 +78,10 @@ export function SharedHours({ stats: initial, donations, defaultOpen = false }: 
       {open && (
         <div className="r-pool-body">
           <p className="r-pool-why">
-            Every gift adds hours for anyone reciting Quran. Reading and translations are always free.
+            Your contribution adds shared listening hours for anyone reciting Quran. Reading and translations are always free.
             {example ? ` ${price(example.price)} adds ${example.hours} shared hours.` : ''}
           </p>
-          <p className="r-pool-sub">Time counts while recognition is connected, including short pauses. Usage is added when a session ends; this page refreshes every minute.</p>
+          <p className="r-pool-sub">One-time support for Quran Reader, operated by Nurra LLC. No subscription or reader account. Contributions are not tax-deductible charitable donations.</p>
           {donations.length > 0 && (
             <div className="r-give-amounts">
               {donations.map((d) => (
@@ -92,10 +92,12 @@ export function SharedHours({ stats: initial, donations, defaultOpen = false }: 
               ))}
             </div>
           )}
-          {!donations.length && <p className="r-pool-sub">Donations aren’t enabled yet. Reading, word meanings and translations remain free.</p>}
-          {note && <p className="r-note">{note}</p>}
+          {!donations.length && <p className="r-support-status" role="status">Online contributions aren’t open yet. We’re setting up payments. You can already use the reader and share it with others.</p>}
+          {donations.length > 0 && <p className="r-pool-sub">Choose an amount to continue to Stripe’s secure checkout.</p>}
+          {note && <p className="r-note" role="alert">{note}</p>}
+          <p className="r-pool-sub">Time counts while recognition is connected, including short pauses. Usage is added when a session ends; totals refresh every minute.</p>
           <a className="r-give-more" href={u('/about')}>
-            Where your sadaqah goes, and its reward
+            Why support this project?
           </a>
         </div>
       )}

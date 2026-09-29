@@ -25,7 +25,7 @@ The product's useful promise is simple: open the Quran, recite, and keep your pl
 | Browser | Ten Edge tests pass, including first-load retry, surah retry, delayed-response cancellation and community totals. The real browser SDK sends fake-device audio through the hosted relay to a stand-in provider; stopping closes it. Mock Stripe checkout and duplicate signed webhooks update the shared pool once. Hosted `/quran-reader/` inspected in the in-app browser; About links retain the prefix; phone reading, community totals and desktop overlay screenshots inspected. |
 | Replay | 105 files, 805 ayahs; zero wrong ayahs and zero blank screens. The harness also reports 18 backward transitions and 70 highlight gaps. These were not individually adjudicated in this pass; do not describe this as flawless tracking. Its negative best-latency value makes the aggregate timing unsuitable for a new latency claim. |
 | Proxy | Official Caddy 2.11.4 accepts the production Caddyfile locally and Caddy's container validates it in CI. A local HTTP check rejected forged visitor headers from a direct caller and forwarded a simulated trusted edge's visitor address. Live Cloudflare forwarding remains untested. |
-| Container | CI passed image build, Caddy validation, startup, pool funding and readback on `4c870ae`. The hosted-audio changes require the same checks on their own commit before deployment. |
+| Container | CI passed image build, Caddy validation, startup, pool funding and readback with the hosted audio relay on `5581706`. Check later commits before deployment. |
 | Provider / microphone / OBS | No new paid provider calls, owner microphone recitation, or OBS-native rendering in this review. Browser silence tests use a stand-in provider and non-recitation tone. |
 
 ## Launch dependencies
@@ -34,7 +34,7 @@ The product's useful promise is simple: open the Quran, recite, and keep your pl
 2. Pass the container smoke check and verify WebSockets and distinct network quotas through Cloudflare.
 3. Dedicated provider credentials with verified provider-side spending controls, and the owner's chosen starting pool hours.
 4. Owner recitation through the deployed path, including silence/resume, and an OBS browser-source check.
-5. Keep live donations disabled until the existing Quran Foundation confirmation requirement is satisfied; Stripe needs a separate test-mode flow.
+5. Stripe needs business activation and a separate test-mode flow. Quran Foundation permits app donations; resolve content retention/sync and source-specific rights before public hosting (see DEPLOY.md).
 
 The pool is **not a hard financial ceiling**: Soniox invoices by tokens and hosting, relay bandwidth and JEV cost extra. The relay now closes real streams before refunding unused time. Provider-side spending limits remain necessary. No new live microphone-to-screen latency claim is made: the relay adds a network hop, and prior direct-stream timings do not certify it. See [Soniox pricing](https://soniox.com/pricing) and [deployment notes](DEPLOY.md).
 

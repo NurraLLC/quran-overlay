@@ -75,12 +75,29 @@ export function About() {
         <p className="about-lead">
           Quran Reader listens as you recite and keeps your place: the ayah you’re on appears as you reach it, with the meaning of each word, on your phone or on your stream. It’s free, and it’s made by Nurra.
         </p>
+        <a className="about-support" href="#support">Support Quran Reader ↓</a>
 
         <section>
           <h2>Why</h2>
           <p>
             Whether you recite from memory or read along, it helps when the page keeps your place. We wanted that for everyone: the student checking their hifz, the person who wants to understand each word as they recite, the qari sharing their tilawah on a stream. No account, no ads, and nothing standing between anyone and the Quran.
           </p>
+        </section>
+
+        <section>
+          <h2>A starting point for Muslim creators</h2>
+          <p>We want more Muslims to feel able to start a stream, give a talk, or share their recitation. The OBS overlay puts the ayah and its translation alongside your video, so people can follow the Quran you’re reciting.</p>
+          <p>You can also use the reading screen for a study circle or a community gathering. Open it on another screen so the people with you can read along.</p>
+          <p>One reason we built this is to recite on a stream while raising support for an organization we care about. You can do that too: use the overlay, and direct viewers to that organization’s own fundraiser.</p>
+          <p className="about-fine">Contributions on this website support Quran Reader itself. They are separate from any fundraiser a creator runs for another organization.</p>
+          <a href={u('/control')}>Open the overlay controls →</a>
+        </section>
+
+        <section>
+          <h2>More Muslim spaces, built by us</h2>
+          <p>We need more places where Muslims can learn, create, and spend time together. Getting started is easier when useful tools are already there.</p>
+          <p>This began as something we wanted to use ourselves. We’re sharing it so someone else can start their first recitation stream, bring a Quran reading into a gathering, or build something we haven’t thought of.</p>
+          <p>That is the infrastructure we want to help build: practical tools the community can use as a starting point. Quran Reader is one small part of it. The code is open, and you’re welcome to build on it.</p>
         </section>
 
         <section>
@@ -92,17 +109,19 @@ export function About() {
           </ul>
         </section>
 
-        <section>
-          <h2>What it costs, and where your sadaqah goes</h2>
+        <section id="support">
+          <h2>Support Quran Reader</h2>
           <p>Reading and search cost almost nothing to run. Listening is different: recognising recitation costs about 12 cents for every hour.</p>
           <ul>
             <li>Listening is free for everyone. There are no accounts and no plans.</li>
-            <li>Listening draws from a shared pool funded by sadaqah, including our own contributions. Daily limits help more people share those hours.</li>
-            <li>Gifts add listening hours to the shared pool. The number of hours each gift adds is shown before you give. Recognition costs and payment fees can vary. The pool totals below update as people give and recite.</li>
+            <li>Listening draws from a shared pool funded by community contributions, including our own. Daily limits help more people share those hours.</li>
+            <li>Contributions add listening hours to the shared pool. The number of hours each amount adds is shown before checkout. Recognition costs and payment fees can vary. The pool totals below update as people contribute and recite.</li>
             <li>If the sponsored hours ever run out, listening pauses until someone gives again. Reading and search never stop.</li>
             <li>No accounts, no ads, no selling data, and no public donor names.</li>
           </ul>
+          <p>Payments go to Nurra LLC to support this service. They are voluntary, one-time contributions, not tax-deductible charitable donations.</p>
           {credits && <SharedHours stats={me?.sponsored} donations={donations} defaultOpen />}
+          {me?.mode === 'local' && <p className="r-support-status">This is a self-hosted copy. It uses your own listening service and doesn’t collect contributions.</p>}
         </section>
 
         <section>
@@ -136,7 +155,7 @@ export function About() {
         <section>
           <h2>Who we are</h2>
           <p>
-            Quran Reader is a project of <a href="https://nurra.org">Nurra</a>, building technology for the ummah. If you spot a mistake or have an idea, please tell us on <a href={`${REPO}/issues`}>GitHub</a>.
+            Quran Reader is operated by Nurra LLC, a project of <a href="https://nurra.org">Nurra</a>, building technology for the ummah. If you spot a mistake or have an idea, please tell us on <a href={`${REPO}/issues`}>GitHub</a>.
           </p>
         </section>
 

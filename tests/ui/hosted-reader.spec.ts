@@ -52,12 +52,20 @@ test('shared lifetime totals, donation readback, and browser audio through the p
     await expect(panel).toContainText('25 h');
     await expect(panel).toContainText('75 h');
     await expect(panel).not.toContainText(/month|goal|plan|bought/i);
-    await panel.getByRole('button', { name: /Give sadaqah/ }).click();
+    await page.screenshot({ path: 'test-results/support-entry-phone.png' });
+    await panel.getByRole('button', { name: /Support Quran Reader/ }).click();
     await panel.scrollIntoViewIfNeeded();
     await panel.screenshot({ path: 'test-results/community-hours-fixture.png' });
-    await panel.getByRole('button', { name: '$10 Add 76 shared hours' }).click();
+    await page.locator('.r-support-nav').getByRole('button', { name: /Support Quran Reader/ }).click();
+    const support = page.getByRole('dialog', { name: 'Support Quran Reader' });
+    await expect(support).toContainText('not tax-deductible');
+    await page.route('**/api/billing/donate', (r) => r.fulfill({ status: 502, json: { error: 'The payment page could not be opened. Please try again.' } }), { times: 1 });
+    await support.getByRole('button', { name: '$10 Add 76 shared hours' }).click();
+    await expect(support.getByRole('alert')).toContainText('Please try again');
+    await support.getByRole('button', { name: '$10 Add 76 shared hours' }).click();
     await expect(page).toHaveURL('https://checkout.stripe.com/test-only');
     expect(checkout!.get('line_items[0][price_data][unit_amount]')).toBe('1000');
+    expect(checkout!.get('line_items[0][price_data][product_data][description]')).toContain('Nurra LLC');
     const event = JSON.stringify({ id: 'event-test-gift', type: 'checkout.session.completed', data: { object: { id: 'checkout-test-gift', payment_status: 'paid', metadata: { kind: 'donation', amount: '1000' }, amount_total: 1000, currency: 'usd' } } });
     for (let i = 0; i < 2; i++) {
       const response = await fetch(`${base}/quran-reader/api/billing/webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'stripe-signature': signForTest(event, 'webhook-test-only') }, body: event });
@@ -72,6 +80,24 @@ test('shared lifetime totals, donation readback, and browser audio through the p
     await page.getByRole('button', { name: 'Stop listening', exact: true }).click();
     await expect.poll(() => provider.clients.size).toBe(0);
     expect(credits.poolStats().used).toBeGreaterThan(25 * 3600);
+    // Unconfigured payments must remain discoverable without pretending checkout is available.
+    await page.route('**/api/me', async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), billing: null } });
+    });
+    await page.reload();
+    await page.locator('.r-support-nav').getByRole('button', { name: /Support Quran Reader/ }).click();
+    await expect(support.getByRole('status')).toContainText('Online contributions aren’t open yet');
+    await page.screenshot({ path: 'test-results/support-unavailable-phone.png' });
+    await expect(support.getByRole('button', { name: /\$10/ })).toHaveCount(0);
+    await support.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(support).toHaveCount(0);
+    await page.goto(`${base}/quran-reader/about`);
+    await page.screenshot({ path: 'test-results/about-community-phone.png', fullPage: true });
+    await page.getByRole('link', { name: /Support Quran Reader/ }).click();
+    await expect(page).toHaveURL(/about#support$/);
+    await expect(page.getByRole('heading', { name: 'Support Quran Reader' })).toBeInViewport();
+    await expect(page.getByRole('link', { name: /Open the overlay controls/ })).toHaveAttribute('href', '/quran-reader/control');
     expect(errors).toEqual([]);
   } finally {
     await page.close();

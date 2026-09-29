@@ -47,8 +47,8 @@ export class StripeBilling {
       'line_items[0][quantity]': '1',
       'line_items[0][price_data][currency]': this.donations.currency,
       'line_items[0][price_data][unit_amount]': String(amountCents),
-      'line_items[0][price_data][product_data][name]': 'Support Quran recitation for everyone',
-      'line_items[0][price_data][product_data][description]': `Adds ${this.sponsoredHours(amountCents)} hours to the community’s shared recitation time. Reading and translations remain free.`,
+      'line_items[0][price_data][product_data][name]': 'Support Quran Reader',
+      'line_items[0][price_data][product_data][description]': `One-time contribution to Nurra LLC. Adds ${this.sponsoredHours(amountCents)} shared listening hours. Not a tax-deductible charitable donation.`,
     });
     return this.createSession(form);
   }
