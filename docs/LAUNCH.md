@@ -4,7 +4,7 @@ State on 2026-09-29, for whoever takes the hosted site live (Codex or a person).
 
 ## Where things stand
 
-- Code: public at https://github.com/NurraLLC/quran-overlay (`main`), MIT. CI (typecheck, 174 tests, build, corpus fetch and validation) passes.
+- Code: public at https://github.com/NurraLLC/quran-reader (`main`), MIT. CI (typecheck, 189 tests, build, corpus fetch and validation) passes.
 - Local use and streaming work now: `npm start`, open the printed control link, copy the OBS overlay link. Self-hosted links survive restarts (`data/state/local-links.json`).
 - Hosted mode (`QO_HOSTED=1`) was run locally and walked through as a visitor: reader home page, listening-time credits, streamer link to the control page, link-preview card.
 - Latest owner live session (Ya-Sin, Al-Baqarah, Ar-Rahman) found three problems; all fixed and verified by replaying its capture, not yet by a new live session: going back a few words after a breath, the highlight blinking on elongated words, and "go to Surah Rahman" arriving in Arabic script.
@@ -26,7 +26,7 @@ Needs from the owner (do not create accounts or handle their passwords):
 Then, on the server:
 
 ```bash
-git clone https://github.com/NurraLLC/quran-overlay.git && cd quran-overlay
+git clone https://github.com/NurraLLC/quran-reader.git && cd quran-reader
 ```
 
 ```bash

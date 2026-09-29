@@ -1,4 +1,4 @@
-# Quran Overlay
+# Quran Reader
 
 <a href="https://nurra.org"><img src="docs/nurra-badge.svg" height="22" alt="Nurra"></a> A [Nurra](https://nurra.org) project.
 

@@ -8,7 +8,7 @@ import { NurraBadge } from './Nurra';
 import { SharedHours } from './Sponsor';
 import { access, type Access, u } from './net';
 
-const REPO = 'https://github.com/NurraLLC/quran-overlay';
+const REPO = 'https://github.com/NurraLLC/quran-reader';
 
 /** Hadith: the Arabic of the Prophet's words (classical text), our own English paraphrase, and the source. */
 const NARRATIONS: Array<{ ar: string; en: string; ref: string; grade: string; url: string }> = [
@@ -88,7 +88,7 @@ export function About() {
           <ul>
             <li>It only listens while the microphone is on and you’re reciting. During a long pause nothing is sent. Your voice goes to our speech-recognition provider and nowhere else, and we never record or keep it.</li>
             <li>The Arabic and the translation are shown exactly as published (Quran.com, Saheeh International). Nothing about the Quran is written by a machine.</li>
-            <li>The code is open. Anyone can read it, check it, or run their own copy for free: <a href={REPO}>github.com/NurraLLC/quran-overlay</a>.</li>
+            <li>The code is open. Anyone can read it, check it, or run their own copy for free: <a href={REPO}>github.com/NurraLLC/quran-reader</a>.</li>
           </ul>
         </section>
 
