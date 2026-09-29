@@ -129,6 +129,8 @@ export class SonioxCapture {
   /** Set when the server refused a key for lack of listening time (a clean stop, not a failure). */
   private noCredits: string | null = null;
   private resetting = false;
+  /** Resets triggered by recitation in Latin letters this session (the server can read those too). */
+  private latinResets = 0;
   private deviceId: string | null = null;
   private commandOnly = false;
   readonly router = new TokenRouter();
@@ -337,7 +339,12 @@ export class SonioxCapture {
     // Recitation in Latin letters: reset now. English that just ended: reset before recitation resumes.
     // (An English request that mentions "Allah" is mostly other words; recitation is mostly these.)
     const recitingInLatin = transliterated >= 2 && transliterated * 2 >= latinWords;
-    if (recitingInLatin || (endpoint && this.latinTail)) void this.resetLanguage();
+    // A plain (unmelodic) reader may always be written in Latin letters; the server reads those, so
+    // stop spending audio on restarts after two tries. English speech ending still resets.
+    if (recitingInLatin && this.latinResets < 2) {
+      this.latinResets++;
+      void this.resetLanguage();
+    } else if (endpoint && this.latinTail && !recitingInLatin) void this.resetLanguage();
   }
 
   /** Restart the stream so the recogniser starts without an English bias; keeps the idle clock. */
@@ -377,6 +384,7 @@ export class SonioxCapture {
     this.teardown();
     this.router.cancel();
     this.lastArabicAt = 0;
+    if (!this.resetting) this.latinResets = 0;
     this.setStatus({ state: 'off', detail: null });
     if (!wasCommandOnly) this.send({ type: 'capture', captureEpoch: epoch, event: 'stopped' });
   }
