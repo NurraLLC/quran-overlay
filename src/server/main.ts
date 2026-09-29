@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { CreditStore, DEFAULT_CREDITS } from './billing/credits';
 import { SessionHub } from './billing/hub';
 import { VisitorIdentity } from './billing/identity';
-import { parseDonations, parsePacks, StripeBilling } from './billing/stripe';
+import { parseDonations, StripeBilling } from './billing/stripe';
 import net from 'node:net';
 import path from 'node:path';
 import { buildApp, normalizeBase, type HostedOptions } from './app';
@@ -20,6 +20,8 @@ import { ResourceCatalog } from './resources/catalog';
 import { WordGlosses } from './corpus/wbw';
 import { Transliteration } from './search/transliteration';
 import { LatinReader } from './tracker/latin';
+import { ListeningSafety } from './billing/listening-safety';
+import { recitationActivity } from './providers/recitation-activity';
 
 function loadEnvFile() {
   const file = path.join(ROOT, '.env');
@@ -54,8 +56,8 @@ function decisionSetup(): { client: DecisionClient | null; provider: JevGateway 
 }
 
 /**
- * Hosted service: one session per visitor, drawing from the shared sponsored pool by default.
- * Personal monthly allowances are optional; all configured durations are in hours.
+ * Hosted service: one anonymous session per visitor, drawing from the shared sponsored pool.
+ * Configured listening durations are in hours; reading and translations are always free.
  */
 function hostedSetup(create: () => Session): HostedOptions {
   const hours = (name: string, fallback: number) => Math.round((Number(process.env[name]) || fallback) * 3600);
@@ -63,23 +65,22 @@ function hostedSetup(create: () => Session): HostedOptions {
   mkdirSync(stateDir, { recursive: true });
   const credits = new CreditStore(path.join(stateDir, 'credits.db'), {
     ...DEFAULT_CREDITS,
-    // Listening is free for everyone from the shared pool (donations and the owner fill it); a
-    // personal monthly allowance is optional (QO_FREE_HOURS_PER_MONTH).
-    freeSecondsPerMonth: hours('QO_FREE_HOURS_PER_MONTH', 0),
-    ipDailyFreeSeconds: hours('QO_FREE_HOURS_PER_NETWORK_DAY', 2),
-    globalDailyFreeSeconds: hours('QO_FREE_HOURS_PER_SERVICE_DAY', 200),
+    // Public listening draws only from community funding; no personal plans or allowances.
+    freeSecondsPerMonth: 0,
+    ipDailyFreeSeconds: 0,
+    globalDailyFreeSeconds: 0,
     poolDailySecondsPerVisitor: hours('QO_SPONSORED_HOURS_PER_VISITOR_DAY', 2),
     poolDailySecondsPerNetwork: hours('QO_SPONSORED_HOURS_PER_NETWORK_DAY', 4),
-    poolGoalSecondsPerMonth: hours('QO_POOL_GOAL_HOURS_PER_MONTH', 100),
   });
   return {
     hub: new SessionHub(create),
     credits,
+    safety: new ListeningSafety(path.join(stateDir, 'listening-safety.db')),
     identity: VisitorIdentity.fromFile(path.join(stateDir, 'identity.key'), process.env.QO_SECRET),
     publicOrigin: process.env.QO_PUBLIC_ORIGIN || undefined,
     trustProxy: process.env.QO_TRUST_PROXY === '1',
-    // Buying listening time turns on only with both Stripe keys (test keys work the same way).
-    billing: process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET ? new StripeBilling(process.env.STRIPE_SECRET_KEY, process.env.STRIPE_WEBHOOK_SECRET, parsePacks(process.env.QO_PACKS), fetch, parseDonations(process.env.QO_DONATIONS, process.env.QO_SPONSOR_CENTS_PER_HOUR)) : null,
+    // Voluntary community donations only. No personal purchases or subscriptions.
+    billing: process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET ? new StripeBilling(process.env.STRIPE_SECRET_KEY, process.env.STRIPE_WEBHOOK_SECRET, fetch, parseDonations(process.env.QO_DONATIONS, process.env.QO_SPONSOR_CENTS_PER_HOUR)) : null,
   };
 }
 
@@ -144,6 +145,17 @@ async function main() {
   })();
   const session = hostedMode ? undefined : new Session({ ...sessionOptions(false), viewToken: links?.links.view, onViewToken: links?.saveView });
   const hosted = hostedMode ? hostedSetup(() => new Session(sessionOptions(true))) : undefined;
+  if (hosted) {
+    const activity = recitationActivity(ix.words);
+    hosted.isRecitation = (text) => {
+      if (activity(text)) return true;
+      // Preserve the existing plain-recitation/Latin-script recovery; it is not abuse.
+      const reader = latin.get();
+      if (!reader) return false;
+      const words = text.trim().split(/\s+/).map((word, index) => ({ text: word, index, startMs: null, endMs: null }));
+      return activity(reader.apply(words, null).map((w) => w.text).join(' '));
+    };
+  }
   // QO_OWNER_TOKEN exists only so automated browser tests can open the control page; self-hosted
   // runs keep a random capability in data/state (see local-links.ts).
   const { app, ownerToken } = await buildApp({ basePath: base, extraHosts: (process.env.QO_EXTRA_HOSTS ?? '').split(',').filter(Boolean), session, hosted, port, sonioxApiKey: process.env.SONIOX_API_KEY, devOrigins, ownerToken: process.env.QO_OWNER_TOKEN || links?.links.owner });
@@ -158,8 +170,6 @@ async function main() {
     const h = (sec: number) => `${+(sec / 3600).toFixed(2)} h`;
     console.log('\nHosted mode: anonymous reader sessions; listening is funded by shared sponsored hours.');
     console.log(`Sponsored listening: ${h(hosted.credits.poolSeconds())} in the pool, up to ${h(c.poolDailySecondsPerVisitor ?? 3600)} per visitor per day; donations ${hosted.billing ? 'on' : 'off'}.`);
-    if (c.freeSecondsPerMonth > 0) console.log(`Optional personal allowance: ${h(c.freeSecondsPerMonth)} per month (${h(c.ipDailyFreeSeconds)} per network per day, ${h(c.globalDailyFreeSeconds)} per day overall).`);
-    if (hosted.billing?.packs.length) console.log(`Optional listening packs: ${hosted.billing.packs.map((p) => p.label).join(', ')}.`);
     console.log(`Open: ${process.env.QO_PUBLIC_ORIGIN || publicOrigin}${base}/\n`);
   } else console.log(`\nOpen the control page (keep this link private):\n  ${publicOrigin}${base}/control#owner=${ownerToken}\n`);
 }

@@ -1,7 +1,7 @@
 // Hosted mode over real HTTP + WebSocket: one session per visitor, keys minted only against a
 // reservation of the visitor's remaining time, and streams settled when they stop.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import WebSocket from 'ws';
+import WebSocket, { WebSocketServer } from 'ws';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/server/app';
 import { CreditStore } from '../../src/server/billing/credits';
@@ -17,9 +17,12 @@ let base = '';
 let origin = '';
 let credits: CreditStore;
 let hub: SessionHub;
+let provider: WebSocketServer;
 const minted: Array<{ max_session_duration_seconds: number; client_reference_id: string }> = [];
 
 beforeAll(async () => {
+  provider = new WebSocketServer({ port: 0, host: '127.0.0.1' });
+  await new Promise<void>((r) => provider.on('listening', r));
   const { corpus, ix } = fullCorpus();
   const resolver = new CommandResolver(corpus, null, null);
   credits = new CreditStore(':memory:', { freeSecondsPerMonth: 600, ipDailyFreeSeconds: 3600, globalDailyFreeSeconds: 36000, holdMaxSeconds: 300, holdMinSeconds: 20 });
@@ -40,7 +43,7 @@ beforeAll(async () => {
     return new Response(JSON.stringify({ api_key: 'temp-key', expires_at: new Date(Date.now() + 60_000).toISOString() }), { status: 201 });
   }) as unknown as typeof fetch;
   const port = 44170 + Math.floor(Math.random() * 500);
-  ({ app } = await buildApp({ port, sonioxApiKey: 'server-key', fetchImpl, hosted: { hub, credits, identity: new VisitorIdentity(Buffer.alloc(48, 7)) } }));
+  ({ app } = await buildApp({ port, sonioxApiKey: 'server-key', fetchImpl, speechEndpoint: `ws://127.0.0.1:${(provider.address() as { port: number }).port}`, hosted: { hub, credits, identity: new VisitorIdentity(Buffer.alloc(48, 7)) } }));
   await app.listen({ host: '127.0.0.1', port });
   base = `http://127.0.0.1:${port}`;
   origin = base;
@@ -50,6 +53,7 @@ afterAll(async () => {
   // Socket close handlers settle credits just after the server closes; let them finish first.
   await new Promise((r) => setTimeout(r, 200));
   credits?.close();
+  await new Promise<void>((r) => provider.close(() => r()));
 });
 
 async function visit(): Promise<{ cookie: string; credits: CreditView }> {
@@ -66,6 +70,18 @@ const until = async (cond: () => boolean, ms = 3000) => {
     await new Promise((r) => setTimeout(r, 20));
   }
 };
+async function audio(cookie: string) {
+  const res = await key(cookie);
+  expect(res.status).toBe(200);
+  const config = await res.json() as { api_key: string; stt_ws_url: string };
+  expect(config.api_key).not.toBe('temp-key');
+  const count = minted.length;
+  const ws = new WebSocket(config.stt_ws_url, { headers: { origin, cookie } });
+  await new Promise<void>((r) => ws.on('open', r));
+  ws.send(JSON.stringify({ api_key: config.api_key, audio_format: 'auto' }));
+  await until(() => minted.length > count && provider.clients.size > 0);
+  return ws;
+}
 
 describe('hosted service', () => {
   it('gives each visitor an identity, their own session and the free allowance', async () => {
@@ -82,16 +98,12 @@ describe('hosted service', () => {
     expect((await fetch(`${base}/api/owner/session`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: '{"token":"x"}' })).status).toBe(404);
   });
 
-  it('mints provider keys that the provider cuts at the visitor\'s remaining time, and refuses at zero', async () => {
+  it('keeps provider keys on the server and caps the actual relay stream', async () => {
     const v = await visit();
-    expect((await key(v.cookie)).status).toBe(200);
+    const stream = await audio(v.cookie);
     expect(minted.at(-1)!.max_session_duration_seconds).toBe(300);
-    expect((await key(v.cookie)).status).toBe(200);
-    expect(minted.at(-1)!.max_session_duration_seconds).toBe(300);
-    // 600 s allowance, both reserved: nothing left to hand out.
-    const r = await key(v.cookie);
-    expect(r.status).toBe(402);
-    expect(await r.json()).toMatchObject({ error: 'NO_CREDITS' });
+    stream.close();
+    await until(() => provider.clients.size === 0);
   });
 
   it('charges only the time a stream ran once it stops, and pushes the balance to the page', async () => {
@@ -103,10 +115,13 @@ describe('hosted service', () => {
     await until(() => msgs.some((m) => m.type === 'credits'));
     const epoch = Date.now();
     ws.send(JSON.stringify({ type: 'capture', captureEpoch: epoch, event: 'starting' }));
-    expect((await key(v.cookie)).status).toBe(200);
+    const stream = await audio(v.cookie);
     ws.send(JSON.stringify({ type: 'capture', captureEpoch: epoch, event: 'recording' }));
     await new Promise((r) => setTimeout(r, 1200));
     ws.send(JSON.stringify({ type: 'capture', captureEpoch: epoch, event: 'stopped' }));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(provider.clients.size).toBe(1); // a fake client stop cannot refund a live connection
+    stream.close();
     await until(() => {
       const last = msgs.filter((m): m is Extract<ControlServerMessage, { type: 'credits' }> => m.type === 'credits').at(-1);
       return !!last && last.credits.freeUsedThisMonth > 0 && last.credits.listeningSeconds === 0;
@@ -127,10 +142,11 @@ describe('hosted service', () => {
     await until(() => msgs.some((m) => m.type === 'credits'));
     const epoch = Date.now();
     ws.send(JSON.stringify({ type: 'capture', captureEpoch: epoch, event: 'starting' }));
-    expect((await key(v.cookie)).status).toBe(200);
+    const stream = await audio(v.cookie);
     ws.send(JSON.stringify({ type: 'capture', captureEpoch: epoch, event: 'recording' }));
     await new Promise((r) => setTimeout(r, 1200));
     ws.send(JSON.stringify({ type: 'capture', captureEpoch: epoch, event: 'dozing' }));
+    stream.close();
     const credits = () => msgs.filter((m): m is Extract<ControlServerMessage, { type: 'credits' }> => m.type === 'credits').at(-1)!.credits;
     await until(() => credits().freeUsedThisMonth > 0 && credits().listeningSeconds === 0);
     const used = credits().freeUsedThisMonth;

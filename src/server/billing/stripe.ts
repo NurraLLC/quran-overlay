@@ -1,25 +1,7 @@
-// Buying listening time with Stripe Checkout (hosted mode). Plain HTTPS to Stripe's REST API, no
-// SDK. Nothing here runs unless STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are set.
-//
-// Flow: the page asks for a pack -> we create a Checkout Session carrying the visitor id and pack in
-// its metadata -> Stripe hosts the payment -> Stripe calls our webhook (signed) -> on a paid
-// checkout.session.completed we grant the pack's hours once (the session id makes it idempotent).
-// Only listening time is sold; reading, search and everything about the Quran text stay free.
-// Donations ("sponsor listening for others") use the same flow and fill the shared sponsored pool.
+// Voluntary community donations through Stripe Checkout. Signed, paid webhooks add hours
+// to the shared pool exactly once. No personal purchases, accounts or subscriptions.
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
-
-export type Pack = { id: string; hours: number; amountCents: number; currency: string; label: string };
-
-/**
- * Default packs; override with QO_PACKS (JSON array of Pack). Prices are the owner's decision.
- * Listening costs about $0.12 per streamed hour, so these keep a margin that pays for free listening:
- * $5 for 20 h leaves about $2.35 after the provider and Stripe's fee.
- */
-export const DEFAULT_PACKS: Pack[] = [
-  { id: 'h20', hours: 20, amountCents: 500, currency: 'usd', label: '20 hours of listening' },
-  { id: 'h60', hours: 60, amountCents: 1200, currency: 'usd', label: '60 hours of listening' },
-];
 
 /** Donation amounts and what each adds to the sponsored pool. */
 export type Donations = { amountsCents: number[]; currency: string; centsPerHour: number };
@@ -39,19 +21,10 @@ export function parseDonations(amounts: string | undefined, centsPerHour: string
   return { amountsCents: list as number[], currency: DEFAULT_DONATIONS.currency, centsPerHour: cph };
 }
 
-/** Packs to sell: none unless QO_PACKS lists some (listening is free, funded by the shared pool). */
-export function parsePacks(json: string | undefined): Pack[] {
-  if (!json) return [];
-  const raw = JSON.parse(json) as Pack[];
-  if (!Array.isArray(raw) || !raw.every((p) => /^[a-z0-9_-]{1,32}$/.test(p.id) && p.hours > 0 && p.amountCents >= 50 && /^[a-z]{3}$/.test(p.currency) && p.label)) throw new Error('QO_PACKS must be a JSON array of {id, hours, amountCents, currency, label}');
-  return raw;
-}
-
 export class StripeBilling {
   constructor(
     private readonly secretKey: string,
     private readonly webhookSecret: string,
-    readonly packs: Pack[] = DEFAULT_PACKS,
     private readonly fetchImpl: typeof fetch = fetch,
     readonly donations: Donations = DEFAULT_DONATIONS,
   ) {}
@@ -74,8 +47,8 @@ export class StripeBilling {
       'line_items[0][quantity]': '1',
       'line_items[0][price_data][currency]': this.donations.currency,
       'line_items[0][price_data][unit_amount]': String(amountCents),
-      'line_items[0][price_data][product_data][name]': 'Sponsor listening for others',
-      'line_items[0][price_data][product_data][description]': `Adds about ${this.sponsoredHours(amountCents)} hours of live recitation listening to the shared pool for people whose free time has run out.`,
+      'line_items[0][price_data][product_data][name]': 'Support Quran recitation for everyone',
+      'line_items[0][price_data][product_data][description]': `Adds ${this.sponsoredHours(amountCents)} hours to the community’s shared recitation time. Reading and translations remain free.`,
     });
     return this.createSession(form);
   }
@@ -104,28 +77,6 @@ export class StripeBilling {
     return body.url;
   }
 
-  pack(id: string): Pack | undefined {
-    return this.packs.find((p) => p.id === id);
-  }
-
-  /** A Stripe-hosted checkout page for one pack; returns its URL. */
-  async checkout(visitorId: string, pack: Pack, origin: string): Promise<string> {
-    const form = new URLSearchParams({
-      mode: 'payment',
-      success_url: `${origin}/?paid=${pack.id}`,
-      cancel_url: `${origin}/?canceled=1`,
-      client_reference_id: visitorId,
-      'metadata[visitor]': visitorId,
-      'metadata[pack]': pack.id,
-      'line_items[0][quantity]': '1',
-      'line_items[0][price_data][currency]': pack.currency,
-      'line_items[0][price_data][unit_amount]': String(pack.amountCents),
-      'line_items[0][price_data][product_data][name]': pack.label,
-      'line_items[0][price_data][product_data][description]': 'Live recitation listening time for Quran Overlay. Reading and search are always free.',
-    });
-    return this.createSession(form);
-  }
-
   /**
    * The event in a webhook delivery, if its Stripe-Signature is valid and recent (Stripe's scheme:
    * HMAC-SHA256 of "timestamp.payload" with the endpoint secret; 5-minute tolerance).
@@ -145,18 +96,7 @@ export class StripeBilling {
     }
   }
 
-  /** What a verified event grants, if anything: a paid checkout for one of our packs. */
-  purchase(event: StripeEvent): { visitorId: string; pack: Pack; paymentId: string } | null {
-    if (event.type !== 'checkout.session.completed' && event.type !== 'checkout.session.async_payment_succeeded') return null;
-    const s = event.data?.object;
-    if (!s || s.payment_status !== 'paid' || s.metadata?.kind === 'donation') return null;
-    const pack = this.pack(s.metadata?.pack ?? '');
-    const visitorId = s.metadata?.visitor ?? s.client_reference_id;
-    if (!pack || !visitorId || !s.id) return null;
-    // Amount and currency must be what the pack costs (a tampered or stale session grants nothing).
-    if (s.amount_total !== undefined && (s.amount_total !== pack.amountCents || s.currency !== pack.currency)) return null;
-    return { visitorId, pack, paymentId: s.id };
-  }
+
 }
 
 export type StripeEvent = {

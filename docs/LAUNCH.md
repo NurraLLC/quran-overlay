@@ -2,7 +2,7 @@
 
 For whoever takes the site live (Codex or a person). State on 2026-09-29. [DEPLOY.md](DEPLOY.md) is the full reference; this page is the short path, what is verified, and what is not.
 
-The subsequent [final review](FINAL_REVIEW.md) records launch fixes and fresh local evidence: 192 unit/integration tests, nine browser tests, corpus validation and the 805-ayah replay. The historical verification below predates those fixes; check CI on the final commit before deploying.
+The [final review](FINAL_REVIEW.md) records launch fixes and fresh local evidence: 197 unit/integration tests, ten browser tests, corpus validation and the 805-ayah replay. Check CI on the final commit before deploying.
 
 ## What is being launched
 
@@ -14,15 +14,15 @@ The subsequent [final review](FINAL_REVIEW.md) records launch fixes and fresh lo
 
 ## Verified
 
-- CI: typecheck, 189 unit tests, build, and corpus fetch with validation all pass. Six browser tests pass locally (`npm run test:ui`): control page, reading screen, reader menu and following, the "Why we built this" page, live word following, and the silence skipper.
+- Local checks: typecheck, 197 unit/integration tests, production build, corpus validation and ten browser tests pass. Browser coverage includes reading, following, silence/resume, failed-load recovery, shared totals and hosted audio with a stand-in provider. Check CI for the exact deployment commit.
 - Tracking: replaying every recorded session and scenario (105 files, 805 ayahs) shows 0 wrong ayahs and 0 blank screens.
 - The hosted site under `/quran-reader`, run locally in a browser: every request stayed under the prefix (font, scripts, API, live connection, links), and the OBS link and share card carry it.
 - Silence skipper: a real browser with a fake microphone (tone, 11 s of silence, tone) and a stand-in provider. The stream closed after 8 s of silence and reopened when the voice returned.
-- Donations and packs: tested against a mocked Stripe (signed webhooks, one grant per payment, tampered amounts rejected). They have never run against real Stripe.
+- Community donations: tested against a mocked Stripe (signed webhooks, one grant per payment, tampered amounts rejected). Personal purchases and recovery codes have been removed. Real Stripe remains untested.
 
 ## Not verified yet (do these first)
 
-1. **The Docker image has never been built.** Docker was not available on the development machine. `deploy/compose.yml` and `deploy/Caddyfile` were only checked for syntax; the image runs the same steps CI runs.
+1. **Check CI on the latest commit.** The image, Caddy validation, startup, pool funding and pool readback passed on `4c870ae`. Subsequent hosted-audio changes need that same check on their own commit.
 2. **The Cloudflare Worker has never run.** Check that the live connection (WebSocket) works through it: opening a surah from the list uses it.
 3. **Stripe for real.** Use test mode first. Live keys only after Quran Foundation confirms (below).
 4. **OBS.** The overlay is the page verified in Edge; it has not been loaded as an OBS browser source.
@@ -32,7 +32,7 @@ The subsequent [final review](FINAL_REVIEW.md) records launch fixes and fresh lo
 
 The owner completes sign-up, passwords and payment details. Open the relevant provider pages for them when needed.
 
-- A small Linux server with Docker (1 vCPU and 1–2 GB of memory is plenty; audio never touches the server).
+- A Linux server with Docker and persistent storage. Hosted audio now passes through a bounded relay; measure bandwidth and concurrency on the selected server.
 - A DNS name for that server, e.g. `reader-origin.nurra.org` (an A record to the server).
 - Access to nurra.org's Cloudflare, to add the Worker and its route.
 - A Soniox API key and an OpenRouter API key made for the site, each with a spending limit set in that provider's dashboard.
@@ -80,7 +80,7 @@ Later, for donations: in Stripe (test mode first), add the webhook `https://nurr
 
 - `https://reader-origin.nurra.org/healthz` returns `{"ok":true}`.
 - `https://nurra.org/quran-reader/` loads. In the browser's network tab every request stays under `/quran-reader/` with no 404s, and the Arabic shows in the Uthmani font.
-- The sponsored bar shows the hours you added ("100 hours of recitation sponsored").
+- The community panel shows lifetime hours funded, used for listening, and remaining. There is no monthly goal or donor list.
 - Opening a surah from the list works (this uses the live connection through the Worker).
 - Verify network limits from two distinct networks; Caddy must forward the visitor address, not a shared Cloudflare address. Validate the supplied Caddyfile before starting the proxy (`docker compose ... run --rm caddy caddy validate --config /etc/caddy/Caddyfile`).
 - The microphone: allow it and recite, and the page follows. After 8 seconds of silence the status reads "Listening… take your time", and it continues when you recite again.
@@ -103,7 +103,7 @@ Later, for donations: in Stripe (test mode first), add the webhook `https://nurr
 
 Expect about $5–20 a month at launch. For scale: someone reciting 2 hours every day uses about $7 of recognition a month.
 
-These are planning estimates, not a spending guarantee. [Soniox bills by tokens](https://soniox.com/pricing). The server cannot verify that a direct browser-to-provider stream really ended when the client reports a stop. Verify provider-side spending controls before public use; keep automatic top-ups off if a fixed budget is required. JEV requests and server hosting are separate costs. Use one app instance and persistent storage for `data/state`; a disposable free-host filesystem can erase the pool and visitor identities.
+These are planning estimates, not a spending guarantee. [Soniox bills by tokens](https://soniox.com/pricing). The hosted relay owns stream closure and settlement; a browser cannot refund a still-running stream. Verify provider-side spending controls before public use; keep automatic top-ups off if a fixed budget is required. JEV, hosting and relay bandwidth are separate costs. Use one app instance and persistent storage for `data/state`; a disposable filesystem can erase the pool, safety counters and visitor identities.
 
 ## Rules that still apply
 

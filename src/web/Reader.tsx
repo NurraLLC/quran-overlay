@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView } from '../shared/contracts';
 import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
-import { access, connect, formatListening, listeningLine, type Access, u } from './net';
+import { access, connect, listeningLine, type Access, u } from './net';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { arabicNumber } from './VerseDisplay';
 import { NurraBadge } from './Nurra';
@@ -108,10 +108,9 @@ export function Reader() {
   /** Listening time left (hosted service only). */
   const [credits, setCredits] = useState<CreditView | null>(null);
   const micWrap = useRef<HTMLDivElement>(null);
-  const [account, setAccount] = useState<Pick<Access, 'recoveryCode' | 'billing' | 'sponsored'>>({});
+  const [funding, setFunding] = useState<Pick<Access, 'billing' | 'sponsored'>>({});
   const [timeOpen, setTimeOpen] = useState<false | 'time' | 'sponsor'>(false);
   // Back from Stripe's checkout page.
-  const [returned] = useState(() => new URLSearchParams(location.search).get('paid'));
   const [donated] = useState(() => new URLSearchParams(location.search).has('donated'));
   const sock = useRef<ReturnType<typeof connect> | null>(null);
   const lastRequest = useRef<string | null>(null);
@@ -128,8 +127,8 @@ export function Reader() {
         if (cancelled) return;
         if (!s.owner) return setAuth('unauthorized');
         if (s.credits) setCredits(s.credits);
-        setAccount({ recoveryCode: s.recoveryCode, billing: s.billing, sponsored: s.sponsored });
-        if (new URLSearchParams(location.search).has('paid') || new URLSearchParams(location.search).has('donated') || new URLSearchParams(location.search).has('canceled')) history.replaceState(null, '', location.pathname);
+        setFunding({ billing: s.billing, sponsored: s.sponsored });
+        if (new URLSearchParams(location.search).has('donated') || new URLSearchParams(location.search).has('canceled')) history.replaceState(null, '', location.pathname);
         setAuth('owner');
         sock.current = connect(u('/ws/control'), {
           onStatus: (st, code) => {
@@ -401,9 +400,9 @@ export function Reader() {
             </div>
             <details className="r-privacy">
               <summary>How your voice is used</summary>
-              <p>When the microphone is on, your voice goes to our speech-recognition provider (Soniox) and nowhere else. We never record or keep it. Nothing is sent during long pauses, and listening switches itself off if you stop reciting. Reading and search never use the microphone.</p>
+              <p>{credits ? 'When the microphone is on, your voice passes through our server to Soniox for speech recognition. This lets us stop unused streams and protect the shared hours.' : 'When the microphone is on, your voice goes directly to Soniox for speech recognition.'} We never record or keep your audio. Nothing is sent during long pauses. Reading, word meanings and translations never need the microphone.</p>
             </details>
-            {credits && <SharedHours stats={account.sponsored} donations={account.billing?.donations ?? []} />}
+            {credits && <SharedHours stats={funding.sponsored} donations={funding.billing?.donations ?? []} />}
             {/* Streamers: the same following, as a broadcast overlay driven from the control page. */}
             <a className="r-stream" href={u('/control')}>
               <span className="r-stream-k">Streaming?</span> Show the ayah you’re reciting on your stream with OBS
@@ -495,7 +494,6 @@ export function Reader() {
         )}
       </main>
 
-      {returned && credits && <p className="r-toast">Thank you. Your listening time is added as soon as the payment is confirmed.</p>}
       {donated && credits && <p className="r-toast">JazakAllahu khayran. Your sadaqah is added as soon as the payment goes through. May Allah accept it from you.</p>}
       {menuOpen && (
         <div className="r-modal" role="dialog" aria-modal="true" aria-label="Menu" onClick={() => setMenuOpen(false)} onKeyDown={(e) => e.key === 'Escape' && setMenuOpen(false)}>
@@ -514,7 +512,7 @@ export function Reader() {
             ) : (
               <p className="r-menu-item r-menu-static">Listening time<span>Unlimited: this reader runs on your own computer, with your own key</span></p>
             )}
-            {credits && !!account.billing?.donations?.length && (
+            {credits && !!funding.billing?.donations?.length && (
               <button className="r-menu-item" onClick={() => { setMenuOpen(false); setTimeOpen('sponsor'); }}>
                 Give sadaqah<span>Keep listening free for everyone</span>
               </button>
@@ -531,7 +529,7 @@ export function Reader() {
           </nav>
         </div>
       )}
-      {timeOpen && credits && <ListeningTime credits={credits} account={account} focus={timeOpen} onClose={() => setTimeOpen(false)} />}
+      {timeOpen && credits && <ListeningTime credits={credits} funding={funding} focus={timeOpen} onClose={() => setTimeOpen(false)} />}
 
       {!follow && cur && !home && (
         <button className="r-back" onClick={() => setFollow(true)}>
@@ -634,88 +632,21 @@ export function Reader() {
   );
 }
 
-/** Listening time: what is left, buying more (when offered), and keeping it on another device. */
-function ListeningTime({ credits, account, focus, onClose }: { credits: CreditView; account: Pick<Access, 'recoveryCode' | 'billing' | 'sponsored'>; focus: 'time' | 'sponsor'; onClose: () => void }) {
-  const sponsorRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (focus === 'sponsor') sponsorRef.current?.scrollIntoView({ block: 'start' });
-  }, [focus]);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [code, setCode] = useState('');
-  const packs = account.billing?.packs ?? [];
-  const personal = credits.freePerMonth > 0; // a personal monthly allowance is configured (optional)
-  const renews = new Date(credits.renewsAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', timeZone: 'UTC' });
-  const buy = async (pack: string) => {
-    setBusy(pack);
-    setNote(null);
-    const r = await fetch(u('/api/billing/checkout'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pack }) }).catch(() => null);
-    const body = (await r?.json().catch(() => ({}))) as { url?: string; error?: string };
-    if (body?.url) location.href = body.url;
-    else {
-      setBusy(null);
-      setNote(body?.error ?? 'The payment page could not be opened. Please try again.');
-    }
-  };
-  const restore = async () => {
-    const r = await fetch(u('/api/me/restore'), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code.trim() }) }).catch(() => null);
-    if (r?.ok) location.reload();
-    else setNote(((await r?.json().catch(() => ({}))) as { error?: string })?.error ?? 'That code did not work.');
-  };
+/** Community-funded listening, without accounts or personal purchases. */
+function ListeningTime({ credits, funding, onClose }: { credits: CreditView; funding: Pick<Access, 'billing' | 'sponsored'>; focus: 'time' | 'sponsor'; onClose: () => void }) {
   return (
     <div className="r-modal" role="dialog" aria-modal="true" aria-label="Listening" onClick={onClose}>
       <section className="r-time" onClick={(e) => e.stopPropagation()}>
         <button className="r-close" onClick={onClose} aria-label="Close">×</button>
-        <h2>Listening</h2>
-        {personal ? (
-          <>
-            <p className="r-time-big">{credits.available > 0 ? `${formatListening(credits.available)} left` : 'None left right now'}</p>
-            <p className="r-time-detail">
-              Free each month: {formatListening(credits.freePerMonth)}. Used so far: {credits.freeUsedThisMonth < 60 ? 'none' : formatListening(credits.freeUsedThisMonth)}. Renews {renews}.
-              {credits.paid > 0 ? ` Bought: ${formatListening(credits.paid)}.` : ''} Then shared hours, up to {formatListening(credits.sharePerDay)} a day.
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="r-time-big">Free, through sadaqah</p>
-            <p className="r-time-detail">
-              {credits.limitedBy === 'pool'
-                ? 'The sponsored hours have run out for now. You can still read and search, and listening comes back as soon as someone gives.'
-                  : credits.limitedBy === 'share'
-                  ? `You’ve used today’s ${formatListening(credits.sharePerDay)}. They’re back tomorrow, so there’s enough for everyone.`
-                  : `Everyone can recite up to ${formatListening(credits.sharePerDay)} a day, paid for by sadaqah. You have ${formatListening(credits.available)} left today.`}
-            </p>
-          </>
-        )}
-        <p className="r-time-free">Reading and search are always free. Only listening costs anything: about 12 cents for each hour of recitation.</p>
-        <div ref={sponsorRef}>
-          <SharedHours stats={account.sponsored} donations={account.billing?.donations ?? []} defaultOpen />
-        </div>
-        {packs.length > 0 && (
-          <div className="r-packs">
-            {packs.map((p) => (
-              <button key={p.id} disabled={!!busy} onClick={() => void buy(p.id)}>
-                <span>{p.label}</span>
-                <strong>{busy === p.id ? 'Opening…' : p.price}</strong>
-              </button>
-            ))}
-          </div>
-        )}
-        {account.recoveryCode && (packs.length > 0 || credits.paid > 0) && (
-          <details className="r-recover">
-            <summary>Keep your time on another device</summary>
-            <p>Save this code. Enter it on another phone or computer (or after clearing your browser) to keep your listening time.</p>
-            <div className="r-code">
-              <code>{account.recoveryCode}</code>
-              <button onClick={() => void navigator.clipboard.writeText(account.recoveryCode!).then(() => setNote('Copied.'))}>Copy</button>
-            </div>
-            <div className="r-code">
-              <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Paste a saved code" aria-label="Recovery code" />
-              <button disabled={!code.trim()} onClick={() => void restore()}>Restore</button>
-            </div>
-          </details>
-        )}
-        {note && <p className="r-note">{note}</p>}
+        <h2>Free for everyone</h2>
+        <p className="r-time-detail">No account or subscription. Sadaqah supports one shared pool of listening hours.</p>
+        <SharedHours stats={funding.sponsored} donations={funding.billing?.donations ?? []} defaultOpen />
+        <p className="r-time-free">Reading, word meanings and translations are always free.</p>
+        <p className="r-time-detail">
+          {credits.limitedBy === 'pool' ? 'Shared listening hours are unavailable right now.' : credits.limitedBy === 'share'
+            ? 'Today’s fair-use limit has been reached. Listening will be available again tomorrow.'
+            : 'Daily listening limits help everyone share the available hours.'}
+        </p>
       </section>
     </div>
   );

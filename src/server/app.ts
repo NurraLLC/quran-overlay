@@ -2,8 +2,8 @@
 //
 // Two modes. Local (default, self-hosted): one session, owned by whoever opens the printed link.
 // Hosted: every visitor gets their own session through a signed anonymous cookie, and listening is
-// metered in credits (billing/credits.ts): a provider key is only minted against a reservation of
-// the visitor's remaining time, and stopping or leaving settles it.
+// metered against shared hours (billing/credits.ts). The server-owned audio relay reserves time,
+// keeps provider keys private, and closes the provider stream before settling usage.
 //
 // Owner: a random capability printed by the launcher (/control#owner=…) is exchanged for an
 // HttpOnly SameSite=Strict cookie. Only the owner can mint provider keys, change position or see
@@ -30,6 +30,8 @@ import type { SessionHub } from './billing/hub';
 import type { VisitorIdentity } from './billing/identity';
 import type { StripeBilling } from './billing/stripe';
 import type { CreditView } from '../shared/contracts';
+import { HostedSpeech } from './providers/hosted-speech';
+import { ListeningSafety } from './billing/listening-safety';
 
 export type HostedOptions = {
   hub: SessionHub;
@@ -41,6 +43,8 @@ export type HostedOptions = {
   trustProxy?: boolean;
   /** Buying listening time (off unless Stripe keys are configured). */
   billing?: StripeBilling | null;
+  safety?: ListeningSafety;
+  isRecitation?: (text: string) => boolean;
 };
 
 export type AppOptions = {
@@ -61,6 +65,9 @@ export type AppOptions = {
   devOrigins?: string[];
   ownerToken?: string;
   fetchImpl?: typeof fetch;
+  /** Server-owned local test provider; never set from a browser request. */
+  speechEndpoint?: string;
+  speechIdleMs?: number;
 };
 
 const COOKIE = 'qo_owner';
@@ -86,7 +93,7 @@ function readCookie(req: FastifyRequest, name: string): string | null {
   if (!raw) return null;
   for (const part of raw.split(';')) {
     const [k, ...v] = part.trim().split('=');
-    if (k === name) return decodeURIComponent(v.join('='));
+    if (k === name) { try { return decodeURIComponent(v.join('=')); } catch { return null; } }
   }
   return null;
 }
@@ -139,6 +146,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   // Local: one owner. Hosted: per visitor, so one busy minute for others never refuses anyone's mic.
   const keyLimit = new RateLimit(10, 60_000);
   const visitorKeyLimit = new KeyedRateLimit(10, 60_000);
+  const networkSpeechLimit = new KeyedRateLimit(90, 60_000);
   // New anonymous identities per network: stops a script from flooding the server with sessions.
   const identityLimit = new KeyedRateLimit(30, 60 * 60_000);
   const checkoutLimit = new KeyedRateLimit(10, 10 * 60_000);
@@ -164,7 +172,6 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
       done(e as Error, undefined);
     }
   });
-  const restoreLimit = new RateLimit(30, 60_000);
 
   app.addHook('onRequest', async (req, reply) => {
     if (!req.headers.host || !allowedHosts.has(req.headers.host)) return reply.code(421).send({ error: 'unexpected host' });
@@ -204,6 +211,11 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     const s = hosted?.hub.peek(id);
     if (s) s.notify({ type: 'credits', credits: creditView(id, lastIp.get(id) ?? 'unknown') });
   };
+  const safety = hosted ? hosted.safety ?? new ListeningSafety(':memory:') : null;
+  const speech = hosted ? new HostedSpeech({ credits: hosted.credits, safety: safety!, apiKey: o.sonioxApiKey, fetchImpl: o.fetchImpl,
+    isRecitation: hosted.isRecitation ?? (() => false), onSettled: pushCredits, endpoint: o.speechEndpoint, idleLimitMs: o.speechIdleMs }) : null;
+  app.addHook('preClose', async () => speech?.close());
+  app.addHook('onClose', async () => safety?.close());
   const requireOwner = (req: FastifyRequest, reply: FastifyReply) => {
     if (!originOk(req)) {
       reply.code(403).send({ error: 'origin' });
@@ -223,12 +235,10 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   app.get('/api/me', async (req, reply) => {
     if (!hosted) return { mode: 'local', owner: isOwner(req) };
     let id = visitor(req);
-    let cookieValue = readCookie(req, VISITOR_COOKIE);
     if (!id) {
       if (!identityLimit.take(clientIp(req))) return reply.code(429).send({ error: 'Too many new visitors from this network. Please try again later.' });
       const v = hosted.identity.issue();
       id = v.id;
-      cookieValue = v.cookie;
       reply.header('Set-Cookie', visitorCookie(v.cookie));
     }
     lastIp.set(id, clientIp(req));
@@ -236,13 +246,10 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
       mode: 'hosted',
       owner: true,
       credits: creditView(id, clientIp(req)),
-      // The visitor's own code to keep their time on another device or after clearing cookies.
-      recoveryCode: cookieValue,
       // Sponsored listening so far (totals only; nothing about who gave or who recited).
       sponsored: hosted.credits.poolStats(),
       billing: hosted.billing
         ? {
-            packs: hosted.billing.packs.map((p) => ({ id: p.id, hours: p.hours, label: p.label, price: formatPrice(p.amountCents, p.currency) })),
             donations: hosted.billing.donations.amountsCents.map((c) => ({ amountCents: c, price: formatPrice(c, hosted.billing!.donations.currency), hours: hosted.billing!.sponsoredHours(c) })),
           }
         : null,
@@ -253,34 +260,6 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   app.get('/api/pool', async (_req, reply) => {
     if (!hosted) return reply.code(404).send({ error: 'not available' });
     return hosted.credits.poolStats();
-  });
-
-  // Restore a visitor identity from its recovery code (another device, cleared cookies).
-  app.post('/api/me/restore', async (req, reply) => {
-    if (!hosted) return reply.code(404).send({ error: 'not available' });
-    if (!originOk(req)) return reply.code(403).send({ error: 'origin' });
-    if (!restoreLimit.take()) return reply.code(429).send({ error: 'rate' });
-    const code = String((req.body as { code?: unknown } | undefined)?.code ?? '').trim();
-    const id = hosted.identity.verify(code);
-    if (!id) return reply.code(400).send({ error: 'That code is not valid.' });
-    reply.header('Set-Cookie', visitorCookie(code));
-    return { ok: true };
-  });
-
-  // Buy listening time: a Stripe-hosted checkout page for one pack.
-  app.post('/api/billing/checkout', async (req, reply) => {
-    if (!hosted?.billing) return reply.code(404).send({ error: 'not available' });
-    if (!originOk(req)) return reply.code(403).send({ error: 'origin' });
-    const id = visitor(req);
-    if (!id) return reply.code(401).send({ error: 'visitor' });
-    if (!checkoutLimit.take(id)) return reply.code(429).send({ error: 'Please wait a moment before trying again.' });
-    const pack = hosted.billing.pack(String((req.body as { pack?: unknown } | undefined)?.pack ?? ''));
-    if (!pack) return reply.code(400).send({ error: 'unknown pack' });
-    try {
-      return { url: await hosted.billing.checkout(id, pack, `${hosted.publicOrigin ?? `http://${req.headers.host}`}${base}`) };
-    } catch {
-      return reply.code(502).send({ error: 'The payment page could not be opened. Please try again.' });
-    }
   });
 
   // Sponsor listening for others: a Stripe-hosted checkout for a donation to the shared pool.
@@ -299,14 +278,12 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     }
   });
 
-  // Stripe's signed notification that a payment succeeded: grant the pack once (or fill the pool).
+  // Stripe's signed notification that a gift succeeded: fill the community pool once.
   app.post('/api/billing/webhook', { bodyLimit: 1_048_576 }, async (req, reply) => {
     if (!hosted?.billing) return reply.code(404).send({ error: 'not available' });
     const raw = (req as FastifyRequest & { rawBody?: string }).rawBody ?? '';
     const event = hosted.billing.verify(raw, req.headers['stripe-signature'] as string | undefined);
     if (!event) return reply.code(400).send({ error: 'signature' });
-    const p = hosted.billing.purchase(event);
-    if (p && hosted.credits.grant(p.visitorId, p.pack.hours * 3600, `stripe ${p.pack.id}`, Date.now(), `stripe:${p.paymentId}`)) pushCredits(p.visitorId);
     const g = hosted.billing.gift(event);
     if (g) hosted.credits.grantPool(g.seconds, `stripe:${g.paymentId}`, g.amountCents, g.currency);
     return { received: true };
@@ -336,24 +313,25 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
         return reply.code(code === 'NOT_CONFIGURED' ? 503 : 502).send({ error: code });
       }
     }
-    // Hosted: the key's hard maximum duration is a reservation of the visitor's remaining time.
+    // Hosted clients get a single-use ticket for our relay, never a provider credential.
     const id = visitor(req)!;
     const ip = clientIp(req);
     lastIp.set(id, ip);
-    const hold = hosted.credits.reserve(id, ip);
-    if ('error' in hold) {
-      pushCredits(id);
-      return reply.code(402).send({ error: 'NO_CREDITS', limitedBy: hold.balance.limitedBy, renewsAt: hold.balance.renewsAt });
+    const ticket = speech!.issue(id, ip);
+    if ('error' in ticket) {
+      if ('retryAfter' in ticket && ticket.retryAfter) reply.header('Retry-After', ticket.retryAfter);
+      return reply.code(ticket.error === 'NO_CREDITS' ? 402 : ticket.error === 'NOT_CONFIGURED' ? 503 : 429).send(ticket);
     }
-    try {
-      const key = await mintTemporaryKey(o.sonioxApiKey, `quran-overlay:${id}`, o.fetchImpl, hold.maxSeconds);
-      pushCredits(id);
-      return key;
-    } catch (e) {
-      hosted.credits.release(hold.id);
-      const code = e instanceof SonioxKeyError ? e.code : 'REQUEST_REJECTED';
-      return reply.code(code === 'NOT_CONFIGURED' ? 503 : 502).send({ error: code });
-    }
+    const origin = hosted.publicOrigin ?? `http://${req.headers.host}`;
+    return { ...ticket, stt_ws_url: `${origin.replace(/^http/, 'ws')}${base}/ws/speech` };
+  });
+
+  app.get('/ws/speech', { websocket: true }, (socket, req) => {
+    const id = visitor(req);
+    if (!speech || !id || !originOk(req)) { socket.close(4401, 'visitor required'); return; }
+    const ip = clientIp(req);
+    if (!networkSpeechLimit.take(ip)) { socket.close(4429, 'Please try again shortly'); return; }
+    speech.accept(socket, id, ip);
   });
 
   app.get('/api/chapters', async (req, reply) => {
@@ -411,18 +389,12 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
       }
       if (!parsed.success) return;
       s.handle(parsed.data);
-      // A stream that ended is charged for the time it actually ran.
-      if (visitorId && parsed.data.type === 'capture' && (parsed.data.event === 'stopped' || parsed.data.event === 'dozing' || parsed.data.event === 'error')) {
-        hosted!.credits.settle(visitorId);
-        pushCredits(visitorId);
-      }
+      // Client capture messages control the display only. The audio relay owns settlement.
     });
     socket.on('close', () => {
       off();
       s.controlDisconnected();
-      // The last page closed: whatever it was streaming has ended (a client that keeps streaming
-      // anyway is still limited by its key's maximum duration).
-      if (visitorId && s.controlCount === 0) hosted!.credits.settle(visitorId);
+      // The audio connection closes independently; never refund hours on an untrusted signal.
     });
   });
 

@@ -13,13 +13,13 @@ Reading, search and the Quran text are free in both. Only live listening costs a
 
 ## What it costs to run
 
-Soniox advertises real-time recognition at **about $0.12 per hour**, with the actual bill calculated from audio, context and output tokens ([pricing](https://soniox.com/pricing), checked 2026-09-29). The app closes the stream after 8 s without voice. A JEV decision through OpenRouter was about **$0.000015** in the earlier provider check. Audio goes straight from the browser to Soniox using short-lived, time-capped keys.
+Soniox advertises real-time recognition at **about $0.12 per hour**, with the actual bill calculated from audio, context and output tokens ([pricing](https://soniox.com/pricing), checked 2026-09-29). The app closes the stream after 8 s without voice. A JEV decision through OpenRouter was about **$0.000015** in the earlier provider check. Hosted audio passes through the app's bounded WebSocket relay to Soniox; no audio is recorded. Provider keys remain on the server.
 
-The pool limits admission in listening seconds, **not dollars billed by providers**. Overlapping streams, token usage and client-reported early stops mean this ledger is not a provider-enforced spending ceiling. Set and verify provider-side spending controls before public use. Server costs and JEV requests are separate from the pool. Run one app instance with persistent storage; sessions and reservations are not designed for multiple replicas.
+The pool limits admission in listening seconds, **not dollars billed by providers**. The relay closes the upstream before settling time; a browser's fake stop message cannot refund an active stream. Token usage still determines the provider bill. Set and verify provider-side spending controls before public use. Hosting, relay bandwidth and JEV requests are separate costs. Run one app instance with persistent storage; sessions and reservations are not designed for multiple replicas.
 
 ## Quickest: one server, one command
 
-On a small Linux server with Docker (1 vCPU and 1 GB of memory is enough; audio never touches the server):
+On a Linux server with Docker and persistent storage (start with 1–2 GB memory, then measure load and relay bandwidth):
 
 1. Point your domain's DNS A record at the server.
 2. Copy the repository to the server, then `cp deploy/production.env.example deploy/production.env` and fill it in (domain, keys, daily shares).
@@ -68,19 +68,15 @@ QO_HOSTED=1 QO_HOST=127.0.0.1 npm start
 | `QO_TRUST_PROXY` | `1` behind a proxy | Take the visitor address from `X-Forwarded-For` (per-network daily share) |
 | `QO_HOST` | `0.0.0.0` in a container | Listen address (default loopback) |
 | `PORT` | no | Default 4317 |
-| `QO_FREE_HOURS_PER_MONTH` | no | Optional personal allowance per visitor per month (default 0: everyone listens from the shared pool) |
-| `QO_FREE_HOURS_PER_NETWORK_DAY`, `QO_FREE_HOURS_PER_SERVICE_DAY` | no | Caps on that optional personal allowance only (per network, and for everyone, per day) |
 | `QO_SECRET` | no | Visitor-cookie signing secret (48+ random bytes); otherwise generated into the state volume |
 | `QO_STATE_DIR` | no | Where credits and the secret live (default `data/state`) |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | no | Turn on donations (sadaqah into the pool) |
-| `QO_PACKS` | no | Optional hour packs to sell (none by default), e.g. `[{"id":"h20","hours":20,"amountCents":500,"currency":"usd","label":"20 hours of listening"}]` |
 | `QO_SPONSORED_HOURS_PER_VISITOR_DAY` | no | Each person's daily share of the shared hours (default 2) |
 | `QO_SPONSORED_HOURS_PER_NETWORK_DAY` | no | A network's daily share across its visitors (default 4) |
-| `QO_POOL_GOAL_HOURS_PER_MONTH` | no | The monthly goal the community bar shows gifts against (default 100) |
 | `QO_DONATIONS` | no | Donation amounts in cents (default `[500,1000,2500]`) |
-| `QO_SPONSOR_CENTS_PER_HOUR` | no | What a donated hour costs (default 13: $0.12 streamed hour plus the payment fee) |
+| `QO_SPONSOR_CENTS_PER_HOUR` | no | Estimated donation conversion, default 13 cents per hour; verify it against actual recognition costs and fees |
 
-Keep `data/state` on a persistent volume and back it up: it holds the pool, the listening ledger and the visitor-signing secret (losing the secret gives every visitor a new identity; with packs sold, bought time is then reachable only through saved recovery codes).
+Keep `data/state` on a persistent volume and back it up: it holds the pool, the listening ledger, safety counters and the anonymous visitor-cookie signing secret. These are operational records, not user accounts. The site has no sign-up, personal plans or recovery codes.
 
 ## At nurra.org/quran-reader
 
@@ -126,7 +122,7 @@ Set `QO_PUBLIC_ORIGIN=https://quran.example` and `QO_TRUST_PROXY=1`.
 
 ## Sponsored listening
 
-Listening is free for everyone from one shared pool of hours. Gifts add hours at the configured conversion (`QO_SPONSOR_CENTS_PER_HOUR`, so $10 adds 76 hours at the default 13 cents). This conversion is an estimate, not a guarantee that every payment fee and provider charge is covered. Each person may use `QO_SPONSORED_HOURS_PER_VISITOR_DAY` a day and each network `QO_SPONSORED_HOURS_PER_NETWORK_DAY`; when no shared hours are available, new listening pauses (reading and search continue). Outstanding keys reserve shared time before another visitor can draw it. Reservations are conservative when personal credits are also configured. The start page shows pool totals, this month's gifts and recent activity (totals only). Donations need Stripe (below). **Fill the pool at launch**, and add hours by hand any time (a gift received another way, or your own funding):
+Listening is free for everyone from one shared pool of hours. Gifts add hours at the configured conversion (`QO_SPONSOR_CENTS_PER_HOUR`, so $10 adds 76 hours at the default 13 cents). This conversion is an estimate, not a guarantee that every payment fee and provider charge is covered. Daily visitor/network limits protect fair access; when shared hours are unavailable, reading and translations continue. Outstanding streams reserve time before another visitor can draw it. The start page shows lifetime hours funded, used and remaining, with no monthly goal, donor names or leaderboard. Donations need Stripe (below). **Fill the pool at launch**, and add hours by hand any time:
 
 ```bash
 npm run pool:add -- 50 masjid-gift
@@ -136,11 +132,13 @@ In Docker: `docker compose -f deploy/compose.yml --env-file deploy/production.en
 
 ## Payments (optional)
 
+Hosted audio uses `/ws/speech` as well as `/ws/control`. Both must pass through your proxy. One stream per visitor is allowed. The server rejects client-selected provider models/context, oversized/backlogged audio, and audio processed substantially faster than real time. Ninety seconds of connected time without recognised Quran phrases, accumulated across restarts, pauses listening for five minutes. Eight such cutoffs from a network in fifteen minutes trigger a five-minute network pause. Safety counters persist in `data/state/listening-safety.db`; no audio or recognised text is stored there. Normal silence skipping is still local and closes the relay early. This heuristic can miss or misrecognise speech; it is not a recitation grade, identity check or permanent ban. Live latency of the relay must be measured before claiming the old direct-stream timings.
+
 1. In the Stripe dashboard, add a webhook endpoint for `checkout.session.completed` and `checkout.session.async_payment_succeeded` at `https://<public origin><base path>/api/billing/webhook` (for nurra.org: `https://nurra.org/quran-reader/api/billing/webhook`).
 2. Set `STRIPE_SECRET_KEY` and that endpoint's `STRIPE_WEBHOOK_SECRET`. Use test-mode keys first; Stripe's test cards complete a real flow without charging anyone.
-3. Donations (and packs, if `QO_PACKS` lists any) are Stripe Checkout line items created per payment; no products need to exist in Stripe.
+3. Donations are Stripe Checkout line items created per gift; no products need to exist in Stripe.
 
-Donations go into the shared pool at cost. If packs are sold, bought time is attached to the visitor's anonymous identity, and the Listening sheet shows a recovery code that restores it on another device or after clearing cookies.
+Donations add to the shared pool for everyone. Nothing is sold to an individual reader; no app account is needed to read or give.
 
 ## Before taking any payment (donations included)
 

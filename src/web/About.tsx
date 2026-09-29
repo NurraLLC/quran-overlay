@@ -86,7 +86,7 @@ export function About() {
         <section>
           <h2>How it works</h2>
           <ul>
-            <li>It only listens while the microphone is on and you’re reciting. During a long pause nothing is sent. Your voice goes to our speech-recognition provider and nowhere else, and we never record or keep it.</li>
+            <li>Listening starts only when you turn on the microphone. {me?.mode === 'hosted' ? 'Your voice passes through our server to Soniox, so we can stop unused streams and protect the shared hours.' : 'Your voice goes directly to Soniox for recognition.'} We never record or keep the audio. During a long pause the stream closes.</li>
             <li>The Arabic and the translation are shown exactly as published (Quran.com, Saheeh International). Nothing about the Quran is written by a machine.</li>
             <li>The code is open. Anyone can read it, check it, or run their own copy for free: <a href={REPO}>github.com/NurraLLC/quran-reader</a>.</li>
           </ul>
@@ -100,7 +100,7 @@ export function About() {
             <li>Listening draws from a shared pool funded by sadaqah, including our own contributions. Daily limits help more people share those hours.</li>
             <li>Gifts add listening hours to the shared pool. The number of hours each gift adds is shown before you give. Recognition costs and payment fees can vary. The pool totals below update as people give and recite.</li>
             <li>If the sponsored hours ever run out, listening pauses until someone gives again. Reading and search never stop.</li>
-            <li>No ads, no selling data, no tracking.</li>
+            <li>No accounts, no ads, no selling data, and no public donor names.</li>
           </ul>
           {credits && <SharedHours stats={me?.sponsored} donations={donations} defaultOpen />}
         </section>

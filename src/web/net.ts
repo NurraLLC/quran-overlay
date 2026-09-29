@@ -80,17 +80,10 @@ export async function exchangeOwner(): Promise<void> {
   }).catch(() => undefined);
 }
 
-export type Pack = { id: string; hours: number; label: string; price: string };
 export type PoolStats = {
   given: number;
   used: number;
   left: number;
-  givenThisMonth: number;
-  giftsThisMonth: number;
-  lastGiftAt: number | null;
-  recitersThisWeek: number;
-  recitedThisWeek: number;
-  goalThisMonth: number;
 };
 /** A donation to the shared sponsored-listening pool, and the hours it adds. */
 export type Donation = { amountCents: number; price: string; hours: number };
@@ -98,10 +91,8 @@ export type Access = {
   mode: 'local' | 'hosted';
   owner: boolean;
   credits?: import('../shared/contracts').CreditView;
-  /** Hosted: the visitor's own code for keeping their time on another device. */
-  recoveryCode?: string | null;
-  /** Hosted with payments on: what can be bought. */
-  billing?: { packs: Pack[]; donations?: Donation[] } | null;
+  /** Hosted with donations enabled: gifts to the community pool. */
+  billing?: { donations?: Donation[] } | null;
   /** Hosted: the shared pool's story (seconds, counts; totals only). */
   sponsored?: PoolStats;
 };

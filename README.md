@@ -13,7 +13,7 @@ It works as a personal reader on your phone or computer, and as an OBS/Twitch ov
 
 ## What it does
 
-- **Follows recitation fast.** About one second from the start of an ayah to it being on screen (median 0.9–1.0 s, measured end to end through the real microphone path and Soniox), with **zero wrong ayahs** across 56 test scenarios and 48 recorded sessions (805 ayahs). Word-by-word highlighting as you recite, a heads-up when you reach an ayah's last word, and the next ayah waiting dimmed below.
+- **Follows recitation as you read.** Word-by-word highlighting, a heads-up at the end of an ayah, and the next ayah waiting dimmed below. The existing replay covers 805 ayahs with zero wrong displays. Earlier direct-stream microphone tests measured a median 0.9–1.0 s from ayah start to display; the new hosted relay still needs its own live latency measurement.
 - **Understands how people actually recite.** Going back a few words after a breath, speech-recognition word splits ("ولا الآخرة" for "وللآخرة"), a basmala before a surah, one-word openings ("والضحى", "يس"), plainly read (unmelodic) recitation, and ayahs named by their sound in English letters ("go to inna fatahna").
 - **Talk to it.** English requests are recognised while you recite and never disturb following: references, surah names (asking when names are close, never guessing), natural-language finding ("surah about elephants" opens Al-Fil), and display commands ("Arabic only", "word by word", "pause", "hide").
 - **Reads beautifully.** Short ayahs share the screen as one mushaf-style passage; long ayahs are paged, never shrunk; Arabic + English, Arabic only, or English only; word-by-word meanings; ornaments, reduced-motion support, legible over any stream footage.
@@ -80,7 +80,9 @@ Feed it the words your speech recogniser hears (final and in-progress tokens, wi
 
 ## Privacy
 
-Audio goes from the browser directly to Soniox (speech recognition) only while the microphone is on, using a short-lived key. The server never receives or stores audio, writes no request logs, and in hosted mode keeps no transcripts. During a long pause (8 s without voice) nothing is sent: the stream to Soniox closes, and a new one opens the moment you recite again (the microphone stays on locally in between). Listening stops by itself after a minute without recitation, or three minutes during such a pause.
+In hosted mode, audio passes through the app server to Soniox only while listening is on. The relay keeps provider keys private and can close the actual audio stream to protect the shared hours; it never records audio or persists transcripts. Self-hosted mode still sends audio directly to Soniox. Request logging is off. During a long pause (8 s without voice), the stream closes and no audio leaves the browser until voice returns. Reading, word meanings and translations never require the microphone.
+
+The community panel shows lifetime hours funded, used for listening, and remaining—no donor names, monthly targets or personal purchase plans by default. Usage includes time connected to recognition and is settled when a stream ends. Hosted listening permits one stream per visitor, checks only provider-originated recitation evidence, and applies a five-minute cooldown after 90 seconds of connected time without recognised recitation (including repeated restarts). Repeated cutoffs across fresh identities also trigger a temporary network cooldown. This is resource protection, not a judgment of recitation quality or a guarantee against all abuse.
 
 ## Attribution
 
@@ -128,7 +130,8 @@ Sources → + → Browser, paste the link from **Copy OBS overlay link**, set wi
 ## How it works
 
 ```text
-Control page (Chrome/Edge) ── mic → Soniox (temporary key) → tokens ─┐
+Control page ── mic → hosted audio relay → Soniox → tokens ─────────┐
+Self-hosted mode ── mic → Soniox directly → tokens ────────────────┤
                                                                     ▼
 Local server: transcript assembly → tracker (full-corpus retrieval + bounded alignment)
              → optional JEV decision (shortlist + WAIT, revalidated) → one display state
@@ -138,7 +141,7 @@ Local server: transcript assembly → tracker (full-corpus retrieval + bounded a
 
 - `src/shared/contracts.ts` is the single owner of every wire message and the display state.
 - `src/server/tracker/` — normalization, full-corpus index, alignment, candidate generation, reducer (proposals, uncertainty, collisions), scheduler (single flight, newest pending, deadline, negative cache), follower (modes, evidence binding, revalidation). No React or network dependency; usable by other apps.
-- `src/server/providers/` — Soniox key minting; JEV Decisions clients for TypeSafe direct and OpenRouter with strict response validation.
+- `src/server/providers/` — hosted audio relay and Soniox key minting; JEV Decisions clients for TypeSafe direct and OpenRouter with strict response validation.
 - `src/server/search/`, `src/server/commands/` — reference/number parsing, chapter aliases derived from corpus names, BM25 over the translation, optional semantic adapter, command resolution.
 - `src/web/` — control page, overlay/reading screen, and one shared `VerseDisplay` renderer that measures real line boxes before paint.
 - `src/shared/display-encoding.ts` — see *Known limitations*.
@@ -170,14 +173,14 @@ Set `QO_DIAGNOSTIC_CAPTURE=1` to write recognized text tokens (never audio) to `
 
 | Evidence layer | Status |
 |---|---|
-| Source and tests | 189 tests + typecheck + production build pass, locally and in CI (tracker, going back after a breath, commands, Arabic-script surah requests, sound search, sponsored hours and donations with Stripe mocked, hosted isolation, serving under a base path); 6 browser tests (control, reading screen, reader menu and following, "Why we built this", live following, the silence skipper with a fake microphone). |
+| Source and tests | 197 unit/integration tests, typecheck, production build and 10 browser tests pass locally. Includes anonymous access, shared funding, signed donation idempotency, relay ownership, persistent cooldowns, browser SDK audio through a stand-in provider, load recovery and the silence skipper. Check CI on the deployment commit; see [the final review](docs/FINAL_REVIEW.md) for evidence boundaries. |
 | Hosted at a path | The hosted site under `/quran-reader` was run and checked in a browser (every request under the prefix, live connection, OBS link). The Cloudflare Worker that puts it at nurra.org/quran-reader has not run yet. |
 | Corpus | 25/25 validation checks; all 6,236 ayahs present in display, search and English with matching keys. |
 | Replay (synthetic) | 19 hand-authored scenarios over real corpus text, three modes: deterministic 0 wrong displays, 168/178 ayahs shown; hybrid identical with a *simulated* decider; jev_required 0 wrong but slower (see `docs/BENCHMARK.md`). Streams use assumed provider timing and error rates. |
 | Browser | Playwright walkthrough in Edge (control page + separate reading screen): privacy of search, show/pause/resume, hide/unhide, paging, lower-third promotion, reload recovery. Frames reviewed visually. |
 | Soniox connection | Verified 2026-09-28: temporary-key minting (111–176 ms) and a real-time stream opening, accepting audio and closing cleanly. Owner live sessions (latest 2026-09-29: Ya-Sin, Al-Baqarah, Ar-Rahman) are captured as text and replayed; that session's three problems (going back after a breath, elongated words, "go to Surah Rahman" heard in Arabic script) were fixed and verified by replaying it, not yet by a new live session. |
 | JEV decisions (OpenRouter) | Live calls verified: strict validation passes on real responses; it chose 67:1 over its textual neighbours (p 0.98) and answered WAIT (p 0.99) on the indistinguishable "يا أيها الذين آمنوا". The service intermittently stalled >10 s during testing (reproduced with curl) while successful calls took ~0.3 s. In replay (`docs/BENCHMARK.md`) hybrid with live JEV matched deterministic exactly (0 wrong, same ayahs shown); jev_required showed fewer ayahs and is not recommended. For English search, live JEV selection raised first-card relevance on a frozen set from 15/30 to 21–26/30 (`docs/ENGLISH_EVAL_V2*.md`). |
-| Microphone → screen latency | **Measured** with the speed lab (TTS recitation as the microphone, real Soniox): ayah start → on screen p50 0.9–1.0 s, p90 1.3–1.5 s, 0 wrong. The app's own share (first letter delivered → screen) on recorded sessions: p50 0.12 s, p90 0.43 s; the rest is the provider and saying the word. A live meter on the control page shows how far the screen trails the voice. |
+| Microphone → screen latency | **Historical direct-stream measurement**, before the hosted relay: speed lab (TTS recitation as the microphone, real Soniox), ayah start → screen p50 0.9–1.0 s, p90 1.3–1.5 s, 0 wrong. First letter delivered → screen on recorded sessions: p50 0.12 s, p90 0.43 s. These timings do not verify the current hosted relay; measure it with owner recitation before launch. Do not generate new TTS recitation. |
 | OBS rendering | **Not verified** in OBS. The overlay is the same page verified in Edge. |
 
 ## Known limitations

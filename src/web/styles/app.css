@@ -580,6 +580,12 @@ a.about-ref:hover { text-decoration: underline; }
 /* Shared hours: quiet when closed (one number, one bar), fuller when open. */
 .r-pool { margin: 28px auto 0; max-width: 34rem; border: 1px solid var(--line); border-radius: 16px; background: var(--ink-1); text-align: left; overflow: hidden; }
 .r-pool.open { border-color: rgba(207, 170, 98, 0.45); }
+.r-pool-overview { padding: 16px 16px 0; }
+.r-pool-title { margin: 0 0 14px !important; font: 650 14px/1.4 var(--ui); color: var(--text); }
+.r-pool-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.r-pool-totals dt { font-size: 12px; line-height: 1.45; min-height: 2.9em; color: var(--muted); margin-bottom: 7px; }
+.r-pool-totals dd { margin: 0; font: 700 clamp(16px, 4vw, 22px)/1.3 var(--ui); font-variant-numeric: tabular-nums; color: var(--ivory); overflow-wrap: anywhere; }
+.r-pool-totals > :last-child dd { color: var(--gold); }
 .r-pool-head { display: flex; flex-direction: column; gap: 8px; width: 100%; margin: 0; padding: 14px 16px 13px; border: none; border-radius: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
 .r-pool-head:hover .r-pool-cta, .r-pool-head:focus-visible .r-pool-cta { background: rgba(207, 170, 98, 0.24); }
 .r-pool-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

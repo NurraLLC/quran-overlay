@@ -1,13 +1,10 @@
 // Listening credits for the hosted service. One credit is one second of live listening, the only
-// thing that costs money (speech recognition is billed per streamed second).
+// unit this app meters (the provider invoice itself is token-based).
 //
-// Audio streams from the browser straight to the recognition provider, so the server cannot cut a
-// stream. Instead every provider key is a *hold*: it is minted with a hard maximum duration (the
-// provider drops the stream there) that never exceeds what the visitor has left, and that maximum is
-// reserved until the stream is settled. Settling charges the wall-clock time actually used; a hold
-// that is never settled (a client that vanished or was tampered with) is charged in full once its
-// maximum has passed. Overlapping holds (a reconnect while the old stream winds down) are charged
-// once, as the union of their intervals.
+// Hosted audio goes through a server-owned relay. Each provider key has a time reservation and
+// a provider-enforced maximum. The relay closes the upstream before settling elapsed time;
+// client capture/stop messages never release these reservations. Holds surviving a process crash
+// are charged at their maximum once expired. The ledger also understands legacy overlapping holds.
 //
 // Pools: a monthly free allowance is used first, then purchased time, then sponsored time. Free
 // time is further capped per network per day (clearing cookies does not mint new free time) and per
@@ -33,8 +30,6 @@ export type CreditConfig = {
   poolDailySecondsPerVisitor?: number;
   /** Sponsored time one network may use per UTC day, across visitors (clearing cookies is not a new share). */
   poolDailySecondsPerNetwork?: number;
-  /** This month's gifts are shown against this goal (the community bar). */
-  poolGoalSecondsPerMonth?: number;
 };
 
 export const DEFAULT_CREDITS: CreditConfig = {
@@ -156,22 +151,13 @@ export class CreditStore {
   }
 
   /**
-   * The pool's story, for the community bar: all-time totals (given, recited from it, left), this
-   * month's gifts against the goal, and recent activity. Totals and counts only, never who.
+   * Lifetime community totals. No monthly targets, donor identities or leaderboards.
    */
   poolStats(now = Date.now()) {
-    const monthStart = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), 1);
-    const week = now - 7 * 86_400_000;
     return {
       given: this.num('SELECT SUM(seconds) AS n FROM pool_gifts'),
       used: this.num('SELECT SUM(pool_seconds) AS n FROM holds'),
       left: this.poolSeconds(),
-      givenThisMonth: this.num('SELECT SUM(seconds) AS n FROM pool_gifts WHERE at >= ?', monthStart),
-      giftsThisMonth: this.num('SELECT COUNT(*) AS n FROM pool_gifts WHERE at >= ?', monthStart),
-      lastGiftAt: this.num('SELECT MAX(at) AS n FROM pool_gifts') || null,
-      recitersThisWeek: this.num('SELECT COUNT(DISTINCT user_id) AS n FROM holds WHERE pool_seconds > 0 AND settled_at >= ?', week),
-      recitedThisWeek: this.num('SELECT SUM(pool_seconds) AS n FROM holds WHERE settled_at >= ?', week),
-      goalThisMonth: this.cfg.poolGoalSecondsPerMonth ?? 100 * 3600,
     };
   }
 

@@ -198,7 +198,11 @@ export class SonioxCapture {
       config: async () => {
         const res = await fetch(u('/api/soniox/temporary-key'), { method: 'POST', credentials: 'same-origin' });
         if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as { error?: string; limitedBy?: string | null; renewsAt?: number };
+          const body = (await res.json().catch(() => ({}))) as { error?: string; limitedBy?: string | null; renewsAt?: number; retryAfter?: number };
+          if (body.error === 'LISTENING_COOLDOWN') {
+            this.noCredits = `Listening is taking a short break. Please try again in ${Math.max(1, Math.ceil((body.retryAfter ?? 300) / 60))} minutes. Reading and translations are still available.`;
+            throw new Error(this.noCredits);
+          }
           if (body.error === 'NO_CREDITS') {
             const renews = body.renewsAt ? new Date(body.renewsAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', timeZone: 'UTC' }) : 'next month';
             this.noCredits =
@@ -215,8 +219,8 @@ export class SonioxCapture {
           }
           throw new Error(body.error === 'NOT_CONFIGURED' ? 'Soniox is not set up: add SONIOX_API_KEY to .env and restart the server.' : `Could not get a Soniox key (${body.error ?? res.status}).`);
         }
-        const { api_key } = (await res.json()) as { api_key: string };
-        return { api_key };
+        const { api_key, stt_ws_url } = (await res.json()) as { api_key: string; stt_ws_url?: string };
+        return { api_key, ...(stt_ws_url ? { stt_ws_url } : {}) };
       },
     });
   }
