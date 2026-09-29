@@ -7,6 +7,32 @@ const words = (s: string) => s.split(' ').map(text => ({ text, index: -1, startM
 function answer(route: string): Decision {
   return { id: 'route', gateway: 'openrouter', model: 'typesafe/jev-1.13', latencyMs: 10, usage: { inputTokens: 0, outputTokens: 0, cost: 0 }, answers: { route: { type: 'choice', choice: route, probabilities: { NAVIGATE: route === 'NAVIGATE' ? .99 : .005, SEARCH: .005, COMMENTARY: route === 'COMMENTARY' ? .99 : .005 }, confidence: .99, tied: false }, explicit: { type: 'noul', noul: route === 'COMMENTARY' ? .01 : .99 } } };
 }
+function probs(p: Record<string, number>): Decision {
+  const choice = Object.entries(p).sort((x, y) => y[1] - x[1])[0][0];
+  return { ...answer('NAVIGATE'), answers: { route: { type: 'choice', choice, probabilities: p, confidence: .9, tied: false } } };
+}
+async function routed(p: Record<string, number>, text = 'show the verse about the orphan') {
+  const clock = new VirtualClock(), runs: string[] = [];
+  const client: DecisionClient = { gateway: 'openrouter', evaluate: async () => probs(p) };
+  const r = new ListeningCommands(client, clock, (_t, _id, intent) => runs.push(intent));
+  r.observe(words(text), false, true);
+  await clock.advance(1); await flush();
+  return runs;
+}
+describe('spoken English finds passages', () => {
+  it('a confident request to show a described passage acts as show', async () => {
+    expect(await routed({ SHOW: .97, SEARCH: .02, COMMENTARY: .01, NAVIGATE: 0 })).toEqual(['show']);
+  });
+  it('speech about a passage that is not sure enough to change the screen still searches privately', async () => {
+    expect(await routed({ SHOW: .6, SEARCH: .35, COMMENTARY: .05, NAVIGATE: 0 })).toEqual(['search']);
+    expect(await routed({ SEARCH: .57, SHOW: .04, COMMENTARY: .39, NAVIGATE: 0 }, 'where Allah says do not oppress the orphan')).toEqual(['search']);
+  });
+  it('commentary and split decisions do nothing', async () => {
+    expect(await routed({ COMMENTARY: .97, SEARCH: .03, SHOW: 0, NAVIGATE: 0 }, 'thanks for joining everyone')).toEqual([]);
+    expect(await routed({ SEARCH: .45, COMMENTARY: .45, SHOW: .1, NAVIGATE: 0 }, 'that ayah is beautiful')).toEqual([]);
+  });
+});
+
 describe('requests inside continuous listening', () => {
   it('an abandoned provider deadline cannot cancel a newer request', async () => {
     const clock = new VirtualClock(), runs: string[] = [];

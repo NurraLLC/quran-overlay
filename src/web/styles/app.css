@@ -239,3 +239,16 @@ button.stop { background: #4a2620; border-color: #8a4a3e; color: #ffe0d8; }
 
 .speed { margin-left: auto; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .speed strong { color: var(--text); font-weight: 600; }
+
+.live-heard { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 8px 12px; border-radius: 10px; background: var(--ink-2); min-height: 44px; overflow: hidden; }
+.live-dot { width: 9px; height: 9px; flex: none; border-radius: 50%; background: var(--follow); box-shadow: 0 0 0 4px rgba(111, 179, 159, 0.18); animation: breathe 1.6s ease-in-out infinite; }
+/* Arabic runs right to left, so the newest word is at the left edge: pin that edge and let the
+   oldest words fade out on the right. */
+.live-words { flex: 1; min-width: 0; display: flex; justify-content: flex-start; direction: ltr; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, #000 80%, transparent); mask-image: linear-gradient(to right, #000 80%, transparent); }
+.live-words > span { flex: none; direction: rtl; unicode-bidi: isolate; white-space: nowrap; font-family: 'Uthmanic Hafs', serif; font-size: 22px; line-height: 1.6; color: var(--ivory); }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+.voice-card .find { margin-top: 14px; }
+.start-point { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.start-point summary { cursor: pointer; color: var(--muted); font-size: 13.5px; }
+.start-point .start-from { margin-top: 10px; }

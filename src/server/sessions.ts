@@ -121,9 +121,9 @@ export class Session {
   constructor(private readonly o: SessionOptions) {
     this.clock = o.clock ?? realClock;
     this.liveCursor = new LiveCursor(o.ix);
-    this.listeningCommands = new ListeningCommands(o.decisionClient, this.clock, (text, id) => {
+    this.listeningCommands = new ListeningCommands(o.decisionClient, this.clock, (text, id, intent) => {
       if (this.capture.phase !== 'recording' || this.commandActive) return;
-      void this.command(id, text);
+      void this.command(id, text, intent === 'show');
     }, message => this.say(message));
     this.follower = new RecitationFollower(o.ix, o.corpus.id, this.sessionEpoch, o.decisionClient, o.mode, (e) => this.onFollower(e), this.clock);
     if (o.catalog) attachCatalog(this.follower, o.catalog);
@@ -586,7 +586,8 @@ export class Session {
 
   // ---------- commands ----------
 
-  private async command(requestId: string, text: string) {
+  /** `show`: a spoken "show the ayah about ..." puts JEV's confirmed best match on screen. */
+  private async command(requestId: string, text: string, show = false) {
     this.latestCommand?.ctrl.abort();
     const ctrl = new AbortController();
     const cmd = { id: requestId, ctrl, keys: new Set<string>() };
@@ -610,6 +611,15 @@ export class Session {
     }
     // Cards and their adjacent-ayah context (browsable in the card) may be shown.
     if (result.kind === 'candidates') for (const c of result.cards) for (const k of [c.key, c.prevKey, c.nextKey]) if (k) cmd.keys.add(k);
+    if (show && result.kind === 'candidates') {
+      if (result.confirmedKey) {
+        this.gotoIndex(this.o.corpus.verse(result.confirmedKey)!.index, 'command');
+        this.held = false;
+        this.heldBySearch = false;
+        this.say(`Showing ${result.confirmedKey}, the best match for “${text}”. Other matches are in Recite or ask.`);
+        this.publish();
+      } else this.say(`No single passage clearly matched “${text}”. Pick one of the matches to show it.`);
+    }
     this.emitControl({ type: 'command_result', requestId, result });
   }
 

@@ -1,4 +1,4 @@
-// npm run speedlab -- --name duha [--port 4398] [--mode hybrid] [--stt '{"timeslice":20}'] [--label x]
+// npm run speedlab -- --name duha [--port 4398] [--mode hybrid] [--stt '{"timeslice":20}'] [--label x] [--shot card.png]
 // End-to-end speed and correctness through the real pipeline: WAV (see make-audio.ts) as Edge's
 // microphone -> Soniox (live) -> server -> screen. Records every screen change against the audio
 // clock and reports, per ayah, "ayah starts in the audio -> on screen", plus wrong and missed ayahs.
@@ -72,7 +72,13 @@ try {
   })()`);
   await page.getByRole('button', { name: 'Start listening' }).click();
   await page.waitForFunction(() => (window as unknown as { __qoAudioOrigin?: () => number | null }).__qoAudioOrigin?.() != null, undefined, { timeout: 20000 });
-  await page.waitForTimeout(truth.durationMs + 2500);
+  const shot = arg('shot', '');
+  if (shot) {
+    // Mid-run picture of the control card while listening (design review).
+    await page.waitForTimeout(truth.durationMs / 2);
+    await page.locator('.voice-card').screenshot({ path: shot });
+    await page.waitForTimeout(truth.durationMs / 2 + 2500);
+  } else await page.waitForTimeout(truth.durationMs + 2500);
   const origin = await page.evaluate(() => (window as unknown as { __qoAudioOrigin: () => number }).__qoAudioOrigin());
   const log = await page.evaluate(() => (window as unknown as { __qoLog: Array<{ t: number; key: string | null }> }).__qoLog);
   const antLog = await page.evaluate(() => (window as unknown as { __qoAntLog: Array<{ t: number; key: string | null }> }).__qoAntLog);

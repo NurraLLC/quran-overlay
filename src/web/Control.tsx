@@ -1,7 +1,7 @@
 // Reciter's control page. Everything here is private to the broadcaster; only the display state
 // (mirrored in the preview) reaches the audience.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, SearchCard } from '../shared/contracts';
 import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
 import { connect } from './net';
@@ -66,7 +66,6 @@ export function Control() {
   const [query, setQuery] = useState('');
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [result, setResult] = useState<{ id: string; r: CommandResult } | null>(null);
-  const [voice, setVoice] = useState<{ holding: boolean; hearing: string; note: string | null }>({ holding: false, hearing: '', note: null });
   const [copied, setCopied] = useState(false);
   const fontsReady = useFontsReady();
   const sock = useRef<ReturnType<typeof connect> | null>(null);
@@ -78,7 +77,7 @@ export function Control() {
     captureRef.current = new SonioxCapture(
       (m) => send(m),
       (s) => setCapture(s),
-      (hearing) => setVoice((v) => ({ ...v, hearing })),
+      () => undefined,
     );
   }
   const cap = captureRef.current;
@@ -192,30 +191,6 @@ export function Control() {
     [send],
   );
 
-  const startVoice = useCallback(async () => {
-    if (voice.holding) return;
-    setVoice({ holding: true, hearing: '', note: null });
-    try {
-      await cap.beginCommand(deviceId || null);
-    } catch {
-      setVoice({ holding: false, hearing: '', note: 'Could not start the microphone for a voice command.' });
-    }
-  }, [cap, deviceId, voice.holding]);
-
-  const endVoice = useCallback(async () => {
-    if (!voice.holding) return;
-    setVoice((v) => ({ ...v, holding: false, note: 'Finishing…' }));
-    const c = await cap.endCommand();
-    if (c.clean) {
-      setVoice({ holding: false, hearing: '', note: `Heard: “${c.text}”` });
-      setQuery(c.text);
-      runCommand(c.text, 'voice');
-    } else {
-      setQuery(c.text);
-      setVoice({ holding: false, hearing: '', note: c.reason });
-    }
-  }, [cap, runCommand, voice.holding]);
-
   // Keyboard: ←/→ navigate, H pause/resume, B hide/show. Ignored while typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -319,7 +294,7 @@ export function Control() {
         </section>
 
         <aside className="side">
-          <ListenCard
+          <VoiceCard
             snap={snap}
             capture={capture}
             listening={listening}
@@ -330,25 +305,17 @@ export function Control() {
             onStop={() => cap.stop()}
             chapters={chapters}
             send={send}
-          />
-          <FindCard
             query={query}
             setQuery={setQuery}
             pending={!!pendingId}
             result={result?.r ?? null}
-            requestId={result?.id ?? null}
-            voice={voice}
             onSubmit={() => query.trim() && runCommand(query, 'typed')}
-            onHoldStart={startVoice}
-            onHoldEnd={endVoice}
             onShow={(key) => result && send({ type: 'show_result', requestId: result.id, key })}
             onClear={() => {
               setResult(null);
               setQuery('');
               lastRequest.current = null;
             }}
-            held={snap.held}
-            onResume={() => send({ type: 'hold', on: false })}
           />
           <details className="diagnostics">
             <summary>What the tracker hears (private)</summary>
@@ -411,7 +378,12 @@ export function Control() {
   );
 }
 
-function ListenCard(p: {
+/**
+ * One place for everything spoken or typed: listening follows recitation and also hears English
+ * requests ("go to Surah Maryam, ayah three"), typing does the same without the microphone, and the
+ * results of either appear right here.
+ */
+function VoiceCard(p: {
   snap: ControlSnapshot;
   capture: CaptureStatus;
   listening: boolean;
@@ -422,16 +394,26 @@ function ListenCard(p: {
   onStop: () => void;
   chapters: ChapterRow[];
   send: (m: ControlClientMessage) => boolean;
+  query: string;
+  setQuery: (q: string) => void;
+  pending: boolean;
+  result: CommandResult | null;
+  onSubmit: () => void;
+  onShow: (key: string) => void;
+  onClear: () => void;
 }) {
   const [surah, setSurah] = useState<number | ''>(p.snap.startHint ? Number(p.snap.startHint.split(':')[0]) : '');
   const [ayah, setAyah] = useState<string>(p.snap.startHint ? p.snap.startHint.split(':')[1] : '');
   const ch = p.chapters.find((c) => c.number === surah);
   const starting = p.capture.state === 'starting' || p.capture.state === 'reconnecting';
+  const r = p.result;
+  // The last few heard words, so it is obvious the microphone is working (full view in diagnostics).
+  const heard = `${p.snap.heard.final} ${p.snap.heard.provisional}`.trim().split(/\s+/).filter(Boolean).slice(-9).join(' ');
   return (
-    <section className="card">
-      <h2>Listening</h2>
+    <section className="card voice-card">
+      <h2>Recite or ask</h2>
       {!p.snap.setup.soniox && (
-        <p className="setup">Listening needs a Soniox key: add <code>SONIOX_API_KEY</code> to <code>.env</code> and restart the server. Navigation, search and the overlay work without it.</p>
+        <p className="setup">Listening needs a Soniox key: add <code>SONIOX_API_KEY</code> to <code>.env</code> and restart the server. Typing, navigation and the overlay work without it.</p>
       )}
       <div className="listen-row">
         {p.listening || starting ? (
@@ -446,31 +428,70 @@ function ListenCard(p: {
           ))}
         </select>
       </div>
+      {p.listening && (
+        <div className="live-heard">
+          <span className="live-dot" aria-hidden />
+          {heard ? <span className="live-words"><span lang="ar">{heard}</span></span> : <span className="muted">Listening…</span>}
+        </div>
+      )}
       <p className="hint">
-        {starting ? 'Connecting the microphone…' : p.capture.state === 'error' ? p.capture.detail : p.listening ? 'Recite to follow. You can also say “go to Surah Maryam, ayah three” or ask to find a passage. English commentary does not change the screen.' : 'Start once to recite and make English requests. Audio goes to Soniox; source words and translation appear on the reading screen.'}
+        {starting
+          ? 'Connecting the microphone…'
+          : p.capture.state === 'error'
+            ? p.capture.detail
+            : p.listening
+              ? 'Recite and the screen follows. Or just say it in English: “go to Surah Maryam, ayah three”, “show the ayah about the orphan”, or describe one to find it here privately. Other English talk never changes the screen.'
+              : 'One microphone for both: recite to follow, or speak an English request. Audio goes to Soniox.'}
       </p>
-      <div className="start-from">
-        <span>Start from</span>
-        <select aria-label="Starting surah" value={surah} onChange={(e) => setSurah(e.target.value ? Number(e.target.value) : '')}>
-          <option value="">Anywhere (find automatically)</option>
-          {p.chapters.map((c) => (
-            <option key={c.number} value={c.number}>{c.number}. {c.nameSimple}</option>
-          ))}
-        </select>
-        <input aria-label="Starting ayah" inputMode="numeric" placeholder="ayah" value={ayah} onChange={(e) => setAyah(e.target.value.replace(/\D/g, ''))} disabled={!surah} />
-        <button
-          onClick={() => {
-            const key = surah ? `${surah}:${Math.min(Math.max(1, Number(ayah) || 1), ch?.verseCount ?? 1)}` : null;
-            p.send({ type: 'start_hint', key });
-          }}
-        >
-          Set
-        </button>
-        <button disabled={!surah} title="Show this ayah now and follow from here" onClick={() => surah && p.send({ type: 'goto', key: `${surah}:${Math.min(Math.max(1, Number(ayah) || 1), ch?.verseCount ?? 1)}` })}>
-          Show now
-        </button>
-      </div>
-      <p className="hint">{p.snap.startHint ? `Expecting to begin near ${p.snap.startHint}; other passages are still recognized.` : 'Optional. A starting point helps with common openings; it never blocks other passages.'}</p>
+
+      <form
+        className="find"
+        onSubmit={(e) => {
+          e.preventDefault();
+          p.onSubmit();
+        }}
+      >
+        <input
+          value={p.query}
+          onChange={(e) => p.setQuery(e.target.value)}
+          placeholder="Or type: 2:255, Surah Maryam ayah 3, or what it says"
+          aria-label="Type a reference or what the ayah says"
+        />
+        <button type="submit" disabled={!p.query.trim()}>Go</button>
+      </form>
+
+      {p.pending && <p className="pending">Searching…</p>}
+      {!p.pending && r?.kind === 'navigate' && <p className="ok">Opened {r.key}.{r.note ? ` ${r.note}` : ''} Recitation continues from there.</p>}
+      {!p.pending && (r?.kind === 'no_match' || r?.kind === 'invalid_reference') && <p className="warn">{r.message}</p>}
+      {!p.pending && r?.kind === 'candidates' && (
+        <div className="results">
+          <p className={r.refining ? 'pending' : 'hint'}>{r.status} Searches stay private until you choose Show on stream.</p>
+          <ol>
+            {r.cards.map((c) => (
+              <ResultCard key={c.key} card={c} confirmed={c.key === r.confirmedKey} onShow={p.onShow} />
+            ))}
+          </ol>
+          <button onClick={p.onClear}>Clear results</button>
+        </div>
+      )}
+      {p.snap.held && (
+        <button className="primary wide" onClick={() => p.send({ type: 'hold', on: false })}>Resume following from the screen</button>
+      )}
+
+      <details className="start-point">
+        <summary>{p.snap.startHint ? `Starting point: near ${p.snap.startHint}` : 'Starting point (optional)'}</summary>
+        <div className="start-from">
+          <select aria-label="Starting surah" value={surah} onChange={(e) => setSurah(e.target.value ? Number(e.target.value) : '')}>
+            <option value="">Anywhere (find automatically)</option>
+            {p.chapters.map((c) => (
+              <option key={c.number} value={c.number}>{c.number}. {c.nameSimple}</option>
+            ))}
+          </select>
+          <input aria-label="Starting ayah" inputMode="numeric" placeholder="ayah" value={ayah} onChange={(e) => setAyah(e.target.value.replace(/\D/g, ''))} disabled={!surah} />
+          <button onClick={() => p.send({ type: 'start_hint', key: surah ? `${surah}:${Math.min(Math.max(1, Number(ayah) || 1), ch?.verseCount ?? 1)}` : null })}>Set</button>
+        </div>
+        <p className="hint">Helps when several surahs open the same way; other passages are still recognized.</p>
+      </details>
     </section>
   );
 }
@@ -504,92 +525,6 @@ function ResultCard({ card, confirmed, onShow }: { card: SearchCard; confirmed: 
         <button onClick={() => go(shown.key === card.prevKey ? card.key : card.nextKey)} disabled={shown.key === card.nextKey || !card.nextKey}>Later</button>
       </div>
     </li>
-  );
-}
-
-function FindCard(p: {
-  query: string;
-  setQuery: (q: string) => void;
-  pending: boolean;
-  result: CommandResult | null;
-  requestId: string | null;
-  voice: { holding: boolean; hearing: string; note: string | null };
-  onSubmit: () => void;
-  onHoldStart: () => void;
-  onHoldEnd: () => void;
-  onShow: (key: string) => void;
-  onClear: () => void;
-  held: boolean;
-  onResume: () => void;
-}) {
-  const r = p.result;
-  const holdProps = useMemo(
-    () => ({
-      onPointerDown: (e: React.PointerEvent) => {
-        (e.target as HTMLElement).setPointerCapture(e.pointerId);
-        p.onHoldStart();
-      },
-      onPointerUp: () => p.onHoldEnd(),
-      onPointerCancel: () => p.onHoldEnd(),
-      onKeyDown: (e: React.KeyboardEvent) => {
-        if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) {
-          e.preventDefault();
-          p.onHoldStart();
-        }
-      },
-      onKeyUp: (e: React.KeyboardEvent) => {
-        if (e.key === ' ' || e.key === 'Enter') {
-          e.preventDefault();
-          p.onHoldEnd();
-        }
-      },
-    }),
-    [p],
-  );
-  return (
-    <section className="card">
-      <h2>Go to an ayah</h2>
-      <form
-        className="find"
-        onSubmit={(e) => {
-          e.preventDefault();
-          p.onSubmit();
-        }}
-      >
-        <input
-          value={p.query}
-          onChange={(e) => p.setQuery(e.target.value)}
-          placeholder="2:255, Surah Maryam ayah 3, or what it says"
-          aria-label="Reference or what the ayah says"
-        />
-        <button type="submit" disabled={!p.query.trim()}>Find</button>
-      </form>
-      <button className={`talk ${p.voice.holding ? 'holding' : ''}`} {...holdProps}>
-        {p.voice.holding ? 'Listening for your request — release to finish' : 'Hold to speak a request'}
-      </button>
-      {(p.voice.holding || p.voice.note) && (
-        <p className="hint">{p.voice.holding ? (p.voice.hearing ? `“${p.voice.hearing}”` : 'Say a reference or describe the ayah in English.') : p.voice.note}</p>
-      )}
-      <p className="hint">References show immediately. Searches stay private until you choose Show on stream.</p>
-
-      {p.pending && <p className="pending">Searching…</p>}
-      {!p.pending && r?.kind === 'navigate' && <p className="ok">Opened {r.key}.{r.note ? ` ${r.note}` : ''} Recitation may continue from there.</p>}
-      {!p.pending && (r?.kind === 'no_match' || r?.kind === 'invalid_reference') && <p className="warn">{r.message}</p>}
-      {!p.pending && r?.kind === 'candidates' && (
-        <div className="results">
-          <p className={r.refining ? 'pending' : 'hint'}>{r.status}</p>
-          <ol>
-            {r.cards.map((c) => (
-              <ResultCard key={c.key} card={c} confirmed={c.key === r.confirmedKey} onShow={p.onShow} />
-            ))}
-          </ol>
-          <button onClick={p.onClear}>Clear results</button>
-        </div>
-      )}
-      {p.held && (
-        <button className="primary wide" onClick={p.onResume}>Resume following from the screen</button>
-      )}
-    </section>
   );
 }
 
