@@ -383,3 +383,4 @@ button.r-credits { align-self: flex-start; background: none; border: none; paddi
 .r-recover p { font-size: 13.5px; color: var(--muted); }
 .r-code { display: flex; gap: 8px; margin-top: 8px; }
 .r-code code, .r-code input { flex: 1; min-width: 0; font: 12.5px/1.4 ui-monospace, Consolas, monospace; background: var(--ink-0); border: 1px solid var(--line); border-radius: 10px; padding: 10px; overflow-wrap: anywhere; }
+.r-word.peeked { background: rgba(143, 182, 214, 0.18); box-shadow: 0 2px 0 var(--seek); }

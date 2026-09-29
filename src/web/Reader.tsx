@@ -53,6 +53,20 @@ export function Reader() {
   const [result, setResult] = useState<{ id: string; r: CommandResult } | null>(null);
   const [follow, setFollow] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
+  // Confirmations ("Opened 55:13.", "Showing Arabic only.") fade on their own; choices stay.
+  useEffect(() => {
+    const k = result?.r.kind;
+    if (k !== 'navigate' && k !== 'control' && !(k === 'candidates' && result!.r.kind === 'candidates' && result!.r.confirmedKey && !moreOpen)) return;
+    const t = setTimeout(() => setResult(null), 4000);
+    return () => clearTimeout(t);
+  }, [result, moreOpen]);
+  /** A word the reader tapped to see its meaning (clears itself after a few seconds). */
+  const [peek, setPeek] = useState<{ key: string; i: number } | null>(null);
+  useEffect(() => {
+    if (!peek) return;
+    const t = setTimeout(() => setPeek(null), 4000);
+    return () => clearTimeout(t);
+  }, [peek]);
   /** Listening time left (hosted service only). */
   const [credits, setCredits] = useState<CreditView | null>(null);
   const [account, setAccount] = useState<Pick<Access, 'recoveryCode' | 'billing'>>({});
@@ -209,7 +223,7 @@ export function Reader() {
         {!cur && (
           <section className="r-welcome">
             <h1>Recite, and the Quran follows you.</h1>
-            <p>Tap the microphone and start reciting any surah. Or just say it: “Go to Surah Al-Mulk”, “Show the ayah about the orphan”, “English only”.</p>
+            <p>Tap the microphone and start reciting any surah. Or just say it: “Go to Surah Al-Mulk”, “Show the ayah about the orphan”, “English only”. Tap any word to see its meaning.</p>
             <p className="r-privacy">Your voice is sent to our speech-recognition provider (Soniox) only while the microphone is on. We do not record or keep your audio. Reading and search never use the microphone.</p>
             <div className="r-quick">
               {QUICK.map((q) => (
@@ -235,10 +249,19 @@ export function Reader() {
                       {words.map((w, i) => {
                         const active = !!cursor && i >= cursor.from && i <= cursor.to;
                         const passed = !!cursor && i < cursor.from;
-                        const gloss = active && lang === 'both' && i === cursor!.from ? a.glosses?.slice(cursor!.from, cursor!.to + 1).filter(Boolean).join(' ') : null;
+                        const peeked = peek?.key === a.key && peek.i === i;
+                        const gloss = peeked
+                          ? (a.glosses?.[i] ?? null)
+                          : active && lang === 'both' && i === cursor!.from
+                            ? a.glosses?.slice(cursor!.from, cursor!.to + 1).filter(Boolean).join(' ') || null
+                            : null;
                         return (
                           <span key={i}>
-                            <span className={`r-word${active ? ' active' : ''}${passed ? ' passed' : ''}`}>
+                            <span
+                              className={`r-word${active ? ' active' : ''}${passed ? ' passed' : ''}${peeked ? ' peeked' : ''}`}
+                              // Tapping a word shows its meaning; tapping elsewhere in the ayah follows from it.
+                              onClick={a.glosses?.[i] ? (e) => { e.stopPropagation(); setPeek(peeked ? null : { key: a.key, i }); } : undefined}
+                            >
                               {w}
                               {gloss && <span className="r-gloss" lang="en" dir="ltr">{gloss}</span>}
                             </span>
