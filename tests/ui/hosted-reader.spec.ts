@@ -94,11 +94,15 @@ test('shared lifetime totals, donation readback, and browser audio through the p
     // Unconfigured payments must remain discoverable without pretending checkout is available.
     await page.route('**/api/me', async (route) => {
       const response = await route.fetch();
-      await route.fulfill({ response, json: { ...(await response.json()), billing: null } });
+      const state=await response.json();
+      await route.fulfill({ response, json: { ...state, billing: null, sponsored: {...state.sponsored, operatingReserve:166154, operatingReserveUsdMicros:6000000, left:state.sponsored.left-166154} } });
     });
     await page.reload();
     await page.locator('.r-support-nav').getByRole('button', { name: /Support Quran Reader/ }).click();
     await expect(support.getByRole('status')).toContainText('Online contributions aren’t open yet');
+    await expect(support).toContainText('$6.00 set aside for running costs');
+    await expect(support).toContainText('This is reserved, not spent.');
+    await expect(support).toContainText('Available for listening');
     await page.screenshot({ path: 'test-results/support-unavailable-phone.png' });
     await expect(support.getByRole('button', { name: /\$10/ })).toHaveCount(0);
     await support.getByRole('button', { name: 'Close', exact: true }).click();

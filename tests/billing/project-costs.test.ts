@@ -3,6 +3,21 @@ import { CreditStore } from '../../src/server/billing/credits';
 
 const config = { freeSecondsPerMonth: 0, ipDailyFreeSeconds: 0, globalDailyFreeSeconds: 0, holdMinSeconds: 20, holdMaxSeconds: 1200, costCentsPerHour: 10 };
 describe('shared project expenses', () => {
+  it('protects an operating reserve without charging it as an expense', () => {
+    const store = new CreditStore(':memory:', { ...config, operatingReserveUsdMicros: 6_000_000 });
+    try {
+      store.grantPool(360_000, 'owner', 1000, 'usd');
+      expect(store.poolStats()).toMatchObject({given:360_000, used:0, costs:0, operatingReserve:216_000, left:144_000});
+      store.recordCost('invoice', 'hosting', 4_000_000);
+      expect(store.poolStats()).toMatchObject({costs:144_000, operatingReserve:216_000, left:0});
+      expect(store.reserve('reader', 'network')).toHaveProperty('error');
+      store.grantPool(3600, 'new-funding');
+      expect(store.reserve('reader', 'network')).toHaveProperty('id');
+      const s=store.poolStats();
+      expect(s.given).toBe(s.used+s.costs+s.operatingReserve+s.left);
+    } finally { store.close(); }
+    for(const value of [-1,NaN,Infinity,0.5]) expect(()=>new CreditStore(':memory:', {...config, operatingReserveUsdMicros:value})).toThrow();
+  });
   it('commits funding and fees together and preserves pre-imported receipts', () => {
     const store = new CreditStore(':memory:', config);
     try {

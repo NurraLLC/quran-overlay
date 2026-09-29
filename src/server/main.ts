@@ -67,6 +67,7 @@ function hostedSetup(create: () => Session): HostedOptions {
   const credits = new CreditStore(path.join(stateDir, 'credits.db'), {
     ...DEFAULT_CREDITS,
     costCentsPerHour: parseDonations(process.env.QO_DONATIONS, process.env.QO_SPONSOR_CENTS_PER_HOUR).centsPerHour,
+    operatingReserveUsdMicros: Number(process.env.QO_OPERATING_RESERVE_CENTS ?? 0) * 10_000,
     // Public listening draws only from community funding; no personal plans or allowances.
     freeSecondsPerMonth: 0,
     ipDailyFreeSeconds: 0,

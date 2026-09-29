@@ -86,6 +86,8 @@ export type PoolStats = {
   left: number;
   costs?: number;
   costUsdMicros?: number;
+  operatingReserve?: number;
+  operatingReserveUsdMicros?: number;
   centsPerHour?: number;
 };
 /** A donation to the shared sponsored-listening pool, and the hours it adds. */

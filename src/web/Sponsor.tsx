@@ -63,10 +63,11 @@ export function SharedHours({ stats: initial, donations, testMode = false, defau
         <dl className="r-pool-totals">
           <div><dt>Community funded</dt><dd>{duration(stats.given)}</dd></div>
           <div><dt>Listening & costs</dt><dd>{duration(stats.used + (stats.costs ?? 0))}</dd></div>
-          <div><dt>Hours remaining</dt><dd>{duration(stats.left)}</dd></div>
+          <div><dt>{stats.operatingReserve ? 'Available for listening' : 'Hours remaining'}</dt><dd>{duration(stats.left)}</dd></div>
         </dl>
       </div>
       <p className="r-budget-note">{duration(stats.used)} used for listening · {duration(stats.costs ?? 0)} in other recorded costs</p>
+      {!!stats.operatingReserve && <p className="r-budget-note">${((stats.operatingReserveUsdMicros ?? 0) / 1_000_000).toFixed(2)} set aside for running costs ({duration(stats.operatingReserve)}). This is reserved, not spent.</p>}
       <button className="r-pool-head" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span className="r-pool-line">
           <span className="r-pool-now">Shared by everyone</span>

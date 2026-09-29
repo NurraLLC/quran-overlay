@@ -26,6 +26,15 @@ Reuse the receipt ID to correct the amount. Entering zero reverses that receipt'
 
 ## Hosting
 
+The launch configuration protects a rolling $6 operating buffer with
+`QO_OPERATING_RESERVE_CENTS=600`. This is unspent money set aside, shown separately
+from expenses, and cannot be consumed by new listening sessions. Actual invoices
+still reduce the ledger when recorded; the buffer remains available for the next
+costs. At 13 cents per hour, a $10 owner allocation represents 76.9 hour equivalents;
+46.2 are reserved and about 30.8 are initially available for listening. Rounding
+is conservative to whole seconds. A negative available amount can mean that the
+reserve is not fully funded, rather than that an invoice is already overdue.
+
 The owner approved and provisioned a DigitalOcean Basic server on 2026-09-29 at $6/month plus applicable taxes or usage overages. Configuration: Ubuntu 24.04 LTS, NYC1, one vCPU, 1 GB RAM, 25 GB SSD, no paid add-ons. Billing begins with provisioning. Record actual hosting charges with a stable invoice ID; the initial $10 allocation alone does not cover ongoing operation indefinitely.
 
 Host preparation verified: key-only SSH, an active firewall allowing SSH, Docker/Compose, and 2 GB swap. Image `quran-reader:dc02530` built on that server and started in an isolated prelaunch container bound to `127.0.0.1:4317`. Its health endpoint returned `{"ok":true}`, all 6,236 ayahs loaded, and the isolated pool remained zero. Soniox and OpenRouter production keys were subsequently validated with read-only provider endpoints and installed in a root-only settings file (mode 600); startup confirms both are configured. The owner intentionally selected a $5 non-resetting OpenRouter cap. This cap is not a contribution to the pool. Stripe keys remain empty. Public web ports remain closed; this is host/runtime and key-authentication proof, not a public launch, paid JEV decision, or microphone test.

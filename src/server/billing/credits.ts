@@ -19,6 +19,8 @@ import { DatabaseSync } from 'node:sqlite';
 export type CreditConfig = {
   /** Display conversion for operating costs, in USD cents per equivalent listening hour. */
   costCentsPerHour?: number;
+  /** Unspent operating buffer protected from listening, in integer USD microdollars. */
+  operatingReserveUsdMicros?: number;
   /** Free listening per visitor per calendar month (UTC). */
   freeSecondsPerMonth: number;
   /** Free listening per network (IP) per UTC day, across all visitors on it. */
@@ -89,6 +91,8 @@ export class CreditStore {
     file: string,
     readonly cfg: CreditConfig = DEFAULT_CREDITS,
   ) {
+    const reserve = cfg.operatingReserveUsdMicros ?? 0;
+    if (!Number.isSafeInteger(reserve) || reserve < 0 || reserve > 1e12 || !Number.isFinite(cfg.costCentsPerHour ?? 13) || (cfg.costCentsPerHour ?? 13) < 1) throw new Error('Invalid operating reserve or conversion rate');
     this.db = new DatabaseSync(file);
     this.db.exec(`
       PRAGMA journal_mode = WAL;
@@ -117,9 +121,13 @@ export class CreditStore {
     return this.cfg.poolDailySecondsPerVisitor ?? 3600;
   }
 
-  /** Seconds left in the shared sponsored pool. */
+  private operatingReserveSeconds(): number {
+    return Math.ceil((this.cfg.operatingReserveUsdMicros ?? 0) * 3600 / ((this.cfg.costCentsPerHour ?? 13) * 10_000));
+  }
+
+  /** Spendable seconds after protecting the unspent operating buffer. */
   poolSeconds(): number {
-    return this.num('SELECT seconds AS n FROM pool WHERE id = 1');
+    return this.num('SELECT seconds AS n FROM pool WHERE id = 1') - this.operatingReserveSeconds();
   }
 
   /** Record an additional project expense once. Receipt corrections replace, rather than repeat, it.
@@ -198,6 +206,8 @@ export class CreditStore {
       used: this.num('SELECT SUM(pool_seconds) AS n FROM holds'),
       left: this.poolSeconds(),
       costs,
+      operatingReserve: this.operatingReserveSeconds(),
+      operatingReserveUsdMicros: this.cfg.operatingReserveUsdMicros ?? 0,
       costUsdMicros: this.num('SELECT SUM(usd_micros) AS n FROM pool_costs'),
       centsPerHour: this.cfg.costCentsPerHour ?? 13,
     };
