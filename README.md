@@ -64,6 +64,10 @@ Audio goes from the browser directly to Soniox (speech recognition) only while t
 
 Arabic text (Uthmani and Imlaei), Saheeh International translation, chapter metadata, word-by-word meanings and transliterations: [Quran.com](https://quran.com) API v4 (Quran Foundation). Saheeh International is published by Dar Abul-Qasim. Font: KFGQPC Uthmanic Script HAFS, King Fahd Glorious Quran Printing Complex (free to use and distribute; not to be sold or modified). Speech recognition: [Soniox](https://soniox.com). Decisions: JEV via OpenRouter.
 
+## License
+
+The code is [MIT licensed](LICENSE). The Quran text, translation, word-by-word data and font are not part of this repository and are not covered by that license: `npm run corpus:fetch` and `npm run wbw:import` download them from their publishers, whose terms apply (see *Attribution*).
+
 ---
 
 The sections below are for contributors: how following works, commands, and what has been verified.

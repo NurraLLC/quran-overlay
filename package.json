@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Local Quran recitation display and OBS overlay with recitation following and English navigation.",
+  "license": "MIT",
   "engines": {
     "node": ">=22.13"
   },
