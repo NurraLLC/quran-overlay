@@ -140,11 +140,17 @@ export class CreditStore {
     }
   }
 
-  private sponsoredFor(userId: string, ip: string, day: string): { seconds: number; by: 'pool' | 'share' | null } {
-    const left = this.poolSeconds();
+  private sponsoredFor(userId: string, ip: string, day: string, includeReservations = false): { seconds: number; by: 'pool' | 'share' | null } {
+    // Before admitting another stream, protect other visitors' outstanding keys. Reserving
+    // their full maximum is conservative when they also have personal credits, but prevents
+    // the same shared second (or network share) from being promised to several people.
+    // Our own holds are subtracted once by balance(). Settlement uses actual usage instead.
+    const reserved = includeReservations ? this.num('SELECT SUM(max_seconds) AS n FROM holds WHERE settled_at IS NULL AND user_id != ?', userId) : 0;
+    const networkReserved = includeReservations ? this.num('SELECT SUM(max_seconds) AS n FROM holds WHERE settled_at IS NULL AND user_id != ? AND ip = ?', userId, ip) : 0;
+    const left = Math.max(0, this.poolSeconds() - reserved);
     const usedToday = this.num('SELECT SUM(pool_seconds) AS n FROM holds WHERE user_id = ? AND day = ?', userId, day);
     const ipToday = this.num('SELECT SUM(pool_seconds) AS n FROM holds WHERE ip = ? AND day = ?', ip, day);
-    const share = Math.min(this.poolPerVisitorDay - usedToday, (this.cfg.poolDailySecondsPerNetwork ?? Infinity) - ipToday);
+    const share = Math.min(this.poolPerVisitorDay - usedToday, (this.cfg.poolDailySecondsPerNetwork ?? Infinity) - ipToday - networkReserved);
     const seconds = Math.max(0, Math.min(left, share));
     return { seconds, by: seconds > 0 ? null : left <= 0 ? 'pool' : 'share' };
   }
@@ -203,7 +209,7 @@ export class CreditStore {
     const byService = Math.max(0, this.cfg.globalDailyFreeSeconds - usedDay - openOthers);
     const free = Math.min(byMonth, byIp, byService);
     const paid = this.num('SELECT paid_seconds AS n FROM users WHERE id = ?', userId);
-    const pool = this.sponsoredFor(userId, ip, day);
+    const pool = this.sponsoredFor(userId, ip, day, true);
     const sponsored = pool.seconds;
     // Why nothing is available (reported only then): with a free allowance configured, its cap; else the pool.
     const freeBy = byMonth === 0 ? 'month' : byIp === 0 ? 'network' : 'service';

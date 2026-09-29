@@ -2,12 +2,14 @@
 
 For whoever takes the site live (Codex or a person). State on 2026-09-29. [DEPLOY.md](DEPLOY.md) is the full reference; this page is the short path, what is verified, and what is not.
 
+The subsequent [final review](FINAL_REVIEW.md) records launch fixes and fresh local evidence: 192 unit/integration tests, nine browser tests, corpus validation and the 805-ayah replay. The historical verification below predates those fixes; check CI on the final commit before deploying.
+
 ## What is being launched
 
 **Quran Reader**, a Nurra project, at **https://nurra.org/quran-reader/**. Code: https://github.com/NurraLLC/quran-reader (public, MIT; `main`).
 
 - The start page is a phone-friendly reader: recite and the page follows along, each word with its meaning. The control page (`/quran-reader/control`) drives the OBS overlay for streamers.
-- Listening is **free for everyone**, paid for by sadaqah: one pool of sponsored hours that donations (and Nurra) fill. Each person may recite 2 hours a day, each network 4. When the pool is empty, listening pauses for everyone and the page says so; reading and search never stop. Nothing is spent beyond the hours put in.
+- Listening is **free for everyone**, paid for by sadaqah: one pool of sponsored hours that donations (and Nurra) fill. Each person may recite 2 hours a day, each network 4. When shared hours are unavailable, new listening pauses and the page says so; reading and search continue. The pool limits listening admission; it is not a guarantee of the dollar bill (see *Monthly cost*).
 - `/quran-reader/about` ("Why we built this") explains the costs, where sadaqah goes, and the reward of giving (Quran 2:261 and four sahih/hasan narrations, linked to sunnah.com).
 
 ## Verified
@@ -28,7 +30,7 @@ For whoever takes the site live (Codex or a person). State on 2026-09-29. [DEPLO
 
 ## What the owner provides
 
-Do not create accounts or handle the owner's passwords.
+The owner completes sign-up, passwords and payment details. Open the relevant provider pages for them when needed.
 
 - A small Linux server with Docker (1 vCPU and 1–2 GB of memory is plenty; audio never touches the server).
 - A DNS name for that server, e.g. `reader-origin.nurra.org` (an A record to the server).
@@ -80,6 +82,7 @@ Later, for donations: in Stripe (test mode first), add the webhook `https://nurr
 - `https://nurra.org/quran-reader/` loads. In the browser's network tab every request stays under `/quran-reader/` with no 404s, and the Arabic shows in the Uthmani font.
 - The sponsored bar shows the hours you added ("100 hours of recitation sponsored").
 - Opening a surah from the list works (this uses the live connection through the Worker).
+- Verify network limits from two distinct networks; Caddy must forward the visitor address, not a shared Cloudflare address. Validate the supplied Caddyfile before starting the proxy (`docker compose ... run --rm caddy caddy validate --config /etc/caddy/Caddyfile`).
 - The microphone: allow it and recite, and the page follows. After 8 seconds of silence the status reads "Listening… take your time", and it continues when you recite again.
 - Typed requests work: `2:255`, `surah about elephants`, `Ar-Rahman`.
 - Control page → Copy OBS overlay link: it starts with `https://nurra.org/quran-reader/overlay` and shows the ayah.
@@ -91,7 +94,7 @@ Later, for donations: in Stripe (test mode first), add the webhook `https://nurr
 
 | Item | Cost |
 |---|---|
-| Listening (Soniox, $0.12 per hour a stream is open) | exactly the sponsored hours used, and never more than were put in: 100 hours is $12. The silence skipper closes the stream during pauses longer than 8 s. |
+| Listening (Soniox, about $0.12 per hour) | 100 hours is approximately $12; actual token usage, context and overlapping streams can change the bill. The silence skipper closes the stream during pauses longer than 8 s. |
 | Server | about $4–6 |
 | Domain | $0 (nurra.org) |
 | GitHub, CI | $0 (public repository) |
@@ -99,6 +102,8 @@ Later, for donations: in Stripe (test mode first), add the webhook `https://nurr
 | Stripe | its per-payment fee on donations only |
 
 Expect about $5–20 a month at launch. For scale: someone reciting 2 hours every day uses about $7 of recognition a month.
+
+These are planning estimates, not a spending guarantee. [Soniox bills by tokens](https://soniox.com/pricing). The server cannot verify that a direct browser-to-provider stream really ended when the client reports a stop. Verify provider-side spending controls before public use; keep automatic top-ups off if a fixed budget is required. JEV requests and server hosting are separate costs. Use one app instance and persistent storage for `data/state`; a disposable free-host filesystem can erase the pool and visitor identities.
 
 ## Rules that still apply
 

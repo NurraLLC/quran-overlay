@@ -65,7 +65,7 @@ export function About() {
   return (
     <div className="reader about">
       <header className="r-top">
-        <a className="about-back" href="/">
+        <a className="about-back" href={u('/')}>
           ‹ Quran Reader
         </a>
         <NurraBadge />
@@ -97,8 +97,8 @@ export function About() {
           <p>Reading and search cost almost nothing to run. Listening is different: recognising recitation costs about 12 cents for every hour.</p>
           <ul>
             <li>Listening is free for everyone. There are no accounts and no plans.</li>
-            <li>Every hour of listening is paid for by sadaqah, ours included. Each person can recite up to two hours a day, so there’s always enough for the next person.</li>
-            <li>Your sadaqah goes straight to recitation at cost: 13 cents an hour covers the recognition and the card fee, so $10 is about 76 hours of someone’s tilawah. The numbers below are live.</li>
+            <li>Listening draws from a shared pool funded by sadaqah, including our own contributions. Daily limits help more people share those hours.</li>
+            <li>Gifts add listening hours to the shared pool. The number of hours each gift adds is shown before you give. Recognition costs and payment fees can vary. The pool totals below update as people give and recite.</li>
             <li>If the sponsored hours ever run out, listening pauses until someone gives again. Reading and search never stop.</li>
             <li>No ads, no selling data, no tracking.</li>
           </ul>
@@ -108,7 +108,7 @@ export function About() {
         <section>
           <h2>The reward of giving</h2>
           <p>
-            Reward is with Allah, and we can’t promise anything on His behalf; it is the intention that counts. These are the ayah and ahadith that remind us why this matters. The English is our own wording of each, with a link to the source.
+            Reward is with Allah, and we can’t promise anything on His behalf; it is the intention that counts. These are the ayah and ahadith that remind us why this matters. The ayah uses Saheeh International’s translation; the hadith translations are paraphrased, with links to their sources.
           </p>
           {ayah && (
             <figure className="about-text">
@@ -142,7 +142,7 @@ export function About() {
 
         <footer className="r-brand">
           <NurraBadge />
-          <a href="/">Open the reader</a>
+          <a href={u('/')}>Open the reader</a>
         </footer>
       </main>
     </div>

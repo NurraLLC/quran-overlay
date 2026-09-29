@@ -36,3 +36,23 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the production image
+        run: docker build -t quran-reader:check .
+      - name: Validate the production proxy configuration
+        run: docker run --rm -e QO_DOMAIN=reader-origin.example.org -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
+      - name: Start, fund, and read back the hosted pool
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name reader-check -p 127.0.0.1:4317:4317 -e QO_BASE_PATH=/quran-reader quran-reader:check
+          trap 'docker logs reader-check; docker rm -f reader-check' EXIT
+          curl --fail --retry 30 --retry-connrefused --retry-delay 1 http://127.0.0.1:4317/healthz
+          docker exec reader-check npx tsx scripts/sponsor-pool.ts 1 ci-check
+          curl --fail -c /tmp/reader-cookie http://127.0.0.1:4317/quran-reader/api/me
+          curl --fail -b /tmp/reader-cookie http://127.0.0.1:4317/quran-reader/api/pool | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p["left"] == 3600, p'

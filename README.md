@@ -57,7 +57,7 @@ npm start
 
 `npm start` serves on `http://127.0.0.1:4317` and prints a **private control link**. Open it in Chrome or Edge, or change `/control` to `/reader` in that link for the phone-friendly reader. Copy `.env.example` to `.env` and add `SONIOX_API_KEY` to follow recitation (and `OPENROUTER_API_KEY` for spoken requests and meaning search); without keys, reading, navigation, search and the overlay all work.
 
-To host it for others, see [docs/DEPLOY.md](docs/DEPLOY.md) (Docker, HTTPS proxy, free allowances, optional payments, costs) and the short path in [docs/LAUNCH.md](docs/LAUNCH.md).
+To host it for others, see [docs/DEPLOY.md](docs/DEPLOY.md) (Docker, HTTPS proxy, sponsored hours, optional donations, costs) and the short path in [docs/LAUNCH.md](docs/LAUNCH.md).
 
 ## Use it in your own app
 

@@ -13,7 +13,9 @@ Reading, search and the Quran text are free in both. Only live listening costs a
 
 ## What it costs to run
 
-Measured on 2026-09-28: Soniox real-time recognition is **$0.12 per hour** a stream is open (pauses included, so the app closes the stream after 8 s without voice); a JEV decision through OpenRouter is about **$0.000015**. Audio goes from the browser straight to Soniox (with short-lived, time-capped keys), so the server carries no audio and a small VM is enough. Listening only ever uses the sponsored hours put into the pool, so the pool is the spending limit.
+Soniox advertises real-time recognition at **about $0.12 per hour**, with the actual bill calculated from audio, context and output tokens ([pricing](https://soniox.com/pricing), checked 2026-09-29). The app closes the stream after 8 s without voice. A JEV decision through OpenRouter was about **$0.000015** in the earlier provider check. Audio goes straight from the browser to Soniox using short-lived, time-capped keys.
+
+The pool limits admission in listening seconds, **not dollars billed by providers**. Overlapping streams, token usage and client-reported early stops mean this ledger is not a provider-enforced spending ceiling. Set and verify provider-side spending controls before public use. Server costs and JEV requests are separate from the pool. Run one app instance with persistent storage; sessions and reservations are not designed for multiple replicas.
 
 ## Quickest: one server, one command
 
@@ -101,6 +103,9 @@ needs them.)
    set its variable `ORIGIN` to `reader-origin.nurra.org`, and add the route `nurra.org/quran-reader*`.
    The Worker keeps the path (the app accepts it with or without the prefix), passes WebSockets
    through, and sets the visitor's real address for the per-network limits.
+   The supplied Caddyfile trusts `CF-Connecting-IP` only from Cloudflare's published IP ranges
+   and forwards one validated address. Keep those ranges current. If adding another proxy or
+   changing hosts, verify two different networks do not accidentally share a CDN-address quota.
 3. Open `https://nurra.org/quran-reader/`. The OBS link, the payment return pages and link previews
    all carry `/quran-reader`.
 
@@ -121,7 +126,7 @@ Set `QO_PUBLIC_ORIGIN=https://quran.example` and `QO_TRUST_PROXY=1`.
 
 ## Sponsored listening
 
-Listening is free for everyone from one shared pool of hours; nothing is spent that was not put in. Gifts (the shared-hours bar on the start page, the Listening sheet and `/about`) go into it at cost (`QO_SPONSOR_CENTS_PER_HOUR`, so $10 adds about 76 hours). Each person may use `QO_SPONSORED_HOURS_PER_VISITOR_DAY` a day and each network `QO_SPONSORED_HOURS_PER_NETWORK_DAY`; when the pool is empty listening pauses for everyone and says so (reading and search never stop). The start page shows the hours available, this month's gifts against `QO_POOL_GOAL_HOURS_PER_MONTH`, and recent activity (totals only). Donations need Stripe (below). **Fill the pool at launch**, and add hours by hand any time (a gift received another way, or your own funding):
+Listening is free for everyone from one shared pool of hours. Gifts add hours at the configured conversion (`QO_SPONSOR_CENTS_PER_HOUR`, so $10 adds 76 hours at the default 13 cents). This conversion is an estimate, not a guarantee that every payment fee and provider charge is covered. Each person may use `QO_SPONSORED_HOURS_PER_VISITOR_DAY` a day and each network `QO_SPONSORED_HOURS_PER_NETWORK_DAY`; when no shared hours are available, new listening pauses (reading and search continue). Outstanding keys reserve shared time before another visitor can draw it. Reservations are conservative when personal credits are also configured. The start page shows pool totals, this month's gifts and recent activity (totals only). Donations need Stripe (below). **Fill the pool at launch**, and add hours by hand any time (a gift received another way, or your own funding):
 
 ```bash
 npm run pool:add -- 50 masjid-gift

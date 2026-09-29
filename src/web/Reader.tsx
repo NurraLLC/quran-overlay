@@ -14,7 +14,7 @@ import { SharedHours } from './Sponsor';
 
 type Ayah = { key: string; ayah: number; arabic: string; english: string; glosses: Array<string | null> | null };
 type Surah = { number: number; name: string; nameArabic: string; translation: string; glossCredit: string | null; ayahs: Ayah[] };
-type Auth = 'checking' | 'owner' | 'unauthorized';
+type Auth = 'checking' | 'owner' | 'unauthorized' | 'unavailable';
 
 /** Binds the ayah-end ornament to the last word so a line never starts with it. */
 const NBSP = String.fromCharCode(0xa0);
@@ -74,6 +74,9 @@ const Keys = () => (
 export function Reader() {
   const [auth, setAuth] = useState<Auth>('checking');
   const [snap, setSnap] = useState<ControlSnapshot | null>(null);
+  const [connection, setConnection] = useState<'connecting' | 'open' | 'closed'>('connecting');
+  const [surahFailed, setSurahFailed] = useState(false);
+  const [surahRetry, setSurahRetry] = useState(0);
   const [capture, setCapture] = useState<CaptureStatus>({ state: 'off', detail: null });
   const [surah, setSurah] = useState<Surah | null>(null);
   const [typing, setTyping] = useState(false);
@@ -129,7 +132,11 @@ export function Reader() {
         if (new URLSearchParams(location.search).has('paid') || new URLSearchParams(location.search).has('donated') || new URLSearchParams(location.search).has('canceled')) history.replaceState(null, '', location.pathname);
         setAuth('owner');
         sock.current = connect(u('/ws/control'), {
-          onStatus: (_st, code) => code === 4401 && setAuth('unauthorized'),
+          onStatus: (st, code) => {
+            setConnection(st);
+            if (code === 4401) setAuth('unauthorized');
+            if (st !== 'open') setPending(false);
+          },
           shouldRetry: (code) => code !== 4401,
           onMessage: (data) => {
             const m = data as ControlServerMessage;
@@ -150,7 +157,7 @@ export function Reader() {
           },
         });
       })
-      .catch(() => !cancelled && setAuth('unauthorized'));
+      .catch(() => !cancelled && setAuth('unavailable'));
     return () => {
       cancelled = true;
       sock.current?.close();
@@ -190,11 +197,17 @@ export function Reader() {
   // The surah being read, fetched once per surah.
   useEffect(() => {
     if (!cur || surah?.number === cur.surah) return;
-    fetch(u(`/api/surah/${cur.surah}`), { credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((s: Surah | null) => s && setSurah(s))
-      .catch(() => undefined);
-  }, [cur?.surah]); // eslint-disable-line react-hooks/exhaustive-deps
+    const controller = new AbortController();
+    setSurahFailed(false);
+    fetch(u(`/api/surah/${cur.surah}`), { credentials: 'same-origin', signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error('Surah unavailable');
+        return r.json();
+      })
+      .then((s: Surah) => { if (!controller.signal.aborted) setSurah(s); })
+      .catch(() => { if (!controller.signal.aborted) setSurahFailed(true); });
+    return () => controller.abort();
+  }, [cur?.surah, surahRetry]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Microphone level -> ring (a CSS variable, no re-render per frame).
   const isListening = cap.listening;
@@ -272,7 +285,7 @@ export function Reader() {
     lastRequest.current = id;
     setPending(true);
     setResult(null);
-    send({ type: 'command', requestId: id, text, source: 'typed', show: true });
+    if (!send({ type: 'command', requestId: id, text, source: 'typed', show: true })) setPending(false);
     setFollow(true);
   };
   const goto = (key: string) => {
@@ -281,6 +294,9 @@ export function Reader() {
     setHome(false);
   };
 
+  if (auth === 'unavailable') {
+    return <main className="r-gate"><h1>Couldn’t open the reader</h1><p>Check your connection, then try again.</p><button onClick={() => location.reload()}>Try again</button></main>;
+  }
   if (auth === 'unauthorized') {
     return (
       <main className="r-gate">
@@ -298,7 +314,11 @@ export function Reader() {
   const shownSurah = surah && cur && surah.number === cur.surah ? surah : null;
   const shownSurahForBar = shownSurah;
   const listeningElsewhere = !listening && ['recording', 'starting', 'reconnecting'].includes(snap.capture.phase);
-  const status = listeningElsewhere
+  const status = connection !== 'open'
+    ? 'Reconnecting… your place is saved. Please wait before choosing another ayah.'
+    : !snap.setup.soniox
+    ? 'Listening is unavailable right now. You can still read or type a request.'
+    : listeningElsewhere
     ? 'Listening from another page. The reader follows along.'
     : !listening
     ? capture.state === 'error'
@@ -345,6 +365,9 @@ export function Reader() {
       </header>
 
       <main className="r-page">
+        {cur && !home && !shownSurah && <div className="r-note" role="status">
+          {surahFailed ? <><p>Couldn’t load this surah. Check your connection and try again.</p><button onClick={() => setSurahRetry((n) => n + 1)}>Try again</button></> : <p>Opening {cur.surahName}…</p>}
+        </div>}
         {(!cur || home) && (
           <section className="r-welcome">
             <figure className="r-iqra-figure">
@@ -582,14 +605,14 @@ export function Reader() {
             <button
               className={`r-mic${listening ? ' live' : ''}${starting ? ' starting' : ''}`}
               onClick={() => (listening || starting ? cap.stop() : void cap.start(null))}
-              disabled={!snap.setup.soniox}
+              disabled={!listening && !starting && (!snap.setup.soniox || connection !== 'open')}
               aria-label={listening || starting ? 'Stop listening' : 'Start listening'}
             >
               {listening || starting ? <Stop /> : <Mic />}
             </button>
           </div>
           <div className="r-status" aria-live="polite">
-            {(listening || listeningElsewhere) && heard ? (
+            {connection === 'open' && (listening || listeningElsewhere) && heard ? (
               <span className="r-heard" lang="ar" dir="auto">{heard}</span>
             ) : (
               <span>{status}</span>

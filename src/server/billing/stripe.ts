@@ -25,8 +25,8 @@ export const DEFAULT_PACKS: Pack[] = [
 export type Donations = { amountsCents: number[]; currency: string; centsPerHour: number };
 
 /**
- * Default: $5, $10, $25. Each dollar adds listening at cost with Stripe's fee covered: 13 cents per
- * hour ($0.12 streamed hour plus the fee), so $10 gives about 76 hours. Override with QO_DONATIONS
+ * Default: $5, $10, $25. Conversion estimate: 13 cents per hour, so $10 adds 76 hours.
+ * Provider usage and payment fees vary; this is not a guaranteed break-even rate. Override with QO_DONATIONS
  * (JSON array of cents) and QO_SPONSOR_CENTS_PER_HOUR.
  */
 export const DEFAULT_DONATIONS: Donations = { amountsCents: [500, 1000, 2500], currency: 'usd', centsPerHour: 13 };

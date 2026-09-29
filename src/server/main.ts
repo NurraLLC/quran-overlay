@@ -54,8 +54,8 @@ function decisionSetup(): { client: DecisionClient | null; provider: JevGateway 
 }
 
 /**
- * Hosted service: one session per visitor and metered listening. Free allowances are hours, from the
- * environment (defaults: 10 h per visitor per month, 2 h per network per day, 200 h per day overall).
+ * Hosted service: one session per visitor, drawing from the shared sponsored pool by default.
+ * Personal monthly allowances are optional; all configured durations are in hours.
  */
 function hostedSetup(create: () => Session): HostedOptions {
   const hours = (name: string, fallback: number) => Math.round((Number(process.env[name]) || fallback) * 3600);
@@ -150,15 +150,16 @@ async function main() {
   // Loopback by default; a container or VM behind a reverse proxy sets QO_HOST=0.0.0.0.
   await app.listen({ host: process.env.QO_HOST || '127.0.0.1', port });
   const ms = Math.round(performance.now() - t0);
-  console.log(`Quran Overlay ready in ${ms} ms — corpus ${corpus.id}: ${corpus.verses.length} ayahs / ${corpus.data.chapters.length} surahs`);
+  console.log(`Quran Reader ready in ${ms} ms — corpus ${corpus.id}: ${corpus.verses.length} ayahs / ${corpus.data.chapters.length} surahs`);
   if (process.env.QO_DIAGNOSTIC_CAPTURE === '1') console.log('Diagnostic capture ON: recognized text tokens are written to data/captures/*.jsonl (no audio).');
   console.log(`Tracker mode: ${mode}. Soniox: ${process.env.SONIOX_API_KEY ? 'configured' : 'NOT configured (set SONIOX_API_KEY)'}. ${jev.detail}`);
   if (hosted) {
     const c = hosted.credits.cfg;
     const h = (sec: number) => `${+(sec / 3600).toFixed(2)} h`;
-    console.log(`\nHosted mode: every visitor gets their own session and ${h(c.freeSecondsPerMonth)} of free listening per month (${h(c.ipDailyFreeSeconds)} per network per day, ${h(c.globalDailyFreeSeconds)} per day overall).`);
-    console.log(`Sponsored listening: ${h(hosted.credits.poolSeconds())} in the pool, up to ${h(c.poolDailySecondsPerVisitor ?? 3600)} per visitor per day once their own time is gone; donations ${hosted.billing ? 'on' : 'off'}.`);
-    console.log(`Buying listening time: ${hosted.billing ? `on (${hosted.billing.packs.map((p) => p.label).join(', ')})` : 'off (set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET)'}.`);
+    console.log('\nHosted mode: anonymous reader sessions; listening is funded by shared sponsored hours.');
+    console.log(`Sponsored listening: ${h(hosted.credits.poolSeconds())} in the pool, up to ${h(c.poolDailySecondsPerVisitor ?? 3600)} per visitor per day; donations ${hosted.billing ? 'on' : 'off'}.`);
+    if (c.freeSecondsPerMonth > 0) console.log(`Optional personal allowance: ${h(c.freeSecondsPerMonth)} per month (${h(c.ipDailyFreeSeconds)} per network per day, ${h(c.globalDailyFreeSeconds)} per day overall).`);
+    if (hosted.billing?.packs.length) console.log(`Optional listening packs: ${hosted.billing.packs.map((p) => p.label).join(', ')}.`);
     console.log(`Open: ${process.env.QO_PUBLIC_ORIGIN || publicOrigin}${base}/\n`);
   } else console.log(`\nOpen the control page (keep this link private):\n  ${publicOrigin}${base}/control#owner=${ownerToken}\n`);
 }

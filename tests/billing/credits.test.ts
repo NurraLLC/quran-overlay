@@ -138,6 +138,37 @@ describe('sponsored pool', () => {
 });
 
 describe('free for everyone from the shared pool', () => {
+  it('never promises the same pool seconds to simultaneous visitors', () => {
+    make({ freeSecondsPerMonth: 0, poolDailySecondsPerVisitor: 600 });
+    store.grantPool(400, 'launch', null, null, T0);
+    expect(store.reserve('a', 'ip1', T0)).toMatchObject({ maxSeconds: 300 });
+    expect(store.reserve('b', 'ip2', T0)).toMatchObject({ maxSeconds: 100 });
+    expect(store.reserve('c', 'ip3', T0)).toMatchObject({ error: 'no_credits' });
+    store.settle('a', T0 + 60 * S);
+    expect(store.balance('c', 'ip3', T0 + 61 * S).available).toBe(240);
+    store.settle('b', T0 + 100 * S);
+    expect(store.poolSeconds()).toBe(240);
+  });
+
+  it('reserves the shared network limit across different visitor cookies', () => {
+    make({ freeSecondsPerMonth: 0, poolDailySecondsPerVisitor: 600, poolDailySecondsPerNetwork: 400 });
+    store.grantPool(10_000, 'launch', null, null, T0);
+    expect(store.reserve('a', 'shared-ip', T0)).toMatchObject({ maxSeconds: 300 });
+    expect(store.reserve('b', 'shared-ip', T0)).toMatchObject({ maxSeconds: 100 });
+    expect(store.reserve('c', 'shared-ip', T0)).toMatchObject({ error: 'no_credits', balance: { limitedBy: 'share' } });
+    expect(store.reserve('d', 'different-ip', T0)).toMatchObject({ maxSeconds: 300 });
+  });
+
+  it('returns a failed provider reservation to the shared pool immediately', () => {
+    make({ freeSecondsPerMonth: 0 });
+    store.grantPool(300, 'launch', null, null, T0);
+    const hold = store.reserve('a', 'ip1', T0);
+    if ('error' in hold) throw new Error('expected a hold');
+    expect(store.reserve('b', 'ip2', T0)).toMatchObject({ error: 'no_credits' });
+    store.release(hold.id);
+    expect(store.reserve('b', 'ip2', T0)).toMatchObject({ maxSeconds: 300 });
+  });
+
   it('gives each visitor a daily share, limits a network, and says why when nothing is left', () => {
     make({ freeSecondsPerMonth: 0, poolDailySecondsPerVisitor: 300, poolDailySecondsPerNetwork: 400 });
     expect(store.balance('u1', 'ip1', T0)).toMatchObject({ available: 0, limitedBy: 'pool', sharePerDay: 300 });

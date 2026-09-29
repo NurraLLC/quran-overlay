@@ -1,10 +1,10 @@
-# Quran Overlay, hosted mode. The corpus is downloaded and hash-verified at build time
+# Quran Reader, hosted mode. The corpus is downloaded and hash-verified at build time
 # (npm run corpus:fetch); nothing licensed is baked into the repository.
 #
-#   docker build -t quran-overlay .
+#   docker build -t quran-reader .
 #   docker run -p 4317:4317 -v qo-state:/app/data/state \
 #     -e SONIOX_API_KEY=... -e OPENROUTER_API_KEY=... -e QO_PUBLIC_ORIGIN=https://your.domain \
-#     -e QO_TRUST_PROXY=1 quran-overlay
+#     -e QO_TRUST_PROXY=1 quran-reader
 #
 # Put it behind an HTTPS reverse proxy that forwards WebSockets (see docs/DEPLOY.md).
 
@@ -25,6 +25,7 @@ ENV NODE_ENV=production QO_HOSTED=1 QO_HOST=0.0.0.0 PORT=4317
 COPY --from=build /app/package.json /app/package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/src ./src
+COPY --from=build /app/scripts/sponsor-pool.ts ./scripts/sponsor-pool.ts
 COPY --from=build /app/corpus ./corpus
 COPY --from=build /app/tsconfig.json ./
 COPY --from=build /app/dist ./dist

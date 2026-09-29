@@ -110,13 +110,14 @@ export type Access = {
 export async function access(): Promise<Access> {
   await exchangeOwner();
   const r = await fetch(u('/api/me'), { credentials: 'same-origin' });
+  if (!r.ok) throw new Error('Reader unavailable');
   return (await r.json()) as Access;
 }
 
 /** The one-line listening status: free and shared, or the personal allowance when one is configured. */
 export function listeningLine(c: import('../shared/contracts').CreditView): string {
   if (c.freePerMonth > 0) return c.available > 0 ? `${formatListening(c.available)} of listening left` : 'No listening time left';
-  if (c.limitedBy === 'pool') return 'Sponsored hours have run out · give sadaqah';
+  if (c.limitedBy === 'pool') return 'Shared listening hours are unavailable · reading stays free';
   if (c.limitedBy === 'share') return 'You’ve used today’s hours · back tomorrow';
   return `Free · ${Math.round(c.pool / 3600).toLocaleString()} hours sponsored`;
 }
