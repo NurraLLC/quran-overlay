@@ -28,6 +28,7 @@ import type { Session } from './sessions';
 import type { CreditStore } from './billing/credits';
 import type { SessionHub } from './billing/hub';
 import type { VisitorIdentity } from './billing/identity';
+import type { StripeBilling } from './billing/stripe';
 import type { CreditView } from '../shared/contracts';
 
 export type HostedOptions = {
@@ -38,6 +39,8 @@ export type HostedOptions = {
   publicOrigin?: string;
   /** Take the client address from X-Forwarded-For (only behind a trusted proxy). */
   trustProxy?: boolean;
+  /** Buying listening time (off unless Stripe keys are configured). */
+  billing?: StripeBilling | null;
 };
 
 export type AppOptions = {
@@ -53,6 +56,14 @@ export type AppOptions = {
 };
 
 const COOKIE = 'qo_owner';
+
+function formatPrice(cents: number, currency: string) {
+  try {
+    return new Intl.NumberFormat('en', { style: 'currency', currency: currency.toUpperCase() }).format(cents / 100);
+  } catch {
+    return `${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
+  }
+}
 const VISITOR_COOKIE = 'qo_visitor';
 const WEB_DIST = path.join(ROOT, 'dist', 'web');
 
@@ -100,12 +111,26 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   }
   const hosted = o.hosted ?? null;
   const secureCookie = !!hosted?.publicOrigin?.startsWith('https:');
+  const visitorCookie = (value: string) => `${VISITOR_COOKIE}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000${secureCookie ? '; Secure' : ''}`;
   const keyLimit = new RateLimit(10, 60_000);
   const exchangeLimit = new RateLimit(20, 60_000);
 
   // Request logging stays off: URLs could carry capabilities in misconfigured clients.
   const app = Fastify({ logger: false, bodyLimit: 16_384 });
   await app.register(fastifyWebsocket, { options: { maxPayload: 256 * 1024 } });
+
+  // JSON bodies keep their exact text: the payment webhook's signature covers the raw bytes.
+  app.removeContentTypeParser('application/json');
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    (req as FastifyRequest & { rawBody?: string }).rawBody = body as string;
+    try {
+      done(null, (body as string).length ? JSON.parse(body as string) : {});
+    } catch (e) {
+      (e as { statusCode?: number }).statusCode = 400;
+      done(e as Error, undefined);
+    }
+  });
+  const restoreLimit = new RateLimit(30, 60_000);
 
   app.addHook('onRequest', async (req, reply) => {
     if (!req.headers.host || !allowedHosts.has(req.headers.host)) return reply.code(421).send({ error: 'unexpected host' });
@@ -137,7 +162,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   const creditView = (id: string, ip: string): CreditView => {
     const c = hosted!.credits;
     const b = c.balance(id, ip);
-    return { available: b.available + b.reserved - c.openUsage(id).usedSeconds, free: b.free, paid: b.paid, freeUsedThisMonth: b.freeUsedThisMonth, freePerMonth: b.freePerMonth, limitedBy: b.limitedBy, renewsAt: b.renewsAt, listeningSeconds: c.openUsage(id).usedSeconds };
+    return { available: b.available + b.reserved - c.openUsage(id).usedSeconds, free: b.free, paid: b.paid, freeUsedThisMonth: b.freeUsedThisMonth, freePerMonth: b.freePerMonth, freePerDay: c.cfg.ipDailyFreeSeconds, limitedBy: b.limitedBy, renewsAt: b.renewsAt, listeningSeconds: c.openUsage(id).usedSeconds };
   };
   /** Last known address per visitor (for pushing balances from the periodic sweep). */
   const lastIp = new Map<string, string>();
@@ -161,13 +186,60 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   app.get('/api/me', async (req, reply) => {
     if (!hosted) return { mode: 'local', owner: isOwner(req) };
     let id = visitor(req);
+    let cookieValue = readCookie(req, VISITOR_COOKIE);
     if (!id) {
       const v = hosted.identity.issue();
       id = v.id;
-      reply.header('Set-Cookie', `${VISITOR_COOKIE}=${v.cookie}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000${secureCookie ? '; Secure' : ''}`);
+      cookieValue = v.cookie;
+      reply.header('Set-Cookie', visitorCookie(v.cookie));
     }
     lastIp.set(id, clientIp(req));
-    return { mode: 'hosted', owner: true, credits: creditView(id, clientIp(req)) };
+    return {
+      mode: 'hosted',
+      owner: true,
+      credits: creditView(id, clientIp(req)),
+      // The visitor's own code to keep their time on another device or after clearing cookies.
+      recoveryCode: cookieValue,
+      billing: hosted.billing ? { packs: hosted.billing.packs.map((p) => ({ id: p.id, hours: p.hours, label: p.label, price: formatPrice(p.amountCents, p.currency) })) } : null,
+    };
+  });
+
+  // Restore a visitor identity from its recovery code (another device, cleared cookies).
+  app.post('/api/me/restore', async (req, reply) => {
+    if (!hosted) return reply.code(404).send({ error: 'not available' });
+    if (!originOk(req)) return reply.code(403).send({ error: 'origin' });
+    if (!restoreLimit.take()) return reply.code(429).send({ error: 'rate' });
+    const code = String((req.body as { code?: unknown } | undefined)?.code ?? '').trim();
+    const id = hosted.identity.verify(code);
+    if (!id) return reply.code(400).send({ error: 'That code is not valid.' });
+    reply.header('Set-Cookie', visitorCookie(code));
+    return { ok: true };
+  });
+
+  // Buy listening time: a Stripe-hosted checkout page for one pack.
+  app.post('/api/billing/checkout', async (req, reply) => {
+    if (!hosted?.billing) return reply.code(404).send({ error: 'not available' });
+    if (!originOk(req)) return reply.code(403).send({ error: 'origin' });
+    const id = visitor(req);
+    if (!id) return reply.code(401).send({ error: 'visitor' });
+    const pack = hosted.billing.pack(String((req.body as { pack?: unknown } | undefined)?.pack ?? ''));
+    if (!pack) return reply.code(400).send({ error: 'unknown pack' });
+    try {
+      return { url: await hosted.billing.checkout(id, pack, hosted.publicOrigin ?? `http://${req.headers.host}`) };
+    } catch {
+      return reply.code(502).send({ error: 'The payment page could not be opened. Please try again.' });
+    }
+  });
+
+  // Stripe's signed notification that a payment succeeded: grant the pack once.
+  app.post('/api/billing/webhook', { bodyLimit: 1_048_576 }, async (req, reply) => {
+    if (!hosted?.billing) return reply.code(404).send({ error: 'not available' });
+    const raw = (req as FastifyRequest & { rawBody?: string }).rawBody ?? '';
+    const event = hosted.billing.verify(raw, req.headers['stripe-signature'] as string | undefined);
+    if (!event) return reply.code(400).send({ error: 'signature' });
+    const p = hosted.billing.purchase(event);
+    if (p && hosted.credits.grant(p.visitorId, p.pack.hours * 3600, `stripe ${p.pack.id}`, Date.now(), `stripe:${p.paymentId}`)) pushCredits(p.visitorId);
+    return { received: true };
   });
 
   app.post('/api/owner/session', async (req, reply) => {

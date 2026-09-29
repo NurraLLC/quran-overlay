@@ -171,11 +171,22 @@ export class CreditStore {
     return { usedSeconds: union(holds, now), endsAt: holds.length ? Math.max(...holds.map((h) => h.minted_at + h.max_seconds * 1000)) : null };
   }
 
-  /** Purchased or sponsored time (payments are not wired yet). */
-  grant(userId: string, seconds: number, reason: string, now = Date.now()) {
+  /**
+   * Purchased or sponsored time. With an `id` (e.g. the payment's id) a repeated delivery of the same
+   * payment grants nothing; returns whether time was added.
+   */
+  grant(userId: string, seconds: number, reason: string, now = Date.now(), id = randomBytes(12).toString('base64url')): boolean {
     this.ensureUser(userId, now);
-    this.db.prepare('INSERT INTO grants (id, user_id, seconds, reason, at) VALUES (?, ?, ?, ?, ?)').run(randomBytes(12).toString('base64url'), userId, Math.round(seconds), reason, now);
-    this.db.prepare('UPDATE users SET paid_seconds = paid_seconds + ? WHERE id = ?').run(Math.round(seconds), userId);
+    this.db.exec('BEGIN');
+    try {
+      const added = this.db.prepare('INSERT OR IGNORE INTO grants (id, user_id, seconds, reason, at) VALUES (?, ?, ?, ?, ?)').run(id, userId, Math.round(seconds), reason, now).changes > 0;
+      if (added) this.db.prepare('UPDATE users SET paid_seconds = paid_seconds + ? WHERE id = ?').run(Math.round(seconds), userId);
+      this.db.exec('COMMIT');
+      return added;
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
   }
 
   private settleWhere(holds: HoldRow[], now: number): number {

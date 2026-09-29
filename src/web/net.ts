@@ -73,7 +73,16 @@ export async function exchangeOwner(): Promise<void> {
   }).catch(() => undefined);
 }
 
-export type Access = { mode: 'local' | 'hosted'; owner: boolean; credits?: import('../shared/contracts').CreditView };
+export type Pack = { id: string; hours: number; label: string; price: string };
+export type Access = {
+  mode: 'local' | 'hosted';
+  owner: boolean;
+  credits?: import('../shared/contracts').CreditView;
+  /** Hosted: the visitor's own code for keeping their time on another device. */
+  recoveryCode?: string | null;
+  /** Hosted with payments on: what can be bought. */
+  billing?: { packs: Pack[] } | null;
+};
 
 /** Local: trade the owner link for the cookie. Hosted: get (or be issued) this visitor's identity. */
 export async function access(): Promise<Access> {

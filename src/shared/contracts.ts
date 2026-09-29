@@ -194,6 +194,8 @@ export type CreditView = {
   paid: number;
   freeUsedThisMonth: number;
   freePerMonth: number;
+  /** Free listening allowed per day (per network). */
+  freePerDay: number;
   limitedBy: 'month' | 'network' | 'service' | null;
   /** When the monthly free allowance renews (ms since epoch). */
   renewsAt: number;

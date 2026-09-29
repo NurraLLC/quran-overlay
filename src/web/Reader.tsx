@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView } from '../shared/contracts';
 import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
-import { access, connect, formatListening } from './net';
+import { access, connect, formatListening, type Access } from './net';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { arabicNumber } from './VerseDisplay';
 
@@ -55,6 +55,10 @@ export function Reader() {
   const [moreOpen, setMoreOpen] = useState(false);
   /** Listening time left (hosted service only). */
   const [credits, setCredits] = useState<CreditView | null>(null);
+  const [account, setAccount] = useState<Pick<Access, 'recoveryCode' | 'billing'>>({});
+  const [timeOpen, setTimeOpen] = useState(false);
+  // Back from Stripe's checkout page.
+  const [returned] = useState(() => new URLSearchParams(location.search).get('paid'));
   const sock = useRef<ReturnType<typeof connect> | null>(null);
   const lastRequest = useRef<string | null>(null);
   const send = useCallback((m: ControlClientMessage) => sock.current?.send(m) ?? false, []);
@@ -70,6 +74,8 @@ export function Reader() {
         if (cancelled) return;
         if (!s.owner) return setAuth('unauthorized');
         if (s.credits) setCredits(s.credits);
+        setAccount({ recoveryCode: s.recoveryCode, billing: s.billing });
+        if (new URLSearchParams(location.search).has('paid') || new URLSearchParams(location.search).has('canceled')) history.replaceState(null, '', location.pathname);
         setAuth('owner');
         sock.current = connect('/ws/control', {
           onStatus: (_st, code) => code === 4401 && setAuth('unauthorized'),
@@ -204,6 +210,7 @@ export function Reader() {
           <section className="r-welcome">
             <h1>Recite, and the Quran follows you.</h1>
             <p>Tap the microphone and start reciting any surah. Or just say it: “Go to Surah Al-Mulk”, “Show the ayah about the orphan”, “English only”.</p>
+            <p className="r-privacy">Your voice is sent to our speech-recognition provider (Soniox) only while the microphone is on. We do not record or keep your audio. Reading and search never use the microphone.</p>
             <div className="r-quick">
               {QUICK.map((q) => (
                 <button key={q.n} onClick={() => goto(`${q.n}:1`)}>{q.name}</button>
@@ -257,6 +264,9 @@ export function Reader() {
           </>
         )}
       </main>
+
+      {returned && credits && <p className="r-toast">Thank you. Your listening time is added as soon as the payment is confirmed.</p>}
+      {timeOpen && credits && <ListeningTime credits={credits} account={account} onClose={() => setTimeOpen(false)} />}
 
       {!follow && cur && (
         <button className="r-back" onClick={() => setFollow(true)}>
@@ -339,10 +349,10 @@ export function Reader() {
               <span>{status}</span>
             )}
             {credits && (
-              <span className={`r-credits${credits.available < 600 ? ' low' : ''}`}>
-                {credits.available > 0 ? `${formatListening(credits.available)} of listening left` : 'No listening time left'}
-                {credits.paid === 0 && credits.limitedBy === null ? ' this month' : ''}
-              </span>
+              <button className={`r-credits${credits.available < 600 ? ' low' : ''}`} onClick={() => setTimeOpen(true)}>
+                {credits.available > 0 ? `${formatListening(credits.available)} of listening left` : account.billing ? 'No listening time left · get more' : 'No listening time left'}
+                {credits.available > 0 && credits.paid === 0 && credits.limitedBy === null ? ' this month' : ''}
+              </button>
             )}
             {snap.held && (
               <button className="r-resume" onClick={() => send({ type: 'hold', on: false })}>
@@ -352,6 +362,70 @@ export function Reader() {
           </div>
         </div>
       </footer>
+    </div>
+  );
+}
+
+/** Listening time: what is left, buying more (when offered), and keeping it on another device. */
+function ListeningTime({ credits, account, onClose }: { credits: CreditView; account: Pick<Access, 'recoveryCode' | 'billing'>; onClose: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const renews = new Date(credits.renewsAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', timeZone: 'UTC' });
+  const buy = async (pack: string) => {
+    setBusy(pack);
+    setNote(null);
+    const r = await fetch('/api/billing/checkout', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pack }) }).catch(() => null);
+    const body = (await r?.json().catch(() => ({}))) as { url?: string; error?: string };
+    if (body?.url) location.href = body.url;
+    else {
+      setBusy(null);
+      setNote(body?.error ?? 'The payment page could not be opened. Please try again.');
+    }
+  };
+  const restore = async () => {
+    const r = await fetch('/api/me/restore', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code.trim() }) }).catch(() => null);
+    if (r?.ok) location.reload();
+    else setNote(((await r?.json().catch(() => ({}))) as { error?: string })?.error ?? 'That code did not work.');
+  };
+  return (
+    <div className="r-modal" role="dialog" aria-modal="true" aria-label="Listening time" onClick={onClose}>
+      <section className="r-time" onClick={(e) => e.stopPropagation()}>
+        <button className="r-close" onClick={onClose} aria-label="Close">×</button>
+        <h2>Listening time</h2>
+        <p className="r-time-big">{credits.available > 0 ? `${formatListening(credits.available)} left` : 'None left right now'}</p>
+        <p className="r-time-detail">
+          Free each month: {formatListening(credits.freePerMonth)}{credits.freePerDay < credits.freePerMonth ? ` (up to ${formatListening(credits.freePerDay)} a day)` : ''}. Used so far: {credits.freeUsedThisMonth < 60 ? 'none' : formatListening(credits.freeUsedThisMonth)}. Renews {renews}.
+          {credits.paid > 0 ? ` Bought: ${formatListening(credits.paid)}.` : ''}
+          {credits.limitedBy === 'network' ? " Today's free time on this network is used up." : credits.limitedBy === 'service' ? " Today's free time for everyone is used up." : ''}
+        </p>
+        <p className="r-time-free">Reading, search and everything about the Quran are free. Only live listening uses time, because speech recognition costs money per minute.</p>
+        {account.billing && (
+          <div className="r-packs">
+            {account.billing.packs.map((p) => (
+              <button key={p.id} disabled={!!busy} onClick={() => void buy(p.id)}>
+                <span>{p.label}</span>
+                <strong>{busy === p.id ? 'Opening…' : p.price}</strong>
+              </button>
+            ))}
+          </div>
+        )}
+        {account.recoveryCode && (
+          <details className="r-recover">
+            <summary>Keep your time on another device</summary>
+            <p>Save this code. Enter it on another phone or computer (or after clearing your browser) to keep your listening time.</p>
+            <div className="r-code">
+              <code>{account.recoveryCode}</code>
+              <button onClick={() => void navigator.clipboard.writeText(account.recoveryCode!).then(() => setNote('Copied.'))}>Copy</button>
+            </div>
+            <div className="r-code">
+              <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Paste a saved code" aria-label="Recovery code" />
+              <button disabled={!code.trim()} onClick={() => void restore()}>Restore</button>
+            </div>
+          </details>
+        )}
+        {note && <p className="r-note">{note}</p>}
+      </section>
     </div>
   );
 }
