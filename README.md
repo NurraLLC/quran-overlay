@@ -56,6 +56,25 @@ npm start
 
 To host it for others, see [docs/DEPLOY.md](docs/DEPLOY.md) (Docker, HTTPS proxy, free allowances, optional payments, costs).
 
+## Use it in your own app
+
+The follower and the finder are plain TypeScript with no server or keys required. [examples/follow.ts](examples/follow.ts) shows both, after the corpus steps above:
+
+```bash
+npx tsx examples/follow.ts
+```
+
+```ts
+const r = await resolver.resolve('surah about elephants', null);   // -> candidates, first card 105:1
+
+session.onDisplay((d) => console.log(d.verse?.key, d.cursor?.from)); // ayah and word being recited
+session.handle({ type: 'capture', captureEpoch: 1, event: 'recording' });
+session.handle({ type: 'transcript', captureEpoch: 1, seq: 0, receivedAt: 0,
+  tokens: [{ text: 'قل هو الله احد', isFinal: true }] });              // words from any recogniser
+```
+
+Feed it the words your speech recogniser hears (final and in-progress tokens, with timings if you have them) and it reports the ayah and word being recited, the same engine that drives the reader and overlay. Its output is references (`112:1`, word 4); take the Arabic and translation from their publisher (for example the [Quran.com API](https://api-docs.quran.com)) under its terms. There is no npm package or hosted API yet; open an issue if you need one.
+
 ## Privacy
 
 Audio goes from the browser directly to Soniox (speech recognition) only while the microphone is on, using a short-lived key. The server never receives or stores audio, writes no request logs, and in hosted mode keeps no transcripts. Listening stops by itself after a minute without recitation.

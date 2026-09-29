@@ -15,5 +15,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["src", "scripts", "tests", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"]
+  "include": ["src", "scripts", "tests", "examples", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"]
 }
