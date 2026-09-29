@@ -212,3 +212,6 @@ button.stop { background: #4a2620; border-color: #8a4a3e; color: #ffe0d8; }
 .res-state { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-left: 6px; color: var(--muted); }
 .res-in { color: var(--follow); }
 .res-imported { color: var(--held); }
+
+.speed { margin-left: auto; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.speed strong { color: var(--text); font-weight: 600; }

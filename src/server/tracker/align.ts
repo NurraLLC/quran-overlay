@@ -36,6 +36,8 @@ export type Alignment = {
   run: number;
   /** [heard index, corpus position, similarity] for matched/near-matched pairs, in order. */
   pairs: Array<[number, number, number]>;
+  /** Heard indices that end a two-heard-words-as-one-Quran-word join (see joinSim). */
+  merged?: number[];
 };
 
 export const ALIGN = {
@@ -78,6 +80,26 @@ function pairScore(o: Obs, key: string, cons: string, w: number): { score: numbe
 const DIAG = 1;
 const UP = 2; // heard word inserted
 const LEFT = 3; // corpus word skipped
+const MERGE = 4; // two heard words = one corpus word ("ولا الآخرة" for "وللآخرة")
+const SPLIT = 5; // one heard word = two corpus words
+
+/**
+ * ASR engines split and merge Arabic words at attached particles, usually inserting or dropping an
+ * alif at the break ("ولا الآخرة" for "وللآخرة"). A join counts only when both sides agree once
+ * alifs are ignored and the skeleton is long enough not to collide by chance ("الله" vs "إلا له"),
+ * or when they are near-identical outright. Joins never take a still-forming word's prefix
+ * credit, which would let any word swallow the next one.
+ */
+const JOIN_SIM = 0.9;
+const JOIN_MIN_SKELETON = 5;
+const skeleton = (k: string) => k.replace(/ا/g, '');
+function joinSim(heard: string, corpus: string): number {
+  if (heard[0] !== corpus[0] || Math.abs(heard.length - corpus.length) > 2) return 0;
+  const a = skeleton(heard);
+  if (a.length >= JOIN_MIN_SKELETON && a === skeleton(corpus)) return JOIN_SIM;
+  const s = sim(heard, corpus);
+  return s >= JOIN_SIM ? s : 0;
+}
 
 let H = new Float64Array(0);
 let D = new Uint8Array(0);
@@ -103,6 +125,9 @@ export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, 
   }
   for (let i = 1; i <= m; i++) {
     const o = obs[i - 1];
+    const prevObs = i >= 2 ? obs[i - 2] : null;
+    const canMerge = !!prevObs && !prevObs.foreign && !o.foreign;
+    const canSplit = !o.foreign;
     const f = Math.max(ALIGN.recencyFloor, ALIGN.recency ** (m - i));
     const ins = (o.foreign ? ALIGN.insForeign : ALIGN.insArabic) * f;
     H[i * W] = 0;
@@ -128,9 +153,28 @@ export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, 
         best = left;
         dir = LEFT;
       }
+      let cellSim = ps.s;
+      if (canMerge) {
+        const js = joinSim(prevObs!.key + o.key, ix.words[pos]);
+        const v = H[(i - 2) * W + j - 1] + w * js * 0.8 * f;
+        if (js && v > best) {
+          best = v;
+          dir = MERGE;
+          cellSim = js;
+        }
+      }
+      if (canSplit && j >= 2) {
+        const js = joinSim(o.key, ix.words[pos - 1] + ix.words[pos]);
+        const v = H[(i - 1) * W + j - 2] + (w + ix.weight[ix.wordId[pos - 1]]) * js * 0.8 * f;
+        if (js && v > best) {
+          best = v;
+          dir = SPLIT;
+          cellSim = js;
+        }
+      }
       H[i * W + j] = best;
       D[i * W + j] = dir;
-      S[i * W + j] = ps.s;
+      S[i * W + j] = cellSim;
     }
   }
   // Best cell ending at *any* heard row; trailing rows after it are unexplained speech.
@@ -154,6 +198,7 @@ export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, 
   for (let i = bi; i < m; i++) trailingPenalty += obs[i].foreign ? ALIGN.insForeign : ALIGN.insArabic;
 
   const pairs: Array<[number, number, number]> = [];
+  const merged: number[] = [];
   let i = bi;
   let j = bj;
   let subs = 0;
@@ -174,6 +219,25 @@ export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, 
       } else subs++;
       i--;
       j--;
+    } else if (dir === MERGE) {
+      const sm = S[i * W + j];
+      const pos = from + j - 1;
+      pairs.push([i - 1, pos, sm]);
+      merged.push(i - 1);
+      matched++;
+      matchedWeight += ix.weight[ix.wordId[pos]] * (sm === 1 ? 1 : sm * 0.8);
+      if (sm < 1) subs++;
+      i -= 2;
+      j--;
+    } else if (dir === SPLIT) {
+      const sm = S[i * W + j];
+      const pos = from + j - 1;
+      pairs.push([i - 1, pos, sm], [i - 1, pos - 1, sm]);
+      matched += 2;
+      matchedWeight += (ix.weight[ix.wordId[pos]] + ix.weight[ix.wordId[pos - 1]]) * (sm === 1 ? 1 : sm * 0.8);
+      if (sm < 1) subs++;
+      i--;
+      j -= 2;
     } else if (dir === UP) {
       ins++;
       i--;
@@ -209,5 +273,6 @@ export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, 
     trailing: m - 1 - lastObs,
     run,
     pairs,
+    merged,
   };
 }

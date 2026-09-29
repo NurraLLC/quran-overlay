@@ -208,6 +208,11 @@ export type ControlSnapshot = {
     paintRttP95Ms: number | null;
   };
   notice: string | null;
+  /**
+   * Evidence behind the latest live display change, for the control-side speed meter: the provider
+   * audio time (ms from stream start) of the newest heard word when the screen moved.
+   */
+  speed: { revision: number; captureEpoch: number; verseKey: string; verseChanged: boolean; heardEndMs: number } | null;
 };
 
 export type ControlServerMessage =

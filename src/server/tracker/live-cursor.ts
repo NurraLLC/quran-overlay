@@ -10,11 +10,12 @@ type Anchor = { pos: number; verseIndex: number };
 
 export class LiveCursor {
   private anchor: Anchor | null = null;
+  private confirmedVerse: number | null = null;
   constructor(
     private readonly ix: CorpusIndex,
     public advanceWords: 1 | 2 = 1,
   ) {}
-  reset() { this.anchor = null; }
+  reset() { this.anchor = null; this.confirmedVerse = null; }
 
   update(words: readonly Word[], confirmed: Anchor | null, provisional: boolean, prior: number | null = null, neighbours: NeighbourProvider | null = null): LivePosition | null {
     if (!words.length) { this.reset(); return null; }
@@ -22,6 +23,16 @@ export class LiveCursor {
     // location: preserve the local path as a prior while requiring present speech to support it.
     // One exact word of the next ayah is enough on the confirmed path (see oneWordAdvance): waiting
     // for a second word was the visible first-word delay at every ayah change.
+    // A confirmed move the live path has not made (e.g. a surah opening identified from finals while
+    // the live hypothesis was still forming) is adopted: the live cursor was still on the previously
+    // confirmed ayah, or the move is further along the same surah. A lagging confirmation of a place
+    // the live path already left is old news and never pulls the display back.
+    if (confirmed && confirmed.verseIndex !== this.confirmedVerse) {
+      const live = this.anchor?.verseIndex;
+      const sameSurahAhead = live !== undefined && confirmed.verseIndex > live && this.ix.verses[confirmed.verseIndex].surah === this.ix.verses[live].surah;
+      if (live !== undefined && (live === this.confirmedVerse || sameSurahAhead)) this.anchor = confirmed;
+      this.confirmedVerse = confirmed.verseIndex;
+    }
     const engine = new TrackerEngine(this.ix, { ...DEFAULT_TRACKER_CONFIG, advanceWords: this.advanceWords });
     engine.prior = prior;
     engine.neighbours = neighbours;

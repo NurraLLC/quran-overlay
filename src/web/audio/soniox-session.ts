@@ -3,7 +3,7 @@
 // cancel(), session_restart). The browser never sees the long-lived key: config() fetches a
 // single-use temporary key from the local server for each stream (and each reconnect).
 
-import { MicrophoneSource, SonioxClient, type RealtimeResult, type Recording } from '@soniox/client';
+import { MicrophoneSource, SonioxClient, type AudioSource, type AudioSourceHandlers, type RealtimeResult, type Recording } from '@soniox/client';
 import type { ControlClientMessage } from '../../shared/contracts';
 import type { WireToken } from '../../shared/transcript';
 import { TokenRouter, type CommandCapture } from './command-lane';
@@ -27,7 +27,51 @@ function describeError(e: unknown): string {
   return msg.slice(0, 200) || 'Listening stopped because of an unexpected error.';
 }
 
+const TIMESLICE_MS = 60;
+
+/**
+ * Pass-through microphone source that records when audio starts flowing. Soniox token times are
+ * relative to the first audio of the stream, so this is the zero point for the live speed meter.
+ * restart() (SDK reconnect) starts a new stream and a new zero point.
+ */
+class TimedSource implements AudioSource {
+  firstChunkAt: number | null = null;
+  constructor(private readonly inner: MicrophoneSource) {}
+  start(handlers: AudioSourceHandlers) {
+    return this.inner.start({
+      ...handlers,
+      onData: (chunk) => {
+        if (this.firstChunkAt === null) this.firstChunkAt = performance.now();
+        handlers.onData(chunk);
+      },
+    });
+  }
+  stop() {
+    this.inner.stop();
+  }
+  pause() {
+    this.inner.pause();
+  }
+  resume() {
+    this.inner.resume();
+  }
+  restart() {
+    this.firstChunkAt = null;
+    this.inner.restart();
+  }
+  /** performance.now() of provider audio time 0 (first chunk carries TIMESLICE_MS of audio). */
+  get audioOrigin(): number | null {
+    return this.firstChunkAt === null ? null : this.firstChunkAt - TIMESLICE_MS;
+  }
+}
+
 export class SonioxCapture {
+  private timed: TimedSource | null = null;
+  /** performance.now() corresponding to Soniox audio time 0 of the current stream, if known. */
+  get audioOrigin(): number | null {
+    return this.timed?.audioOrigin ?? null;
+  }
+
   private recording: Recording | null = null;
   private epoch = 0;
   private seq = 0;
@@ -47,6 +91,11 @@ export class SonioxCapture {
     private readonly onStatus: (s: CaptureStatus) => void,
     private readonly onHearing: (text: string) => void,
   ) {}
+
+  /** Current capture epoch (matches the server's speed evidence). */
+  get captureEpoch() {
+    return this.epoch;
+  }
 
   get listening() {
     return !!this.recording && !this.commandOnly;
@@ -94,15 +143,19 @@ export class SonioxCapture {
     this.startedAt = performance.now();
     this.lastResultAt = 0;
     this.lastProcMs = 0;
-    const source = new MicrophoneSource({
-      constraints: {
-        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-        channelCount: 1,
-      },
-    });
+    const source = new TimedSource(
+      new MicrophoneSource({
+        constraints: {
+          ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: 1,
+        },
+        timesliceMs: TIMESLICE_MS,
+      }),
+    );
+    this.timed = source;
     const rec = this.client().realtime.record({
       model: 'stt-rt-v5',
       language_hints: ['ar', 'en'],

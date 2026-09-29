@@ -1,0 +1,12 @@
+{
+  "name": "basmala-next-surah",
+  "description": "End of a surah, basmala, then the following surah: its first word is enough to advance.",
+  "synthetic": true,
+  "seed": 5,
+  "script": [
+    { "recite": "93:9-93:11" }, { "pause": 800 },
+    { "say": "بسم الله الرحمن الرحيم" }, { "pause": 500 },
+    { "recite": "94:1-94:4" }
+  ],
+  "expect": { "finalDisplay": "94:4", "mustShow": ["93:11", "94:1", "94:2"] }
+}

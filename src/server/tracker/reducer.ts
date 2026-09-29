@@ -9,6 +9,7 @@ import type { Obs } from './align';
 import { bestPerVerse, buildCandidates, type Candidate, type NeighbourProvider, type Relation } from './candidates';
 import { canonicalizeLetterNames, type CorpusIndex } from './index';
 import { tokenize } from './normalize';
+import { openingAfterBasmala } from './opening';
 
 export type Phase = 'unlocated' | 'tracking' | 'uncertain';
 
@@ -191,6 +192,16 @@ export class TrackerEngine {
     };
     const need = (v: number, k: number) => Math.min(k, this.verseLen(v));
 
+    // A spoken basmala means a surah is starting: its opening can be identified from fewer words.
+    const opening = openingAfterBasmala(this.ix, obs, this.anchor);
+    if (opening) {
+      const reason: ProposalReason = !this.anchor ? 'acquire' : opening.continuation ? 'advance' : 'jump';
+      res.proposal = { verseIndex: opening.verseIndex, pos: opening.pos, reason, candidate: opening.candidate, margin: opening.candidate.score };
+      this.unexplainedSince = null;
+      this.supportedUntil = Math.max(this.supportedUntil, obs[obs.length - 1].endMs ?? obs[obs.length - 1].startMs ?? -Infinity);
+      if (this.phase === 'uncertain' && !preview) this.phase = 'tracking';
+      return;
+    }
     if (!B) {
       if (this.anchor) this.noteUnexplained(obs, obs.length, res, preview);
       return;
@@ -251,17 +262,20 @@ export class TrackerEngine {
 
   /**
    * Advance on a single word only when the path is unambiguous: the current ayah was heard through
-   * its last two words immediately before, and the new ayah's first word matches exactly.
+   * its last two words immediately before, and the new ayah's first word matches exactly (or as
+   * an exact-skeleton join of two heard words, when ASR split it at a particle).
    */
   private oneWordAdvance(c: Candidate): boolean {
     if (this.cfg.advanceWords !== 1 || !this.anchor || c.inVerse !== 1) return false;
     const last = c.pairs[c.pairs.length - 1];
     const prev = c.pairs[c.pairs.length - 2];
-    if (!last || !prev || last[2] !== 1) return false;
+    if (!last || !prev) return false;
+    const joined = !!c.merged?.includes(last[0]);
+    if (last[2] !== 1 && !joined) return false;
     if (last[1] !== this.ix.verseStart[c.verseIndex]) return false;
     const prevVerse = this.ix.wordVerse[prev[1]];
     const endOfPrev = this.ix.verseStart[prevVerse] + this.ix.verseLen[prevVerse] - 1;
-    return prevVerse === c.verseIndex - 1 && prev[1] >= endOfPrev - 1 && prev[0] === last[0] - 1;
+    return prevVerse === c.verseIndex - 1 && prev[1] >= endOfPrev - 1 && prev[0] === last[0] - (joined ? 2 : 1);
   }
 
   /** Evidence from heard words at window index >= `fromObs` only. */

@@ -83,6 +83,36 @@ export function Control() {
   }
   const cap = captureRef.current;
 
+  // Live speed meter: how far the screen trails the voice. Measured after the preview paints the
+  // change, against Soniox's audio clock (zero = first microphone chunk). Mic/driver input latency
+  // is not included, so real values are slightly higher.
+  const [speedView, setSpeedView] = useState<{ ayah: number[]; word: number[]; last: number | null }>({ ayah: [], word: [], last: null });
+  const lastSpeedRev = useRef(-1);
+  // Diagnostic hook for the speed lab (scripts/speedlab): the audio clock's zero point.
+  useEffect(() => {
+    (window as unknown as { __qoAudioOrigin?: () => number | null }).__qoAudioOrigin = () => cap.audioOrigin;
+  }, [cap]);
+  const measureSpeed = useCallback(
+    (sp: ControlSnapshot['speed']) => {
+      if (!sp || sp.revision === lastSpeedRev.current) return;
+      lastSpeedRev.current = sp.revision;
+      const origin = cap.audioOrigin;
+      if (origin === null || sp.captureEpoch !== cap.captureEpoch) return;
+      requestAnimationFrame(() =>
+        setTimeout(() => {
+          const lag = performance.now() - (origin + sp.heardEndMs);
+          if (lag < -500 || lag > 30000) return;
+          setSpeedView((v) => ({
+            ayah: sp.verseChanged ? [...v.ayah, lag].slice(-60) : v.ayah,
+            word: sp.verseChanged ? v.word : [...v.word, lag].slice(-120),
+            last: sp.verseChanged ? lag : v.last,
+          }));
+        }, 0),
+      );
+    },
+    [cap],
+  );
+
   useEffect(() => {
     document.documentElement.dataset.surface = 'control';
     let cancelled = false;
@@ -105,7 +135,10 @@ export function Control() {
           shouldRetry: (code) => code !== 4401,
           onMessage: (data) => {
             const m = data as ControlServerMessage;
-            if (m.type === 'snapshot') setSnap(m.snapshot);
+            if (m.type === 'snapshot') {
+              setSnap(m.snapshot);
+              measureSpeed(m.snapshot.speed);
+            }
             else if (m.type === 'command_pending') {
               if (m.requestId.startsWith('listen:')) { lastRequest.current = m.requestId; setResult(null); }
               if (m.requestId === lastRequest.current) setPendingId(m.requestId);
@@ -237,6 +270,7 @@ export function Control() {
             <span className={`onair ${d.visible ? 'live' : ''}`}>{d.visible ? 'On screen' : snap.blanked ? 'Hidden from stream' : 'Nothing on screen'}</span>
             {snap.blanked && d.verse && <span className="muted">{d.verse.key} returns when you unhide</span>}
             {lay?.promotedToFullFrame && <span className="warn">Too long for the lower third — shown full frame</span>}
+            <SpeedMeter view={speedView} listening={cap.listening} />
           </div>
           <div className="reading-view" role="radiogroup" aria-label="Reading view">
             {([['follow', 'Follow words'], ['word', 'Word focus'], ['ayah', 'Full ayah']] as const).map(([value, label]) => <button key={value} role="radio" aria-checked={d.style.readingMode === value} className={d.style.readingMode === value ? 'primary' : ''} onClick={() => send({ type: 'style', patch: { readingMode: value } })}>{label}</button>)}
@@ -613,5 +647,22 @@ function OutputCard({ snap, send, copied, onCopy }: { snap: ControlSnapshot; sen
         {snap.corpus.verses.toLocaleString()} ayahs · {snap.corpus.chapters} surahs · {snap.corpus.attribution}. Decisions: {snap.setup.jev.detail} Semantic search: {snap.setup.semantic}.
       </p>
     </section>
+  );
+}
+
+const median = (xs: number[]) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)];
+};
+const secs = (ms: number | null) => (ms === null ? '—' : `${Math.max(0, ms / 1000).toFixed(1)} s`);
+
+function SpeedMeter({ view, listening }: { view: { ayah: number[]; word: number[]; last: number | null }; listening: boolean }) {
+  if (!listening && !view.ayah.length && !view.word.length) return null;
+  return (
+    <span className="speed" title="How far the screen trails your voice, measured after it paints. Microphone input latency is not included.">
+      Behind your voice: ayah changes <strong>{secs(median(view.ayah))}</strong>
+      {view.ayah.length ? ` (median of ${view.ayah.length}, last ${secs(view.last)})` : ''} · words <strong>{secs(median(view.word))}</strong>
+    </span>
   );
 }

@@ -1,0 +1,14 @@
+{
+  "name": "basmala-openings",
+  "description": "Isti'adha and basmala, then surahs whose first ayah is a single word (93:1, 36:1); the basmala identifies the opening from that word.",
+  "synthetic": true,
+  "seed": 3,
+  "script": [
+    { "say": "أعوذ بالله من الشيطان الرجيم" }, { "pause": 600 },
+    { "say": "بسم الله الرحمن الرحيم" }, { "pause": 500 },
+    { "recite": "93:1-93:3" }, { "pause": 1500 },
+    { "say": "بسم الله الرحمن الرحيم" }, { "pause": 500 },
+    { "recite": "36:1-36:3" }
+  ],
+  "expect": { "finalDisplay": "36:3", "mustShow": ["93:1", "93:2", "36:1", "36:2"] }
+}

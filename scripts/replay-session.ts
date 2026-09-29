@@ -159,8 +159,8 @@ for (const adv of onlyAdv) {
     blanks += r.blanks;
     gaps += r.gaps;
     wrong.push(...r.wrong.map((w) => `${path.basename(f)} ${w}`));
-    if (!quiet || r.wrong.length || (process.argv.includes('--flips') && r.flips)) {
-      console.log(`  ${path.basename(f)}: ${r.shown.join(' ')}${r.flips ? ` | flip-backs ${r.flips}` : ''}${r.blanks ? ` | blanks ${r.blanks}` : ''}${r.wrong.length ? ` | WRONG ${r.wrong.join(', ')}` : ''}`);
+    if (!quiet || r.wrong.length || (process.argv.includes("--flips") && r.flips) || (process.argv.includes("--gaps") && r.gaps)) {
+      console.log(`  ${path.basename(f)}: ${r.shown.join(' ')}${r.flips ? ` | flip-backs ${r.flips}` : ''}${r.blanks ? ` | blanks ${r.blanks}` : ''}${r.gaps ? ` | gaps ${r.gaps}` : ""}${r.wrong.length ? ` | WRONG ${r.wrong.join(', ')}` : ''}`);
     }
   }
   console.log(

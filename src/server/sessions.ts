@@ -207,7 +207,9 @@ export class Session {
       if (this.sentAt.size > 64) this.sentAt.delete(this.sentAt.keys().next().value!);
       for (const fn of this.displayListeners) fn(this.display);
       this.schedulePageTimer();
+      if (this.pendingSpeed) this.speed = { revision: this.revision, captureEpoch: this.capture.captureEpoch, ...this.pendingSpeed };
     }
+    this.pendingSpeed = null;
     this.queueSnapshot();
   }
 
@@ -453,6 +455,12 @@ export class Session {
     const words = this.buffer.liveWords().slice(this.liveFloor);
     const live = this.liveCursor.update(words, this.follower.engine.anchor, this.buffer.hasProvisional, this.follower.engine.prior, this.follower.engine.neighbours);
     if (live && (this.follower.mode !== 'jev_required' || live.verseIndex === this.trackerVerse)) {
+      const verseChanged = live.verseIndex !== this.displayVerse;
+      const heardEndMs = words.at(-1)?.endMs ?? null;
+      if (heardEndMs !== null && (verseChanged || live.word !== this.lastLiveWord)) {
+        this.pendingSpeed = { verseKey: this.o.corpus.at(live.verseIndex)!.key, verseChanged, heardEndMs };
+      }
+      this.lastLiveWord = live.word;
       this.liveVerse = live.verseIndex;
       this.showVerse(live.verseIndex);
       const v = this.o.corpus.at(live.verseIndex)!;
@@ -672,10 +680,14 @@ export class Session {
         paintRttP95Ms: pct(this.paintRtts, 0.95),
       },
       notice: this.notice,
+      speed: this.speed,
     };
   }
 
   private candidatesView: ControlSnapshot['candidates'] = [];
+  private lastLiveWord = -1;
+  private pendingSpeed: { verseKey: string; verseChanged: boolean; heardEndMs: number } | null = null;
+  private speed: ControlSnapshot['speed'] = null;
   private resourceCache: ControlSnapshot['setup']['resources'] | null = null;
 
   private resourceView(): ControlSnapshot['setup']['resources'] {

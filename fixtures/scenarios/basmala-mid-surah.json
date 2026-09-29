@@ -1,0 +1,13 @@
+{
+  "name": "basmala-mid-surah",
+  "description": "Basmala before starting in the middle of a surah (2:255) and before an unrelated surah: no false opening.",
+  "synthetic": true,
+  "seed": 9,
+  "script": [
+    { "say": "بسم الله الرحمن الرحيم" }, { "pause": 500 },
+    { "recite": "2:255-2:256" }, { "pause": 1500 },
+    { "say": "بسم الله الرحمن الرحيم" }, { "pause": 500 },
+    { "recite": "112:1-112:4" }
+  ],
+  "expect": { "finalDisplay": "112:4", "mustShow": ["2:255", "112:1"] }
+}
