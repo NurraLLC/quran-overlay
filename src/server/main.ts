@@ -167,7 +167,6 @@ async function main() {
   // runs keep a random capability in data/state (see local-links.ts).
   const { app, ownerToken } = await buildApp({ basePath: base, extraHosts: (process.env.QO_EXTRA_HOSTS ?? '').split(',').filter(Boolean), session, hosted, port, sonioxApiKey: process.env.SONIOX_API_KEY, devOrigins, ownerToken: process.env.QO_OWNER_TOKEN || links?.links.owner });
   // Loopback by default; a container or VM behind a reverse proxy sets QO_HOST=0.0.0.0.
-  await app.listen({ host: process.env.QO_HOST || '127.0.0.1', port });
   if(process.env.QO_REQUIRE_CONTENT_SYNC==='1') {
     const watch=setInterval(()=>{
       try { if(activeContent(process.env.QO_CONTENT_STORE!).id===corpus.id)return; } catch {}
@@ -179,6 +178,7 @@ async function main() {
     watch.unref();
     app.addHook('onClose',async()=>{clearInterval(watch);});
   }
+  await app.listen({ host: process.env.QO_HOST || '127.0.0.1', port });
   const ms = Math.round(performance.now() - t0);
   console.log(`Quran Reader ready in ${ms} ms — corpus ${corpus.id}: ${corpus.verses.length} ayahs / ${corpus.data.chapters.length} surahs`);
   if (process.env.QO_DIAGNOSTIC_CAPTURE === '1') console.log('Diagnostic capture ON: recognized text tokens are written to data/captures/*.jsonl (no audio).');
