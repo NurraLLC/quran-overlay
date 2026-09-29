@@ -1,4 +1,4 @@
-// npm run speedlab -- --name duha [--port 4398] [--mode hybrid]
+// npm run speedlab -- --name duha [--port 4398] [--mode hybrid] [--stt '{"timeslice":20}'] [--label x]
 // End-to-end speed and correctness through the real pipeline: WAV (see make-audio.ts) as Edge's
 // microphone -> Soniox (live) -> server -> screen. Records every screen change against the audio
 // clock and reports, per ayah, "ayah starts in the audio -> on screen", plus wrong and missed ayahs.
@@ -15,6 +15,8 @@ const arg = (n: string, d: string) => {
 const name = arg('name', 'duha');
 const port = Number(arg('port', '4398'));
 const mode = arg('mode', 'hybrid');
+const stt = arg('stt', '');
+const label = arg('label', stt || 'default');
 const owner = 'speedlab-owner-capability-7f3a';
 const wav = path.resolve('data', 'speedlab', `${name}.wav`);
 const truth = JSON.parse(readFileSync(path.join('data', 'speedlab', `${name}.json`), 'utf8')) as {
@@ -49,7 +51,7 @@ const browser = await chromium.launch({
 });
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  await page.goto(`${base}/control#owner=${owner}`);
+  await page.goto(`${base}/control${stt ? `?stt=${encodeURIComponent(stt)}` : ''}#owner=${owner}`);
   await page.waitForSelector('.topbar');
   // Record every change of the previewed ayah at frame resolution.
   await page.evaluate(`(() => {
@@ -91,7 +93,7 @@ try {
   const s = [...lat].sort((a, b) => a - b);
   const q = (p: number) => (s.length ? (s[Math.min(s.length - 1, Math.floor(s.length * p))] / 1000).toFixed(2) : '—');
   console.log(rows.join('\n'));
-  console.log(`\n${name} (${mode}): ${truth.segments.length} ayahs, shown ${truth.segments.length - missed.length}, missed ${missed.length}${missed.length ? ` (${missed.join(' ')})` : ''}, wrong ${wrong}`);
+  console.log(`\n${name} (${mode}, ${label}): ${truth.segments.length} ayahs, shown ${truth.segments.length - missed.length}, missed ${missed.length}${missed.length ? ` (${missed.join(' ')})` : ''}, wrong ${wrong}`);
   console.log(`ayah starts in audio -> on screen: p50 ${q(0.5)} s, p90 ${q(0.9)} s, best ${q(0)} s`);
   console.log(`control-page meter: ${meter}`);
 } finally {

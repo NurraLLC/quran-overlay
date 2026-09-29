@@ -61,7 +61,7 @@ const expand = (p: string) =>
 const files = args.length ? args.flatMap(expand) : expand('data/captures');
 const quiet = files.length > 8;
 
-type Result = { lat: number[]; flips: number; blanks: number; shown: string[]; wrong: string[]; gaps: number };
+type Result = { own: number[]; lat: number[]; flips: number; blanks: number; shown: string[]; wrong: string[]; gaps: number };
 
 export async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
   const clock = new VClock();
@@ -105,8 +105,16 @@ export async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
   const buf = new TranscriptBuffer();
   for (const e of fx.events) if (e.type === 'result') buf.apply(e.tokens as WireToken[]);
   buf.flush();
-  const fw = buf.finals.map((w) => ({ key: tokenize(w.text)[0]?.key ?? '', end: w.endMs ?? 0 }));
+  const fw = buf.finals.map((w) => ({ key: tokenize(w.text)[0]?.key ?? '', start: w.startMs ?? null, end: w.endMs ?? 0 }));
   const lat: number[] = [];
+  // Clock-independent: when the provider first delivered a token of that word (any hypothesis).
+  const results = fx.events.flatMap((e) => (e.type === 'result' ? [{ t: e.t, tokens: e.tokens as WireToken[] }] : []));
+  const deliveredAt = (startMs: number | null) => {
+    if (startMs === null) return null;
+    for (const r of results) if (r.tokens.some((k) => k.startMs !== undefined && k.startMs !== null && Math.abs(k.startMs - startMs) <= 120)) return r.t;
+    return null;
+  };
+  const own: number[] = [];
   let cursor = 0;
   let flips = 0;
   let blanks = 0;
@@ -124,6 +132,9 @@ export async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
     for (let i = cursor; i < fw.length; i++) {
       if (fw[i].key === first && (ix.verseLen[v.index] < 2 || fw[i + 1]?.key === second)) {
         lat.push(ch.t - fw[i].end);
+        const d = deliveredAt(fw[i].start);
+        if (d !== null && d <= ch.t) own.push(ch.t - d);
+        if (process.argv.includes("--slow") && d !== null && ch.t - d > 700) console.log(`    slow ${ch.key} delivered -> screen +${((ch.t - d) / 1000).toFixed(2)} s (at ${(d / 1000).toFixed(2)} s) in ${path.basename(file)}`);
         cursor = i + 1;
         break;
       }
@@ -138,7 +149,7 @@ export async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
       if (!recent.includes(ch.key)) wrong.push(`${ch.key}@${(ch.t / 1000).toFixed(1)}s`);
     }
   }
-  return { lat, flips, blanks, shown: seen, wrong, gaps };
+  return { own, lat, flips, blanks, shown: seen, wrong, gaps };
 }
 
 const q = (xs: number[], p: number) => {
@@ -147,6 +158,7 @@ const q = (xs: number[], p: number) => {
 };
 for (const adv of onlyAdv) {
   const all: number[] = [];
+  const own: number[] = [];
   let flips = 0;
   let blanks = 0;
   let gaps = 0;
@@ -155,6 +167,7 @@ for (const adv of onlyAdv) {
   for (const f of files) {
     const r = await run(f, adv);
     all.push(...r.lat);
+    own.push(...r.own);
     flips += r.flips;
     blanks += r.blanks;
     gaps += r.gaps;
@@ -164,6 +177,6 @@ for (const adv of onlyAdv) {
     }
   }
   console.log(
-    `  => ${files.length} files, ${all.length} ayahs: first word ended -> on screen p50 ${q(all, 0.5)} s, p90 ${q(all, 0.9)} s, best ${q(all, 0)} s; wrong ${wrong.length}; flip-backs ${flips}; blanks ${blanks}; highlight gaps ${gaps}`,
+    `  => ${files.length} files, ${all.length} ayahs: first word ended -> on screen p50 ${q(all, 0.5)} s, p90 ${q(all, 0.9)} s, best ${q(all, 0)} s; first letter delivered -> on screen p50 ${q(own, 0.5)} s, p90 ${q(own, 0.9)} s; wrong ${wrong.length}; flip-backs ${flips}; blanks ${blanks}; highlight gaps ${gaps}`,
   );
 }

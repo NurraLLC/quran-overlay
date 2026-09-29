@@ -140,3 +140,28 @@ export function openingAfterBasmala(ix: CorpusIndex, obs: readonly Obs[], anchor
   };
   return { verseIndex, pos, candidate, continuation };
 }
+
+/** Shortest lone first word that may place the display (short words collide with speech). */
+const LONE_START_MIN_LETTERS = 5;
+
+/**
+ * The first word of a session, when it occurs in exactly one verse of the whole Quran, identifies
+ * that verse by itself ("والضحى", "والعصر"), wherever in the verse the reciter began. Ordinary
+ * acquisition would wait for three words and never show a one-word opening ayah at all.
+ */
+export function uniqueFirstWord(ix: CorpusIndex, obs: readonly Obs[]): OpeningMatch | null {
+  let heard = obs;
+  if (heard.length === 2 && heard[1].partial && heard[1].key.length < 3) heard = heard.slice(0, 1);
+  if (heard.length !== 1) return null;
+  const o = heard[0];
+  if (o.foreign || o.key.length < LONE_START_MIN_LETTERS) return null;
+  const id = ix.vocab.get(o.key);
+  if (id === undefined || ix.df[id] !== 1 || ix.postings[id].length !== 1) return null;
+  if (o.partial && canGrow(ix, o.key)) return null;
+  const pos = ix.postings[id][0];
+  const verseIndex = ix.wordVerse[pos];
+  const a = alignRegion(ix, heard, pos, pos + 1);
+  if (!a) return null;
+  const candidate: Candidate = { ...a, verseIndex, inVerse: 1, source: 'global', relation: relationOf(ix, null, verseIndex) };
+  return { verseIndex, pos, candidate, continuation: false };
+}

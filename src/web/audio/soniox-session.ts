@@ -27,7 +27,28 @@ function describeError(e: unknown): string {
   return msg.slice(0, 200) || 'Listening stopped because of an unexpected error.';
 }
 
-const TIMESLICE_MS = 60;
+/**
+ * Lab-only recognition tuning from the page URL (`?stt={"timeslice":20,...}`), used by the speed
+ * lab to A/B provider settings on identical audio. Only these known keys are read.
+ */
+type SttTuning = { timeslice?: number; max_endpoint_delay_ms?: number; endpoint_sensitivity?: number; endpoint_latency_adjustment_level?: number; language_hints_strict?: boolean };
+function sttTuning(): SttTuning {
+  try {
+    const raw = JSON.parse(new URLSearchParams(location.search).get('stt') ?? '{}') as Record<string, unknown>;
+    const num = (k: string, lo: number, hi: number) => (typeof raw[k] === 'number' && (raw[k] as number) >= lo && (raw[k] as number) <= hi ? (raw[k] as number) : undefined);
+    return {
+      timeslice: num('timeslice', 10, 250),
+      max_endpoint_delay_ms: num('max_endpoint_delay_ms', 500, 3000),
+      endpoint_sensitivity: num('endpoint_sensitivity', -1, 1),
+      endpoint_latency_adjustment_level: num('endpoint_latency_adjustment_level', 0, 3),
+      language_hints_strict: typeof raw.language_hints_strict === 'boolean' ? raw.language_hints_strict : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+const TUNING = sttTuning();
+const TIMESLICE_MS = TUNING.timeslice ?? 60;
 
 /**
  * Pass-through microphone source that records when audio starts flowing. Soniox token times are
@@ -160,6 +181,10 @@ export class SonioxCapture {
       model: 'stt-rt-v5',
       language_hints: ['ar', 'en'],
       enable_endpoint_detection: true,
+      ...(TUNING.max_endpoint_delay_ms !== undefined ? { max_endpoint_delay_ms: TUNING.max_endpoint_delay_ms } : {}),
+      ...(TUNING.endpoint_sensitivity !== undefined ? { endpoint_sensitivity: TUNING.endpoint_sensitivity } : {}),
+      ...(TUNING.endpoint_latency_adjustment_level !== undefined ? { endpoint_latency_adjustment_level: TUNING.endpoint_latency_adjustment_level } : {}),
+      ...(TUNING.language_hints_strict !== undefined ? { language_hints_strict: TUNING.language_hints_strict } : {}),
       context: {
         general: [
           { key: 'domain', value: 'Quran recitation in Arabic (Hafs)' },

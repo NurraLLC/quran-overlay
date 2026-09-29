@@ -1,0 +1,10 @@
+{
+  "name": "cold-start-one-word",
+  "description": "Listening starts straight into a surah whose first ayah is one word that occurs in one verse only (103:1 \"والعصر\"): it is shown, not skipped.",
+  "synthetic": true,
+  "seed": 11,
+  "script": [
+    { "recite": "103:1-103:3" }
+  ],
+  "expect": { "finalDisplay": "103:3", "mustShow": ["103:1", "103:2", "103:3"] }
+}

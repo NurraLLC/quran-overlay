@@ -9,7 +9,7 @@ import type { Obs } from './align';
 import { bestPerVerse, buildCandidates, type Candidate, type NeighbourProvider, type Relation } from './candidates';
 import { canonicalizeLetterNames, type CorpusIndex } from './index';
 import { tokenize } from './normalize';
-import { openingAfterBasmala } from './opening';
+import { openingAfterBasmala, uniqueFirstWord } from './opening';
 
 export type Phase = 'unlocated' | 'tracking' | 'uncertain';
 
@@ -85,6 +85,8 @@ export class TrackerEngine {
   /** Audio time up to which heard speech last supported the current location. */
   private supportedUntil = -Infinity;
   private lastKey = '';
+  /** The heard window starts at the first word since listening began (or since the floor moved). */
+  private atStart = false;
 
   /** Resource-backed collision neighbours (null = enrichment off; the corpus seeds still run). */
   neighbours: NeighbourProvider | null = null;
@@ -154,7 +156,9 @@ export class TrackerEngine {
     };
     if (key === this.lastKey) return base;
     this.lastKey = key;
-    const obs = this.toObs(words).slice(-this.cfg.window);
+    const allObs = this.toObs(words);
+    const obs = allObs.slice(-this.cfg.window);
+    this.atStart = from === this.floor && allObs.length === obs.length;
     const res: StepResult = { ...base, changed: true };
     if (!obs.length) {
       res.computeMs = performance.now() - t0;
@@ -193,7 +197,7 @@ export class TrackerEngine {
     const need = (v: number, k: number) => Math.min(k, this.verseLen(v));
 
     // A spoken basmala means a surah is starting: its opening can be identified from fewer words.
-    const opening = openingAfterBasmala(this.ix, obs, this.anchor);
+    const opening = openingAfterBasmala(this.ix, obs, this.anchor) ?? (!this.anchor && this.atStart ? uniqueFirstWord(this.ix, obs) : null);
     if (opening) {
       const reason: ProposalReason = !this.anchor ? 'acquire' : opening.continuation ? 'advance' : 'jump';
       res.proposal = { verseIndex: opening.verseIndex, pos: opening.pos, reason, candidate: opening.candidate, margin: opening.candidate.score };
