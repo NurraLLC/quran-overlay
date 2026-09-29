@@ -39,6 +39,7 @@ import { realClock, type Clock } from './tracker/scheduler';
 import { LiveCursor } from './tracker/live-cursor';
 import { mapDisplayWords, type WordSpan } from './corpus/word-map';
 import { ListeningCommands } from './commands/listening';
+import { ArabicSurahRequests } from './commands/arabic-request';
 
 export const DISCONNECT_GRACE_MS = 5000;
 
@@ -102,6 +103,9 @@ export class Session {
   private cursor: DisplayState['cursor'] = null;
   private readonly liveCursor: LiveCursor;
   private liveFloor = 0;
+  /** "سورة الرحمن" heard in Arabic script: requests are looked for in finals from here on. */
+  private readonly arabicRequests: ArabicSurahRequests;
+  private arabicScan = 0;
   private liveVerse: number | null = null;
   private readonly wordMaps = new Map<number, Array<WordSpan | null>>();
   private batchingTranscript = false;
@@ -132,6 +136,7 @@ export class Session {
   constructor(private readonly o: SessionOptions) {
     this.clock = o.clock ?? realClock;
     this.liveCursor = new LiveCursor(o.ix);
+    this.arabicRequests = new ArabicSurahRequests(o.corpus.data.chapters);
     this.listeningCommands = new ListeningCommands(o.decisionClient, this.clock, (text, id, intent) => {
       if (this.capture.phase !== 'recording' || this.commandActive) return;
       void this.command(id, text, intent === 'show');
@@ -455,6 +460,16 @@ export class Session {
     this.lastSeq = msg.seq;
     this.writeCapture(msg.tokens);
     const r = this.buffer.apply(msg.tokens);
+    // A surah named in Arabic script ("سورة الرحمن"; also English the recogniser wrote in Arabic,
+    // "قولت سورة الرحمن" for "go to Surah Rahman") opens it, like the spoken English request.
+    if (!this.commandActive) {
+      const live = this.buffer.liveWords();
+      const req = this.arabicRequests.find(live.map((w) => w.text), Math.max(this.liveFloor, this.arabicScan), !!live.at(-1)?.open);
+      if (req) {
+        this.arabicScan = req.end;
+        void this.command(`listen:ar-${msg.seq}`, `surah ${req.chapter}`, true);
+      }
+    }
     const heard = this.buffer.heardText(1);
     const liveWords = this.readable(this.buffer.liveWords());
     const english = !this.commandActive && this.listeningCommands.observe(liveWords, this.buffer.hasProvisional, r.endpoint);
@@ -527,6 +542,7 @@ export class Session {
       this.liveCursor.reset();
       this.liveVerse = null;
       this.liveFloor = 0;
+      this.arabicScan = 0;
       this.cursor = null;
       this.lastSeq = -1;
       this.follower.newCapture(msg.captureEpoch);

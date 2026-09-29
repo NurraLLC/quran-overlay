@@ -114,6 +114,8 @@ export async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
       session.handle({ type: 'transcript', captureEpoch: 1, seq: seq++, tokens: e.tokens as WireToken[], receivedAt: e.t });
     }
     else if (e.action.kind === 'manual') session.handle({ type: 'goto', key: e.action.key });
+    // Let asynchronous work (spoken requests) finish at this moment, as it would on the server.
+    await new Promise((r) => setImmediate(r));
   }
   clock.advanceTo(clock.now() + 4000);
 
