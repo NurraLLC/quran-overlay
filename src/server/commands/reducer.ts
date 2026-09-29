@@ -12,6 +12,7 @@ import { ChapterNames } from '../search/references';
 import type { SemanticRetriever } from '../search/semantic';
 import type { ResourceCatalog } from '../resources/catalog';
 import { parseIntent, type Intent } from './parse';
+import type { Transliteration } from '../search/transliteration';
 
 export const SEARCH_DEADLINE_MS = 2000;
 export const HEDGE_MS = 700;
@@ -27,6 +28,9 @@ export type SearchTrace = {
   jev: { outcome: string; latencyMs: number | null; choice: string | null };
 };
 
+/** Everyday English words: a query containing them is a meaning search, never a sound match. */
+const ENGLISH_CUES = new Set(['about', 'and', 'is', 'in', 'for', 'when', 'who', 'what', 'which', 'are', 'was', 'were', 'be', 'not', 'his', 'her', 'their', 'they', 'you', 'your', 'we', 'our', 'god', 'lord', 'people', 'day', 'story', 'mercy', 'patience', 'prayer', 'says', 'said', 'tells', 'talks', 'mentions']);
+
 export class CommandResolver {
   readonly names: ChapterNames;
   readonly bm25: Bm25Index;
@@ -37,6 +41,8 @@ export class CommandResolver {
     private readonly semantic: SemanticRetriever | null,
     public client: DecisionClient | null,
     private readonly catalog: ResourceCatalog | null = null,
+    /** Find an ayah by its sound in English letters ("inna fatahna"); optional resource. */
+    private readonly sounds: Transliteration | null = null,
   ) {
     if (catalog?.topics) catalog.consume('qul:ayah-topics:45', 'search.retrieve');
     for (const [t, id] of [['juz', '68'], ['hizb', '67'], ['rub', '63'], ['manzil', '66']] as const) if (catalog?.divisions.has(t)) catalog.consume(`qul:quran-metadata:${id}`, 'navigation.divisions');
@@ -150,9 +156,34 @@ export class CommandResolver {
       }
       case 'ambiguous_chapter':
         return this.ambiguousChapter(text, intent, current?.key ?? null, signal);
-      case 'search':
+      case 'search': {
+        const bySound = this.byOpeningSound(intent.query);
+        if (bySound) return bySound;
         return this.search(intent.query, signal, onPreliminary);
+      }
+      case 'control':
+        return { kind: 'control', label: intent.action.label, style: intent.action.style ?? null, hold: intent.action.hold ?? null, blank: intent.action.blank ?? null };
     }
+  }
+
+  /**
+   * An ayah named by how it begins, in English letters. Only for queries that are not ordinary
+   * English (a meaning search never jumps the screen); a single clear match navigates, several are
+   * offered.
+   */
+  private byOpeningSound(query: string): CommandResult | null {
+    if (!this.sounds) return null;
+    const words = query.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+    if (words.some((w) => ENGLISH_CUES.has(w))) return null;
+    const m = this.sounds.match(query);
+    if (!m.length) return null;
+    const clear = m[0].distance === 0 ? m.length === 1 || m[1].distance > 0 : m.length === 1;
+    if (clear) {
+      const v = this.corpus.at(m[0].verseIndex)!;
+      return { kind: 'navigate', key: v.key, note: `${v.key} begins with those words.` };
+    }
+    const cards = m.slice(0, 5).map((x) => this.card(x.verseIndex, ['how it sounds']));
+    return { kind: 'candidates', route: 'search', query, cards, confirmedKey: null, status: 'These ayahs begin with those words.', refining: false };
   }
 
   private async ambiguousChapter(text: string, intent: Extract<Intent, { kind: 'ambiguous_chapter' }>, currentKey: string | null, signal?: AbortSignal): Promise<CommandResult> {

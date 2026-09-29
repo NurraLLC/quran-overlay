@@ -77,3 +77,33 @@ describe('command intents (local, deterministic)', () => {
     for (const c of res.cards) expect(c.english).toBe(corpus.verse(c.key)!.english);
   });
 });
+
+describe('spoken requests from real sessions', () => {
+  const r = resolver();
+  const intent = (text: string) => r.parse(text, null);
+
+  it('turns display requests into settings, and only those', () => {
+    expect(intent('Go full English only mode')).toMatchObject({ kind: 'control', action: { style: { language: 'english' } } });
+    expect(intent('arabic only mode')).toMatchObject({ kind: 'control', action: { style: { language: 'arabic' } } });
+    expect(intent('switch to arabic and english')).toMatchObject({ kind: 'control', action: { style: { language: 'both' } } });
+    expect(intent('hide the translation')).toMatchObject({ kind: 'control', action: { style: { language: 'arabic' } } });
+    expect(intent('word by word')).toMatchObject({ kind: 'control', action: { style: { readingMode: 'word' } } });
+    expect(intent('full ayah')).toMatchObject({ kind: 'control', action: { style: { readingMode: 'ayah' } } });
+    expect(intent('pause')).toMatchObject({ kind: 'control', action: { hold: true } });
+    expect(intent('hide')).toMatchObject({ kind: 'control', action: { blank: true } });
+    expect(intent('the ayah about english speakers').kind).toBe('search');
+    expect(intent('show me the verse about hiding').kind).toBe('search');
+  });
+
+  it('treats "surah about ..." as a search, not a surah name', () => {
+    expect(intent('Surah about patience')).toEqual({ kind: 'search', query: 'Surah about patience' });
+  });
+
+  it('never guesses between close surah names ("Fatih": Al-Fath, Fatir, Al-Fatihah)', () => {
+    const i = intent('Go to Surah Fatih.');
+    expect(i.kind).toBe('ambiguous_chapter');
+    if (i.kind === 'ambiguous_chapter') expect(i.options.map((o) => o.number).sort((a, b) => a - b)).toEqual([1, 35, 48]);
+    expect(intent('Go to Surah Fath')).toMatchObject({ kind: 'reference', surah: 48 });
+    expect(intent('surah Yaseen')).toMatchObject({ kind: 'reference', surah: 36 });
+  });
+});

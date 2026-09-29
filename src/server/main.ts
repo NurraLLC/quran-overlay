@@ -13,6 +13,7 @@ import { TRACKER_MODES, type TrackerMode } from './tracker/follower';
 import { buildIndex } from './tracker/index';
 import { ResourceCatalog } from './resources/catalog';
 import { WordGlosses } from './corpus/wbw';
+import { Transliteration } from './search/transliteration';
 
 function loadEnvFile() {
   const file = path.join(ROOT, '.env');
@@ -59,7 +60,7 @@ async function main() {
   const jev = decisionSetup();
   const modeEnv = (process.env.TRACKER_MODE || 'hybrid') as TrackerMode;
   const mode: TrackerMode = TRACKER_MODES.includes(modeEnv) ? modeEnv : 'hybrid';
-  const resolver = new CommandResolver(corpus, semantic, jev.client, catalog);
+  const resolver = new CommandResolver(corpus, semantic, jev.client, catalog, Transliteration.load(corpus));
 
   let port = Number(process.env.PORT || 4317);
   if (!(await portFree(port))) {

@@ -126,7 +126,7 @@ export class ChapterNames {
     const best = new Map<number, ChapterMatch>();
     for (const e of this.keys) {
       const d = editDistance(k, e.key);
-      const tol = e.key.length <= 3 ? 0 : e.key.length <= 5 ? 1 : 2;
+      const tol = e.key.length <= 2 ? 0 : e.key.length === 3 ? (k.length >= 3 ? 1 : 0) : e.key.length <= 5 ? 1 : 2;
       if (d > tol) continue;
       const prev = best.get(e.number);
       if (!prev || d < prev.distance) best.set(e.number, { number: e.number, distance: d, name: e.name });

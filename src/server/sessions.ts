@@ -615,6 +615,12 @@ export class Session {
       result = { kind: 'no_match', message: 'Search failed unexpectedly; exact references still work.' };
     }
     if (this.latestCommand !== cmd || ctrl.signal.aborted) return; // an old search cannot publish after a newer request
+    if (result.kind === 'control') {
+      if (result.style) this.handle({ type: 'style', patch: result.style });
+      if (result.hold !== null) this.handle({ type: 'hold', on: result.hold });
+      if (result.blank !== null) this.handle({ type: 'blank', on: result.blank });
+      this.say(result.label);
+    }
     if (result.kind === 'navigate') {
       this.gotoIndex(this.o.corpus.verse(result.key)!.index, 'command');
       if (requestId.startsWith('listen:')) { this.held = false; this.heldBySearch = false; this.publish(); }

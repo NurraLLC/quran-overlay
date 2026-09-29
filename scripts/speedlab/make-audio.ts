@@ -1,5 +1,6 @@
 // npm run speedlab:audio -- --name kahf --ranges 18:1-18:10 [--voice Adrian] [--speed 0.85] [--pause 700] [--basmala]
 // --basmala opens with the isti'adha and basmala, and says the basmala before each later surah.
+// --intro "Go to Surah Al-Fath" speaks an English request first (TTS in English).
 // Builds a recitation-like WAV from Soniox TTS (one request per ayah, cached) with pauses between
 // ayahs, plus a truth file giving each ayah's start/end in the audio. TTS is not a human reciter:
 // this measures the pipeline's speed and correctness on real audio, not recitation accuracy.
@@ -18,6 +19,7 @@ const voice = arg('voice', 'Adrian');
 const speed = Number(arg('speed', '0.85'));
 const pauseMs = Number(arg('pause', '700'));
 const basmala = process.argv.includes('--basmala');
+const intro = arg('intro', '');
 const ISTIADHA = 'أعوذ بالله من الشيطان الرجيم';
 const BASMALA = 'بسم الله الرحمن الرحيم';
 const leadMs = 1500;
@@ -64,14 +66,14 @@ function wavOf(pcm: Buffer): Buffer {
 const silence = (ms: number) => Buffer.alloc(Math.round((RATE * ms) / 1000) * 2);
 const msOf = (pcm: Buffer) => (pcm.length / 2 / RATE) * 1000;
 
-async function tts(text: string): Promise<Buffer> {
-  const id = createHash('sha256').update(`${voice}|${speed}|${text}`).digest('hex').slice(0, 16);
+async function tts(text: string, language = 'ar'): Promise<Buffer> {
+  const id = createHash('sha256').update(`${voice}|${speed}|${language}|${text}`).digest('hex').slice(0, 16);
   const file = path.join(cacheDir, `${id}.wav`);
   if (existsSync(file)) return readFileSync(file);
   const res = await fetch('https://tts-rt.soniox.com/tts', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'tts-rt-v2', language: 'ar', voice, audio_format: 'wav', sample_rate: RATE, speed, text }),
+    body: JSON.stringify({ model: 'tts-rt-v2', language, voice, audio_format: 'wav', sample_rate: RATE, speed, text }),
   });
   if (!res.ok) throw new Error(`TTS HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
@@ -83,10 +85,15 @@ const parts: Buffer[] = [silence(leadMs)];
 let t = leadMs;
 const segments: Array<{ key: string; startMs: number; endMs: number }> = [];
 /** Speech that belongs to no ayah (not a truth segment). */
-async function say(text: string) {
-  const pcm = pcmOf(await tts(text));
+async function say(text: string, language = 'ar') {
+  const pcm = pcmOf(await tts(text, language));
   parts.push(pcm, silence(pauseMs));
   t += msOf(pcm) + pauseMs;
+}
+if (intro) {
+  await say(intro, 'en');
+  parts.push(silence(800));
+  t += 800;
 }
 if (basmala) await say(ISTIADHA);
 let lastSurah = 0;

@@ -31,12 +31,13 @@ function describeError(e: unknown): string {
  * Lab-only recognition tuning from the page URL (`?stt={"timeslice":20,...}`), used by the speed
  * lab to A/B provider settings on identical audio. Only these known keys are read.
  */
-type SttTuning = { timeslice?: number; max_endpoint_delay_ms?: number; endpoint_sensitivity?: number; endpoint_latency_adjustment_level?: number; language_hints_strict?: boolean };
+type SttTuning = { hints?: string[]; timeslice?: number; max_endpoint_delay_ms?: number; endpoint_sensitivity?: number; endpoint_latency_adjustment_level?: number; language_hints_strict?: boolean };
 function sttTuning(): SttTuning {
   try {
     const raw = JSON.parse(new URLSearchParams(location.search).get('stt') ?? '{}') as Record<string, unknown>;
     const num = (k: string, lo: number, hi: number) => (typeof raw[k] === 'number' && (raw[k] as number) >= lo && (raw[k] as number) <= hi ? (raw[k] as number) : undefined);
     return {
+      hints: Array.isArray(raw.hints) && raw.hints.every((h) => typeof h === 'string') ? (raw.hints as string[]).slice(0, 4) : undefined,
       timeslice: num('timeslice', 10, 250),
       max_endpoint_delay_ms: num('max_endpoint_delay_ms', 500, 3000),
       endpoint_sensitivity: num('endpoint_sensitivity', -1, 1),
@@ -93,6 +94,17 @@ class TimedSource implements AudioSource {
 export const IDLE_STOP_MS = 60_000;
 const ARABIC = /[ء-ي]/;
 
+/**
+ * After English speech the recogniser tends to stay in English and writes the following recitation
+ * in Latin letters ("Inna fatahna ... Bismillahirrahmanirrahim"), which nothing can follow. A fresh
+ * stream starts without that bias, so English speech ending, or recitation arriving in Latin
+ * letters, restarts the stream (the display and tracker keep their place).
+ */
+const LATIN = /[A-Za-z]/;
+const TRANSLITERATED = /^(bismillah\w*|allah\w*|alhamd\w*|rahman\w*|rahim\w*|ar-?rahman\w*|inna|qul|subhan\w*|ya-?ayyuha\w*|ayyuha\w*|lillah\w*)$/i;
+/** At most one language reset per this long, so a stubborn case can never loop restarts. */
+const RESET_MIN_GAP_MS = 15_000;
+
 export class SonioxCapture {
   private timed: TimedSource | null = null;
   /** performance.now() corresponding to Soniox audio time 0 of the current stream, if known. */
@@ -111,6 +123,10 @@ export class SonioxCapture {
   private idleTimer: ReturnType<typeof setInterval> | null = null;
   /** performance.now() of the last recognised Arabic (kept across proactive restarts). */
   private lastArabicAt = 0;
+  /** The newest recognised words are English (Latin script). */
+  private latinTail = false;
+  private lastResetAt = 0;
+  private resetting = false;
   private deviceId: string | null = null;
   private commandOnly = false;
   readonly router = new TokenRouter();
@@ -189,7 +205,9 @@ export class SonioxCapture {
     this.timed = source;
     const rec = this.client().realtime.record({
       model: 'stt-rt-v5',
-      language_hints: ['ar', 'en'],
+      // Arabic only: with English also hinted, plainly read (unmelodic) recitation is often written
+      // in Latin letters. English requests are still transcribed as English (measured in the lab).
+      language_hints: TUNING.hints ?? ['ar'],
       enable_endpoint_detection: true,
       ...(TUNING.max_endpoint_delay_ms !== undefined ? { max_endpoint_delay_ms: TUNING.max_endpoint_delay_ms } : {}),
       ...(TUNING.endpoint_sensitivity !== undefined ? { endpoint_sensitivity: TUNING.endpoint_sensitivity } : {}),
@@ -264,11 +282,48 @@ export class SonioxCapture {
       confidence: t.confidence,
     }));
     if (tokens.some((t) => ARABIC.test(t.text))) this.lastArabicAt = performance.now();
+    if (!this.commandOnly) this.watchLanguage(tokens);
     const { recitation, finalized } = this.router.route(tokens);
     if (this.router.active) this.onHearing(this.router.hearing());
     if (finalized) this.finalizeWaiter?.(false);
     if (this.commandOnly || !recitation.length) return;
     this.send({ type: 'transcript', captureEpoch: epoch, seq: this.seq++, tokens: recitation, receivedAt: performance.now() });
+  }
+
+  private watchLanguage(tokens: WireToken[]) {
+    let endpoint = false;
+    let transliterated = 0;
+    let latinWords = 0;
+    for (const t of tokens) {
+      const text = t.text.trim();
+      if (text === '<end>' || text === '<fin>') endpoint = true;
+      else if (ARABIC.test(text)) this.latinTail = false;
+      else if (LATIN.test(text)) {
+        this.latinTail = true;
+        for (const w of text.split(/[^A-Za-z-]+/).filter(Boolean)) {
+          latinWords++;
+          if (TRANSLITERATED.test(w)) transliterated++;
+        }
+      }
+    }
+    // Recitation in Latin letters: reset now. English that just ended: reset before recitation resumes.
+    // (An English request that mentions "Allah" is mostly other words; recitation is mostly these.)
+    const recitingInLatin = transliterated >= 2 && transliterated * 2 >= latinWords;
+    if (recitingInLatin || (endpoint && this.latinTail)) void this.resetLanguage();
+  }
+
+  /** Restart the stream so the recogniser starts without an English bias; keeps the idle clock. */
+  private async resetLanguage() {
+    const now = performance.now();
+    if (this.resetting || now - this.lastResetAt < RESET_MIN_GAP_MS) return;
+    this.resetting = true;
+    this.lastResetAt = now;
+    this.latinTail = false;
+    try {
+      await this.restart();
+    } finally {
+      this.resetting = false;
+    }
   }
 
   private teardown() {

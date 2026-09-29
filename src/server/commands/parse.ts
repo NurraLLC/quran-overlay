@@ -12,7 +12,54 @@ export type Intent =
   | { kind: 'invalid_reference'; message: string }
   | { kind: 'ambiguous_chapter'; options: ChapterMatch[]; ayah: number | null }
   | { kind: 'division'; type: 'juz' | 'hizb' | 'rub' | 'manzil'; number: number }
-  | { kind: 'search'; query: string };
+  | { kind: 'search'; query: string }
+  | { kind: 'control'; action: ControlAction };
+
+/** A display/following setting spoken or typed instead of clicked. */
+export type ControlAction = {
+  label: string;
+  style?: { language?: 'both' | 'arabic' | 'english'; readingMode?: 'follow' | 'word' | 'ayah' };
+  hold?: boolean;
+  blank?: boolean;
+};
+
+// Words that carry no meaning in a setting request ("go full English only mode please").
+const CONTROL_FILLER = new Set(['go', 'to', 'switch', 'change', 'turn', 'into', 'in', 'put', 'it', 'make', 'set', 'please', 'the', 'a', 'mode', 'view', 'can', 'you', 'lets', 'let', 'us', 'now', 'me', 'full', 'fully', 'use', 'back', 'screen', 'overlay', 'display']);
+// Every remaining word must be one of these, so "the ayah about English speakers" is never a setting.
+const CONTROL_VOCAB = new Set(['english', 'arabic', 'only', 'just', 'both', 'and', 'translation', 'translations', 'word', 'by', 'focus', 'follow', 'words', 'along', 'whole', 'ayah', 'verse', 'pause', 'stop', 'following', 'resume', 'start', 'unpause', 'hide', 'unhide', 'show', 'blank', 'unblank', 'one', 'single', 'off', 'on', 'with', 'without', 'no', 'highlight', 'languages', 'language', 'meaning', 'meanings']);
+
+function parseControl(all: string[]): ControlAction | null {
+  const joined = all.join(' ');
+  const has = (w: string) => all.includes(w);
+  if (/\b(full|whole) (ayah|verse)\b/.test(joined) && !has('english') && !has('arabic')) return { label: 'Showing the full ayah.', style: { readingMode: 'ayah' } };
+  const t = all.filter((w) => !CONTROL_FILLER.has(w));
+  if (!t.length || t.some((w) => !CONTROL_VOCAB.has(w))) return null;
+  const s = new Set(t);
+  const en = s.has('english') || s.has('translation') || s.has('translations') || s.has('meaning') || s.has('meanings');
+  const ar = s.has('arabic');
+  const only = s.has('only') || s.has('just');
+  const off = s.has('hide') || s.has('off') || s.has('without') || s.has('no');
+  if ((ar && en && !only && !off) || s.has('both') || (en && !ar && (s.has('show') || s.has('with') || s.has('on')) && !only)) return { label: 'Showing Arabic with the English translation.', style: { language: 'both' } };
+  if ((en && off && !ar) || (ar && (only || t.length === 1))) return { label: 'Showing Arabic only.', style: { language: 'arabic' } };
+  if (en && !ar && (only || t.length === 1 || (t.length === 2 && s.has('translation') && s.has('english')))) return { label: 'Showing the English translation only.', style: { language: 'english' } };
+  if ((s.has('word') && (s.has('by') || s.has('focus') || s.has('one') || s.has('single'))) || joined === 'word') return { label: 'Word focus: one word at a time.', style: { readingMode: 'word' } };
+  if (s.has('follow') || s.has('highlight')) return { label: 'Following word by word.', style: { readingMode: 'follow' } };
+  if (s.has('unpause') || s.has('resume') || (s.has('start') && s.has('following'))) return { label: 'Following resumed.', hold: false };
+  if (s.has('pause') || (s.has('stop') && s.has('following'))) return { label: 'Following paused; the screen holds this ayah.', hold: true };
+  if (s.has('unhide') || s.has('unblank') || (s.has('show') && t.length === 1)) return { label: 'The screen is showing again.', blank: false };
+  if (s.has('hide') || s.has('blank')) return { label: 'The screen is hidden.', blank: true };
+  return null;
+}
+
+// "surah about patience", "a surah where ..." are searches, not surah names.
+const ABOUT = new Set(['about', 'on', 'regarding', 'where', 'which', 'that', 'with', 'concerning', 'discussing', 'describing', 'mentioning', 'related', 'of']);
+
+/** A name match is taken only when it is unmistakable; close alternatives are offered instead. */
+function clearWinner(m: ChapterMatch[]): boolean {
+  if (!m.length) return false;
+  if (m.length === 1) return true;
+  return m[0].distance === 0 ? m[1].distance > 0 : m[1].distance >= m[0].distance + 2;
+}
 
 const LEADING = [
   ['please'],
@@ -79,6 +126,8 @@ export function parseIntent(text: string, names: ChapterNames, currentSurah: num
   const joined = all.join(' ');
   if (NEXT.has(joined)) return { kind: 'next' };
   if (PREV.has(joined)) return { kind: 'previous' };
+  const control = parseControl(all);
+  if (control) return { kind: 'control', action: control };
   const t = stripLeading(all);
   const phrase = t.join(' ');
   if (NEXT.has(phrase)) return { kind: 'next' };
@@ -117,6 +166,7 @@ export function parseIntent(text: string, names: ChapterNames, currentSurah: num
   };
 
   const ci = t.findIndex((w) => CHAPTER_WORDS.has(w));
+  if (ci >= 0 && ABOUT.has(t[ci + 1] ?? '')) return { kind: 'search', query: text.trim() };
   if (ci >= 0) {
     const n = numberAt(t, ci + 1);
     if (n) {
@@ -130,9 +180,7 @@ export function parseIntent(text: string, names: ChapterNames, currentSurah: num
     const rest = readAyah(end);
     if (namePhrase && rest.ok) {
       const matches = names.match(namePhrase);
-      if (matches.length === 1 || (matches.length > 1 && matches[0].distance < matches[1].distance)) {
-        return validate(matches[0].number, rest.ayah, 'named_chapter', names);
-      }
+      if (clearWinner(matches)) return validate(matches[0].number, rest.ayah, 'named_chapter', names);
       if (matches.length > 1) return { kind: 'ambiguous_chapter', options: matches.slice(0, 5), ayah: rest.ayah };
       return { kind: 'invalid_reference', message: `No surah named “${namePhrase}”.` };
     }
@@ -153,7 +201,7 @@ export function parseIntent(text: string, names: ChapterNames, currentSurah: num
     if (!rest.ok) continue;
     const matches = names.match(t.slice(0, len).join(' '));
     if (!matches.length) continue;
-    if (matches.length === 1 || matches[0].distance < matches[1].distance) return validate(matches[0].number, rest.ayah, 'named_chapter', names);
+    if (clearWinner(matches)) return validate(matches[0].number, rest.ayah, 'named_chapter', names);
     return { kind: 'ambiguous_chapter', options: matches.slice(0, 5), ayah: rest.ayah };
   }
 

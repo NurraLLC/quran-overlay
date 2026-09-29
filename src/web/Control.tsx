@@ -466,6 +466,7 @@ function VoiceCard(p: {
       </form>
 
       {p.pending && <p className="pending">Searching…</p>}
+      {!p.pending && r?.kind === 'control' && <p className="ok">{r.label}</p>}
       {!p.pending && r?.kind === 'navigate' && <p className="ok">Opened {r.key}.{r.note ? ` ${r.note}` : ''} Recitation continues from there.</p>}
       {!p.pending && (r?.kind === 'no_match' || r?.kind === 'invalid_reference') && <p className="warn">{r.message}</p>}
       {!p.pending && r?.kind === 'candidates' && (

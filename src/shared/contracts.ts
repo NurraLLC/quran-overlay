@@ -112,6 +112,7 @@ export const WireTokenSchema = z.object({
 export const TrackerModeSchema = z.enum(['deterministic', 'hybrid', 'jev_required']);
 
 export const StylePatchSchema = DisplayStyleSchema.partial();
+export type StylePatch = z.infer<typeof StylePatchSchema>;
 
 export const ControlClientMessageSchema = z.discriminatedUnion('type', [
   z.object({
@@ -181,7 +182,9 @@ export type CommandResult =
       refining: boolean;
     }
   | { kind: 'no_match'; message: string }
-  | { kind: 'invalid_reference'; message: string };
+  | { kind: 'invalid_reference'; message: string }
+  /** A display/following setting requested by voice or typing. */
+  | { kind: 'control'; label: string; style: StylePatch | null; hold: boolean | null; blank: boolean | null };
 
 export type CapturePhase = 'off' | 'starting' | 'recording' | 'reconnecting' | 'stopped' | 'error' | 'disconnected';
 export type TrackerPhase = 'idle' | 'listening_unlocated' | 'tracking' | 'uncertain' | 'held' | 'stopped' | 'disconnected' | 'error';
