@@ -34,6 +34,8 @@ function statusLine(s: ControlSnapshot): { tone: string; title: string; detail: 
               ? 'Still listening privately; the screen will not move until you resume.'
               : 'The screen will not move until you resume following.',
       };
+    case 'dozing':
+      return { tone: 'following', title: 'Listening · waiting for you to recite', detail: `${key ? `${key} stays on screen. ` : ''}Nothing is sent while you are quiet; recite and it continues at once.` };
     case 'stopped':
       return { tone: 'idle', title: 'Not listening', detail: key ? `${key} stays on screen until you change it.` : 'The screen is empty.' };
     case 'disconnected':
@@ -435,9 +437,11 @@ function VoiceCard(p: {
           ? 'Connecting the microphone…'
           : p.capture.state === 'error'
             ? p.capture.detail
-            : p.listening
+            : p.capture.state === 'dozing'
+              ? 'Waiting for you to recite. After a long pause the microphone stays on here but nothing is sent (listening is billed while a stream is open); recite and it continues at once.'
+              : p.listening
               ? 'Recite and the screen follows. Or just say it in English: “go to Surah Maryam, ayah three”, “show the ayah about the orphan”, or describe one to find it here privately. Other English talk never changes the screen.'
-              : (p.capture.detail ?? 'One microphone for both: recite to follow, or speak an English request. Audio goes to Soniox only while listening, and listening stops by itself after a minute without recitation.')}
+              : (p.capture.detail ?? 'One microphone for both: recite to follow, or speak an English request. Audio goes to Soniox only while you speak: long pauses send nothing, and listening stops by itself after a while without recitation.')}
       </p>
 
       {p.credits && (

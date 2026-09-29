@@ -126,7 +126,8 @@ export const ControlClientMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('capture'),
     captureEpoch: z.number().int().positive(),
-    event: z.enum(['starting', 'recording', 'reconnecting', 'stopped', 'error', 'muted', 'unmuted']),
+    // 'dozing': the silence skipper closed the provider stream during a long pause; listening is on.
+    event: z.enum(['starting', 'recording', 'reconnecting', 'dozing', 'stopped', 'error', 'muted', 'unmuted']),
     detail: z.string().max(240).optional(),
   }),
   z.object({ type: z.literal('nav'), action: z.enum(['next', 'prev']) }),
@@ -203,8 +204,8 @@ export type CreditView = {
   listeningSeconds: number;
 };
 
-export type CapturePhase = 'off' | 'starting' | 'recording' | 'reconnecting' | 'stopped' | 'error' | 'disconnected';
-export type TrackerPhase = 'idle' | 'listening_unlocated' | 'tracking' | 'uncertain' | 'held' | 'stopped' | 'disconnected' | 'error';
+export type CapturePhase = 'off' | 'starting' | 'recording' | 'reconnecting' | 'dozing' | 'stopped' | 'error' | 'disconnected';
+export type TrackerPhase = 'idle' | 'listening_unlocated' | 'tracking' | 'uncertain' | 'dozing' | 'held' | 'stopped' | 'disconnected' | 'error';
 
 export type CandidateView = { key: string; score: number; relation: string; matched: number; trailing: number };
 

@@ -3,18 +3,25 @@
 // cancel(), session_restart). The browser never sees the long-lived key: config() fetches a
 // single-use temporary key from the local server for each stream (and each reconnect).
 
-import { MicrophoneSource, SonioxClient, type AudioSource, type AudioSourceHandlers, type RealtimeResult, type Recording } from '@soniox/client';
+import { SonioxClient, type AudioSource, type AudioSourceHandlers, type RealtimeResult, type Recording } from '@soniox/client';
 import type { ControlClientMessage } from '../../shared/contracts';
 import type { WireToken } from '../../shared/transcript';
 import { TokenRouter, type CommandCapture } from './command-lane';
+import { MicError, MicStreamSource, SharedMic } from './mic';
 
 /** Restart before the explicit per-stream cap minted by the server (3 h), without replaying captions. */
 const PROACTIVE_RESTART_MS = 175 * 60 * 1000;
 const FINALIZE_WAIT_MS = 2500;
 
-export type CaptureStatus = { state: 'off' | 'starting' | 'recording' | 'reconnecting' | 'error'; detail: string | null };
+export type CaptureStatus = { state: 'off' | 'starting' | 'recording' | 'reconnecting' | 'dozing' | 'error'; detail: string | null };
 
 function describeError(e: unknown): string {
+  if (e instanceof MicError) {
+    if (e.kind === 'permission') return 'Microphone permission was denied. Allow the microphone for this page in the browser’s site settings, then start again.';
+    if (e.kind === 'device') return 'The selected microphone was not found. It may have been unplugged; pick another microphone.';
+    if (e.kind === 'busy') return 'The microphone is in use by another program or cannot be read. Close the other program or pick another microphone.';
+    return 'This browser cannot capture audio here. Use a current Chrome or Edge on this computer.';
+  }
   const name = (e as { name?: string })?.name ?? '';
   const code = (e as { code?: string })?.code ?? '';
   if (name === 'AudioPermissionError' || code === 'permission_denied') return 'Microphone permission was denied. Allow the microphone for this page in the browser’s site settings, then start again.';
@@ -58,8 +65,7 @@ const TIMESLICE_MS = TUNING.timeslice ?? 60;
  */
 class TimedSource implements AudioSource {
   firstChunkAt: number | null = null;
-  private meter: { ctx: AudioContext; analyser: AnalyserNode; buf: Float32Array } | null = null;
-  constructor(private readonly inner: MicrophoneSource) {}
+  constructor(private readonly inner: MicStreamSource) {}
   async start(handlers: AudioSourceHandlers) {
     await this.inner.start({
       ...handlers,
@@ -68,36 +74,9 @@ class TimedSource implements AudioSource {
         handlers.onData(chunk);
       },
     });
-    this.attachMeter();
-  }
-  /** A level meter on the same microphone stream (for "it hears me" feedback; no audio leaves). */
-  private attachMeter() {
-    try {
-      const stream = (this.inner as unknown as { stream?: MediaStream | null }).stream;
-      if (!stream || this.meter) return;
-      const ctx = new AudioContext();
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      ctx.createMediaStreamSource(stream).connect(analyser);
-      this.meter = { ctx, analyser, buf: new Float32Array(analyser.fftSize) };
-    } catch {
-      this.meter = null; // no meter is fine; listening works without it
-    }
-  }
-  /** Current input level, 0..1 (speech sits around 0.2–0.7). */
-  level(): number {
-    const m = this.meter;
-    if (!m) return 0;
-    m.analyser.getFloatTimeDomainData(m.buf as Float32Array<ArrayBuffer>);
-    let sum = 0;
-    for (const v of m.buf) sum += v * v;
-    const rms = Math.sqrt(sum / m.buf.length);
-    return Math.min(1, Math.max(0, (20 * Math.log10(rms + 1e-8) + 60) / 45));
   }
   stop() {
     this.inner.stop();
-    void this.meter?.ctx.close().catch(() => undefined);
-    this.meter = null;
   }
   pause() {
     this.inner.pause();
@@ -120,6 +99,18 @@ class TimedSource implements AudioSource {
  * English talk): audio is billed while it streams, so an idle microphone must not stay open.
  */
 export const IDLE_STOP_MS = 60_000;
+
+/**
+ * The silence skipper. Soniox bills a stream for as long as it is open, pauses included, so after
+ * this long without voice the stream is closed ("dozing") and a new one opens the moment the voice
+ * returns. The microphone stays open locally meanwhile and nothing is sent. Breaths and the pauses
+ * between ayahs are far shorter, so ordinary following is untouched; after a long pause the first
+ * words take about half a second longer (a new connection). Measured on recorded sessions, pauses
+ * this long are about 11% of listening time, plus the silent tail before the idle stop.
+ */
+export const DOZE_AFTER_MS = 8_000;
+/** While dozing nothing is billed, so a longer break is allowed before listening stops. */
+export const DOZE_IDLE_STOP_MS = 3 * 60_000;
 const ARABIC = /[ء-ي]/;
 
 /**
@@ -135,9 +126,14 @@ const RESET_MIN_GAP_MS = 15_000;
 
 export class SonioxCapture {
   private timed: TimedSource | null = null;
+  /** The microphone for the whole listening session (open while listening, dozing included). */
+  private mic: SharedMic | null = null;
+  /** Listening is on (the user's choice); a provider stream may be open or dozing. */
+  private active = false;
+  private dozing = false;
   /** Microphone input level 0..1 while listening (0 when not listening). */
   level(): number {
-    return this.recording ? (this.timed?.level() ?? 0) : 0;
+    return this.active ? (this.mic?.level() ?? 0) : 0;
   }
 
   /** performance.now() corresponding to Soniox audio time 0 of the current stream, if known. */
@@ -182,7 +178,7 @@ export class SonioxCapture {
   }
 
   get listening() {
-    return !!this.recording && !this.commandOnly;
+    return this.active && !this.commandOnly;
   }
 
   private setStatus(s: CaptureStatus) {
@@ -227,28 +223,58 @@ export class SonioxCapture {
   }
 
   async start(deviceId: string | null, opts: { commandOnly?: boolean } = {}) {
-    if (this.recording) return;
+    if (this.active) return;
+    this.active = true;
     this.deviceId = deviceId;
     this.commandOnly = !!opts.commandOnly;
     this.stopping = false;
+    this.dozing = false;
     const epoch = this.nextEpoch();
     if (!this.commandOnly) this.send({ type: 'capture', captureEpoch: epoch, event: 'starting' });
     this.setStatus({ state: 'starting', detail: null });
-    this.startedAt = performance.now();
-    this.lastResultAt = 0;
-    this.lastProcMs = 0;
-    const source = new TimedSource(
-      new MicrophoneSource({
-        constraints: {
+    let mic: SharedMic;
+    try {
+      mic = await SharedMic.open(
+        {
           ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
           echoCancellation: false,
           noiseSuppression: false,
           autoGainControl: false,
           channelCount: 1,
         },
-        timesliceMs: TIMESLICE_MS,
-      }),
-    );
+        DOZE_AFTER_MS,
+        (e) => this.onVoice(e),
+      );
+    } catch (e) {
+      this.active = false;
+      const detail = describeError(e);
+      this.setStatus({ state: 'error', detail });
+      if (!this.commandOnly) this.send({ type: 'capture', captureEpoch: epoch, event: 'error', detail });
+      return;
+    }
+    if (!this.active) return mic.close(); // stopped while the permission prompt was open
+    this.mic = mic;
+    this.openStream(epoch);
+    if (!this.commandOnly) {
+      if (!this.lastArabicAt) this.lastArabicAt = performance.now();
+      this.idleTimer = setInterval(() => {
+        const limit = this.dozing ? DOZE_IDLE_STOP_MS : IDLE_STOP_MS;
+        if (performance.now() - this.lastArabicAt < limit) return;
+        this.stop();
+        const minutes = Math.round(limit / 60_000);
+        this.setStatus({ state: 'off', detail: `Stopped listening after ${minutes} ${minutes === 1 ? 'minute' : 'minutes'} without recitation. Start again when you are ready.` });
+      }, 2000);
+    }
+  }
+
+  /** A provider stream on the open microphone (its own key and container header). */
+  private openStream(epoch: number) {
+    const mic = this.mic;
+    if (!mic) return;
+    this.startedAt = performance.now();
+    this.lastResultAt = 0;
+    this.lastProcMs = 0;
+    const source = new TimedSource(new MicStreamSource(mic, TIMESLICE_MS));
     this.timed = source;
     const rec = this.client().realtime.record({
       model: 'stt-rt-v5',
@@ -322,15 +348,36 @@ export class SonioxCapture {
       if (!this.commandOnly) this.send({ type: 'capture', captureEpoch: this.epoch, event: 'error', detail });
       this.finalizeWaiter?.(true);
     });
-    if (!this.commandOnly) {
-      this.restartTimer = setTimeout(() => void this.restart(), PROACTIVE_RESTART_MS);
-      if (!this.lastArabicAt) this.lastArabicAt = performance.now();
-      this.idleTimer = setInterval(() => {
-        if (performance.now() - this.lastArabicAt < IDLE_STOP_MS) return;
-        this.stop();
-        this.setStatus({ state: 'off', detail: `Stopped listening after ${Math.round(IDLE_STOP_MS / 60_000)} minute without recitation, so nothing is used while idle. Start again when you are ready.` });
-      }, 2000);
-    }
+    if (!this.commandOnly) this.restartTimer = setTimeout(() => void this.restart(), PROACTIVE_RESTART_MS);
+    void epoch;
+  }
+
+  // ---------- silence skipper ----------
+
+  private onVoice(e: 'voice' | 'quiet') {
+    if (!this.active || this.commandOnly || this.stopping) return;
+    if (e === 'quiet') this.doze();
+    else if (this.dozing) this.wake();
+  }
+
+  /** Close the provider stream during a long pause; listening stays on. */
+  private doze() {
+    if (!this.recording || this.dozing || this.resetting || this.router.active || this.status.state !== 'recording') return;
+    const epoch = this.epoch;
+    this.dozing = true;
+    this.endStream();
+    this.setStatus({ state: 'dozing', detail: null });
+    this.send({ type: 'capture', captureEpoch: epoch, event: 'dozing' });
+  }
+
+  /** The voice is back: a new stream, sent the audio from this moment on (buffered while it connects). */
+  private wake() {
+    if (!this.dozing || !this.mic) return;
+    this.dozing = false;
+    const epoch = this.nextEpoch();
+    this.send({ type: 'capture', captureEpoch: epoch, event: 'starting' });
+    this.setStatus({ state: 'starting', detail: null });
+    this.openStream(epoch);
   }
 
   private onResult(r: RealtimeResult, epoch: number) {
@@ -394,13 +441,13 @@ export class SonioxCapture {
     }
   }
 
-  private teardown() {
+  /** Close the provider stream; the microphone stays open. */
+  private endStream() {
     if (this.restartTimer) clearTimeout(this.restartTimer);
     this.restartTimer = null;
-    if (this.idleTimer) clearInterval(this.idleTimer);
-    this.idleTimer = null;
     const rec = this.recording;
     this.recording = null;
+    this.timed = null;
     try {
       rec?.cancel();
     } catch {
@@ -408,9 +455,19 @@ export class SonioxCapture {
     }
   }
 
-  /** Stop listening: close tracks and the connection immediately; ignore anything after. */
+  private teardown() {
+    this.endStream();
+    if (this.idleTimer) clearInterval(this.idleTimer);
+    this.idleTimer = null;
+    this.mic?.close();
+    this.mic = null;
+    this.active = false;
+    this.dozing = false;
+  }
+
+  /** Stop listening: close the microphone and the connection immediately; ignore anything after. */
   stop() {
-    if (!this.recording) return;
+    if (!this.active) return;
     this.stopping = true;
     const epoch = this.epoch;
     const wasCommandOnly = this.commandOnly;
@@ -423,18 +480,25 @@ export class SonioxCapture {
   }
 
   private async restart() {
-    const device = this.deviceId;
-    const lastArabic = this.lastArabicAt;
-    this.stop();
-    this.lastArabicAt = lastArabic; // a proactive reconnect is not new speech
-    await this.start(device);
+    if (!this.active || !this.mic) return;
+    // A new stream on the same microphone: the display and tracker keep their place, and a
+    // reconnect is not new speech (the idle clock keeps running).
+    const old = this.epoch;
+    this.endStream();
+    this.dozing = false;
+    if (!this.commandOnly) this.send({ type: 'capture', captureEpoch: old, event: 'stopped' });
+    const epoch = this.nextEpoch();
+    if (!this.commandOnly) this.send({ type: 'capture', captureEpoch: epoch, event: 'starting' });
+    this.setStatus({ state: 'starting', detail: null });
+    this.openStream(epoch);
   }
 
   // ---------- push-to-talk ----------
 
   async beginCommand(deviceId: string | null): Promise<void> {
     this.send({ type: 'command_capture', active: true });
-    if (!this.recording) await this.start(deviceId, { commandOnly: true });
+    if (!this.active) await this.start(deviceId, { commandOnly: true });
+    else if (this.dozing) this.wake();
     this.router.begin(this.audioNowMs());
     this.onHearing('');
   }

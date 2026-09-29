@@ -367,7 +367,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
       if (!parsed.success) return;
       s.handle(parsed.data);
       // A stream that ended is charged for the time it actually ran.
-      if (visitorId && parsed.data.type === 'capture' && (parsed.data.event === 'stopped' || parsed.data.event === 'error')) {
+      if (visitorId && parsed.data.type === 'capture' && (parsed.data.event === 'stopped' || parsed.data.event === 'dozing' || parsed.data.event === 'error')) {
         hosted!.credits.settle(visitorId);
         pushCredits(visitorId);
       }

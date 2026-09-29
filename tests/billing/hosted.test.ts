@@ -118,6 +118,32 @@ describe('hosted service', () => {
     ws.close();
   });
 
+  it('stops charging while dozing (a long pause closed the stream) and keeps the session listening', async () => {
+    const v = await visit();
+    const ws = new WebSocket(`${base.replace('http', 'ws')}/ws/control`, { headers: { origin, cookie: v.cookie } });
+    const msgs: ControlServerMessage[] = [];
+    ws.on('message', (d) => msgs.push(JSON.parse(String(d))));
+    await new Promise<void>((r) => ws.on('open', () => r()));
+    await until(() => msgs.some((m) => m.type === 'credits'));
+    const epoch = Date.now();
+    ws.send(JSON.stringify({ type: 'capture', captureEpoch: epoch, event: 'starting' }));
+    expect((await key(v.cookie)).status).toBe(200);
+    ws.send(JSON.stringify({ type: 'capture', captureEpoch: epoch, event: 'recording' }));
+    await new Promise((r) => setTimeout(r, 1200));
+    ws.send(JSON.stringify({ type: 'capture', captureEpoch: epoch, event: 'dozing' }));
+    const credits = () => msgs.filter((m): m is Extract<ControlServerMessage, { type: 'credits' }> => m.type === 'credits').at(-1)!.credits;
+    await until(() => credits().freeUsedThisMonth > 0 && credits().listeningSeconds === 0);
+    const used = credits().freeUsedThisMonth;
+    expect(used).toBeLessThanOrEqual(3);
+    // Nothing is charged while dozing.
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(credits().freeUsedThisMonth).toBe(used);
+    const snaps = msgs.filter((m): m is Extract<ControlServerMessage, { type: 'snapshot' }> => m.type === 'snapshot');
+    expect(snaps.at(-1)!.snapshot.capture.phase).toBe('dozing');
+    expect(snaps.at(-1)!.snapshot.phase).toBe('dozing');
+    ws.close();
+  });
+
   it('limits key requests per visitor, not for the whole service', async () => {
     const statuses: number[] = [];
     for (let i = 0; i < 11; i++) statuses.push((await key((await visit()).cookie)).status);

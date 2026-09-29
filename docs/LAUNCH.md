@@ -56,7 +56,7 @@ docker compose -f deploy/compose.yml --env-file deploy/production.env up -d --bu
 | Server (small VM) | about $4–6 |
 | Domain | $0 on a subdomain you own; otherwise about $1 a month |
 | GitHub, CI | $0 (public repository) |
-| Speech recognition (Soniox, $0.12 per hour of listening) | the only real variable; see below |
+| Speech recognition (Soniox, $0.12 per hour a stream is open, pauses included) | the only real variable; see below. The silence skipper closes the stream after 8 s without voice: about 11% of recorded listening time, plus the silent minute before listening stops by itself |
 | Spoken requests and meaning search (JEV via OpenRouter, about $0.000015 each) | cents: 10,000 requests ≈ $0.15 |
 | Payments (Stripe) | nothing unless something is sold (their per-sale fee) |
 

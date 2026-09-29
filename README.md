@@ -77,7 +77,7 @@ Feed it the words your speech recogniser hears (final and in-progress tokens, wi
 
 ## Privacy
 
-Audio goes from the browser directly to Soniox (speech recognition) only while the microphone is on, using a short-lived key. The server never receives or stores audio, writes no request logs, and in hosted mode keeps no transcripts. Listening stops by itself after a minute without recitation.
+Audio goes from the browser directly to Soniox (speech recognition) only while the microphone is on, using a short-lived key. The server never receives or stores audio, writes no request logs, and in hosted mode keeps no transcripts. During a long pause (8 s without voice) nothing is sent: the stream to Soniox closes, and a new one opens the moment you recite again (the microphone stays on locally in between). Listening stops by itself after a minute without recitation, or three minutes during such a pause.
 
 ## Attribution
 

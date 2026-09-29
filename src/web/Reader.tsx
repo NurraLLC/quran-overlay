@@ -301,7 +301,9 @@ export function Reader() {
     ? capture.state === 'error'
       ? capture.detail
       : (capture.detail ?? 'Tap the microphone and recite, or ask in English.')
-    : snap.held
+    : capture.state === 'dozing'
+      ? 'Waiting for you to recite… nothing is sent while you are quiet.'
+      : snap.held
       ? 'Paused. The page stays here.'
       : snap.phase === 'tracking'
         ? `Following · ${cur?.key ?? ''}`
@@ -366,7 +368,7 @@ export function Reader() {
             </div>
             <details className="r-privacy">
               <summary>How your voice is used</summary>
-              <p>While the microphone is on, your voice goes to our speech-recognition provider (Soniox) and nowhere else. We do not record or keep your audio, and listening stops by itself after a minute without recitation. Reading and search never use the microphone.</p>
+              <p>While the microphone is on, your voice goes to our speech-recognition provider (Soniox) and nowhere else. We do not record or keep your audio, and nothing is sent during long pauses; listening stops by itself after a while without recitation. Reading and search never use the microphone.</p>
             </details>
             {/* Streamers: the same following, as a broadcast overlay driven from the control page. */}
             <a className="r-stream" href="/control">
