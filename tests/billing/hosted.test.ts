@@ -118,6 +118,12 @@ describe('hosted service', () => {
     ws.close();
   });
 
+  it('limits key requests per visitor, not for the whole service', async () => {
+    const statuses: number[] = [];
+    for (let i = 0; i < 11; i++) statuses.push((await key((await visit()).cookie)).status);
+    expect(statuses).not.toContain(429);
+  });
+
   it('keeps visitors apart: one visitor cannot see or drive another\'s session', async () => {
     const a = await visit();
     const b = await visit();

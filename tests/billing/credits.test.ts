@@ -82,6 +82,17 @@ describe('credit pools and caps', () => {
     expect(store.reserve('d', 'shared-ip', T0 + 500 * S)).toMatchObject({ maxSeconds: 120 });
   });
 
+  it("counts other visitors' open streams against the network cap (no parallel streams past it)", () => {
+    make({ ipDailyFreeSeconds: 400 });
+    expect(store.reserve('a', 'shared', T0)).toMatchObject({ maxSeconds: 300 });
+    // b on the same network may only use what a's open stream leaves.
+    expect(store.reserve('b', 'shared', T0 + S)).toMatchObject({ maxSeconds: 100 });
+    expect(store.reserve('c', 'shared', T0 + 2 * S)).toMatchObject({ error: 'no_credits', balance: { limitedBy: 'network' } });
+    // Once a stops early, the unused reservation returns to the network.
+    store.settle('a', T0 + 60 * S);
+    expect(store.balance('c', 'shared', T0 + 61 * S).free).toBe(400 - 60 - 100);
+  });
+
   it('stops free time for everyone at the service ceiling, and renews each month', () => {
     make({ globalDailyFreeSeconds: 200 });
     store.reserve('a', 'ip1', T0);

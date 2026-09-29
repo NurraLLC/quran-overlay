@@ -97,6 +97,21 @@ class RateLimit {
   }
 }
 
+/** One limit per key (visitor or network) instead of one for the whole server. */
+class KeyedRateLimit {
+  private readonly limits = new Map<string, RateLimit>();
+  constructor(
+    private readonly max: number,
+    private readonly windowMs: number,
+  ) {}
+  take(key: string, now = Date.now()) {
+    if (this.limits.size > 50_000) this.limits.clear(); // bounded memory; a reset only relaxes limits
+    let l = this.limits.get(key);
+    if (!l) this.limits.set(key, (l = new RateLimit(this.max, this.windowMs)));
+    return l.take(now);
+  }
+}
+
 export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; ownerToken: string }> {
   if (!o.session && !o.hosted) throw new Error('buildApp needs a session (local mode) or hosted options');
   const local = o.session as Session;
@@ -112,7 +127,12 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   const hosted = o.hosted ?? null;
   const secureCookie = !!hosted?.publicOrigin?.startsWith('https:');
   const visitorCookie = (value: string) => `${VISITOR_COOKIE}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000${secureCookie ? '; Secure' : ''}`;
+  // Local: one owner. Hosted: per visitor, so one busy minute for others never refuses anyone's mic.
   const keyLimit = new RateLimit(10, 60_000);
+  const visitorKeyLimit = new KeyedRateLimit(10, 60_000);
+  // New anonymous identities per network: stops a script from flooding the server with sessions.
+  const identityLimit = new KeyedRateLimit(30, 60 * 60_000);
+  const checkoutLimit = new KeyedRateLimit(10, 10 * 60_000);
   const exchangeLimit = new RateLimit(20, 60_000);
 
   // Request logging stays off: URLs could carry capabilities in misconfigured clients.
@@ -191,6 +211,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     let id = visitor(req);
     let cookieValue = readCookie(req, VISITOR_COOKIE);
     if (!id) {
+      if (!identityLimit.take(clientIp(req))) return reply.code(429).send({ error: 'Too many new visitors from this network. Please try again later.' });
       const v = hosted.identity.issue();
       id = v.id;
       cookieValue = v.cookie;
@@ -225,6 +246,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     if (!originOk(req)) return reply.code(403).send({ error: 'origin' });
     const id = visitor(req);
     if (!id) return reply.code(401).send({ error: 'visitor' });
+    if (!checkoutLimit.take(id)) return reply.code(429).send({ error: 'Please wait a moment before trying again.' });
     const pack = hosted.billing.pack(String((req.body as { pack?: unknown } | undefined)?.pack ?? ''));
     if (!pack) return reply.code(400).send({ error: 'unknown pack' });
     try {
@@ -259,7 +281,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
 
   app.post('/api/soniox/temporary-key', async (req, reply) => {
     if (!requireOwner(req, reply)) return;
-    if (!keyLimit.take()) return reply.code(429).send({ error: 'RATE_LIMITED' });
+    if (hosted ? !visitorKeyLimit.take(visitor(req)!) : !keyLimit.take()) return reply.code(429).send({ error: 'RATE_LIMITED' });
     if (!hosted) {
       try {
         const key = await mintTemporaryKey(o.sonioxApiKey, `quran-overlay:${local.sessionEpoch}`, o.fetchImpl);

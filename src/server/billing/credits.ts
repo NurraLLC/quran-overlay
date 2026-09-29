@@ -115,9 +115,13 @@ export class CreditStore {
     const usedMonth = this.num('SELECT SUM(free_seconds) AS n FROM holds WHERE user_id = ? AND month = ?', userId, month);
     const usedIpDay = this.num('SELECT SUM(free_seconds) AS n FROM holds WHERE ip = ? AND day = ?', ip, day);
     const usedDay = this.num('SELECT SUM(free_seconds) AS n FROM holds WHERE day = ?', day);
+    // Streams other visitors have open count against the shared caps now, not only once settled:
+    // otherwise several cookies on one network could run parallel streams past the daily cap.
+    const openIpOthers = this.num('SELECT SUM(max_seconds) AS n FROM holds WHERE settled_at IS NULL AND ip = ? AND user_id != ?', ip, userId);
+    const openOthers = this.num('SELECT SUM(max_seconds) AS n FROM holds WHERE settled_at IS NULL AND user_id != ?', userId);
     const byMonth = Math.max(0, this.cfg.freeSecondsPerMonth - usedMonth);
-    const byIp = Math.max(0, this.cfg.ipDailyFreeSeconds - usedIpDay);
-    const byService = Math.max(0, this.cfg.globalDailyFreeSeconds - usedDay);
+    const byIp = Math.max(0, this.cfg.ipDailyFreeSeconds - usedIpDay - openIpOthers);
+    const byService = Math.max(0, this.cfg.globalDailyFreeSeconds - usedDay - openOthers);
     const free = Math.min(byMonth, byIp, byService);
     const limitedBy = free > 0 ? null : byMonth === 0 ? 'month' : byIp === 0 ? 'network' : 'service';
     const paid = this.num('SELECT paid_seconds AS n FROM users WHERE id = ?', userId);
