@@ -72,3 +72,21 @@ export async function exchangeOwner(): Promise<void> {
     credentials: 'same-origin',
   }).catch(() => undefined);
 }
+
+export type Access = { mode: 'local' | 'hosted'; owner: boolean; credits?: import('../shared/contracts').CreditView };
+
+/** Local: trade the owner link for the cookie. Hosted: get (or be issued) this visitor's identity. */
+export async function access(): Promise<Access> {
+  await exchangeOwner();
+  const r = await fetch('/api/me', { credentials: 'same-origin' });
+  return (await r.json()) as Access;
+}
+
+/** "9 h 41 min", "12 min", "under a minute". */
+export function formatListening(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return 'under a minute';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h ? `${h} h${m ? ` ${m} min` : ''}` : `${m} min`;
+}

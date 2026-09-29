@@ -2,9 +2,9 @@
 // (mirrored in the preview) reaches the audience.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, SearchCard } from '../shared/contracts';
+import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView, SearchCard } from '../shared/contracts';
 import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
-import { connect, exchangeOwner } from './net';
+import { access, connect, formatListening } from './net';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { StageFrame, VerseDisplay, useFontsReady, type LayoutInfo } from './VerseDisplay';
 
@@ -54,6 +54,8 @@ export function Control() {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [result, setResult] = useState<{ id: string; r: CommandResult } | null>(null);
   const [copied, setCopied] = useState(false);
+  /** Listening time left (hosted service only). */
+  const [credits, setCredits] = useState<CreditView | null>(null);
   const fontsReady = useFontsReady();
   const sock = useRef<ReturnType<typeof connect> | null>(null);
   const lastRequest = useRef<string | null>(null);
@@ -102,12 +104,11 @@ export function Control() {
   useEffect(() => {
     document.documentElement.dataset.surface = 'control';
     let cancelled = false;
-    exchangeOwner()
-      .then(() => fetch('/api/owner/status', { credentials: 'same-origin' }))
-      .then((r) => r.json())
-      .then((s: { owner: boolean }) => {
+    access()
+      .then((s) => {
         if (cancelled) return;
         if (!s.owner) return setAuth('unauthorized');
+        if (s.credits) setCredits(s.credits);
         setAuth('owner');
         fetch('/api/chapters', { credentials: 'same-origin' })
           .then((r) => r.json())
@@ -121,7 +122,8 @@ export function Control() {
           shouldRetry: (code) => code !== 4401,
           onMessage: (data) => {
             const m = data as ControlServerMessage;
-            if (m.type === 'snapshot') {
+            if (m.type === 'credits') setCredits(m.credits);
+            else if (m.type === 'snapshot') {
               setSnap(m.snapshot);
               measureSpeed(m.snapshot.speed);
             }
@@ -297,6 +299,7 @@ export function Control() {
             onStop={() => cap.stop()}
             chapters={chapters}
             send={send}
+            credits={credits}
             query={query}
             setQuery={setQuery}
             pending={!!pendingId}
@@ -386,6 +389,7 @@ function VoiceCard(p: {
   onStop: () => void;
   chapters: ChapterRow[];
   send: (m: ControlClientMessage) => boolean;
+  credits: CreditView | null;
   query: string;
   setQuery: (q: string) => void;
   pending: boolean;
@@ -436,6 +440,12 @@ function VoiceCard(p: {
               : (p.capture.detail ?? 'One microphone for both: recite to follow, or speak an English request. Audio goes to Soniox only while listening, and listening stops by itself after a minute without recitation.')}
       </p>
 
+      {p.credits && (
+        <p className={`credits-line${p.credits.available < 600 ? ' low' : ''}`}>
+          {p.credits.available > 0 ? `${formatListening(p.credits.available)} of listening left` : 'No listening time left'}
+          {p.credits.paid === 0 && p.credits.limitedBy === null ? ' this month' : ''}
+        </p>
+      )}
       <form
         className="find"
         onSubmit={(e) => {

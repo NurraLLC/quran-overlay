@@ -569,6 +569,31 @@ export class Session {
 
   // ---------- connection lifecycle ----------
 
+  /** Open control pages (reader or control). */
+  get controlCount() {
+    return this.controlClients;
+  }
+
+  /** A microphone stream is (or may be) running for this session. */
+  get listening() {
+    return ['starting', 'recording', 'reconnecting'].includes(this.capture.phase);
+  }
+
+  /** Release timers and listeners; the session is not used again (hosted mode evicts idle ones). */
+  dispose() {
+    this.listeningCommands.cancel(true);
+    this.latestCommand?.ctrl.abort();
+    this.follower.stop();
+    this.cancelDisconnect();
+    if (this.pageTimer !== null) this.clock.clearTimeout(this.pageTimer);
+    this.pageTimer = null;
+    if (this.snapshotTimer !== null) this.clock.clearTimeout(this.snapshotTimer);
+    this.snapshotTimer = null;
+    this.displayListeners.clear();
+    this.controlListeners.clear();
+    this.revokeListeners.clear();
+  }
+
   controlConnected() {
     this.controlClients++;
     this.queueSnapshot();
@@ -657,6 +682,11 @@ export class Session {
       } else this.say(`No single passage clearly matched “${text}”. Pick one of the matches to show it.`);
     }
     this.emitControl({ type: 'command_result', requestId, result });
+  }
+
+  /** Push a message to this session's open control pages (e.g. a credit balance update). */
+  notify(m: ControlServerMessage) {
+    this.emitControl(m);
   }
 
   private emitControl(m: ControlServerMessage) {

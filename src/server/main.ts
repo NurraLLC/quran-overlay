@@ -1,8 +1,11 @@
 // npm start — loopback server on 127.0.0.1:4317 (or PORT). Prints the owner link.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { CreditStore, DEFAULT_CREDITS } from './billing/credits';
+import { SessionHub } from './billing/hub';
+import { VisitorIdentity } from './billing/identity';
 import net from 'node:net';
 import path from 'node:path';
-import { buildApp } from './app';
+import { buildApp, type HostedOptions } from './app';
 import { CommandResolver } from './commands/reducer';
 import { Corpus, loadCorpus } from './corpus/load';
 import { ROOT } from './corpus/manifest';
@@ -47,6 +50,29 @@ function decisionSetup(): { client: DecisionClient | null; provider: JevGateway 
   }
 }
 
+/**
+ * Hosted service: one session per visitor and metered listening. Free allowances are hours, from the
+ * environment (defaults: 10 h per visitor per month, 2 h per network per day, 200 h per day overall).
+ */
+function hostedSetup(create: () => Session): HostedOptions {
+  const hours = (name: string, fallback: number) => Math.round((Number(process.env[name]) || fallback) * 3600);
+  const stateDir = process.env.QO_STATE_DIR || path.join(ROOT, 'data', 'state');
+  mkdirSync(stateDir, { recursive: true });
+  const credits = new CreditStore(path.join(stateDir, 'credits.db'), {
+    ...DEFAULT_CREDITS,
+    freeSecondsPerMonth: hours('QO_FREE_HOURS_PER_MONTH', 10),
+    ipDailyFreeSeconds: hours('QO_FREE_HOURS_PER_NETWORK_DAY', 2),
+    globalDailyFreeSeconds: hours('QO_FREE_HOURS_PER_SERVICE_DAY', 200),
+  });
+  return {
+    hub: new SessionHub(create),
+    credits,
+    identity: VisitorIdentity.fromFile(path.join(stateDir, 'identity.key'), process.env.QO_SECRET),
+    publicOrigin: process.env.QO_PUBLIC_ORIGIN || undefined,
+    trustProxy: process.env.QO_TRUST_PROXY === '1',
+  };
+}
+
 async function main() {
   loadEnvFile();
   // `--capture` is equivalent to QO_DIAGNOSTIC_CAPTURE=1 (for launchers that cannot set env vars).
@@ -71,7 +97,8 @@ async function main() {
   const devOrigins = process.env.QO_DEV === '1' ? ['http://127.0.0.1:5173', 'http://localhost:5173'] : [];
   const publicOrigin = process.env.QO_DEV === '1' ? 'http://127.0.0.1:5173' : `http://127.0.0.1:${port}`;
 
-  const session = new Session({
+  const hostedMode = process.env.QO_HOSTED === '1';
+  const sessionOptions = (hosted: boolean): ConstructorParameters<typeof Session>[0] => ({
     corpus,
     ix,
     resolver,
@@ -85,20 +112,29 @@ async function main() {
         return s.state === 'ready' ? `ready (${s.model}, warm-up ${s.warmupMs} ms)` : s.state === 'loading' ? 'loading' : `${s.state}: ${'reason' in s ? s.reason : ''}`;
       },
     },
-    overlayUrl: (view) => `${publicOrigin}/overlay#view=${view}`,
-    captureDir: process.env.QO_DIAGNOSTIC_CAPTURE === '1' ? path.join(ROOT, 'data', 'captures') : null,
+    overlayUrl: (view) => `${hosted && process.env.QO_PUBLIC_ORIGIN ? process.env.QO_PUBLIC_ORIGIN : publicOrigin}/overlay#view=${view}`,
+    // Diagnostic transcripts are never written for visitors of the hosted service.
+    captureDir: !hosted && process.env.QO_DIAGNOSTIC_CAPTURE === '1' ? path.join(ROOT, 'data', 'captures') : null,
     catalog,
-    glosses: WordGlosses.load(),
+    glosses,
   });
+  const glosses = WordGlosses.load();
+  const session = hostedMode ? undefined : new Session(sessionOptions(false));
+  const hosted = hostedMode ? hostedSetup(() => new Session(sessionOptions(true))) : undefined;
   // QO_OWNER_TOKEN exists only so automated browser tests can open the control page; normal runs
   // generate a fresh random capability each start.
-  const { app, ownerToken } = await buildApp({ session, port, sonioxApiKey: process.env.SONIOX_API_KEY, devOrigins, ownerToken: process.env.QO_OWNER_TOKEN || undefined });
+  const { app, ownerToken } = await buildApp({ session, hosted, port, sonioxApiKey: process.env.SONIOX_API_KEY, devOrigins, ownerToken: process.env.QO_OWNER_TOKEN || undefined });
   await app.listen({ host: '127.0.0.1', port });
   const ms = Math.round(performance.now() - t0);
   console.log(`Quran Overlay ready in ${ms} ms — corpus ${corpus.id}: ${corpus.verses.length} ayahs / ${corpus.data.chapters.length} surahs`);
   if (process.env.QO_DIAGNOSTIC_CAPTURE === '1') console.log('Diagnostic capture ON: recognized text tokens are written to data/captures/*.jsonl (no audio).');
   console.log(`Tracker mode: ${mode}. Soniox: ${process.env.SONIOX_API_KEY ? 'configured' : 'NOT configured (set SONIOX_API_KEY)'}. ${jev.detail}`);
-  console.log(`\nOpen the control page (keep this link private):\n  ${publicOrigin}/control#owner=${ownerToken}\n`);
+  if (hosted) {
+    const c = hosted.credits.cfg;
+    const h = (sec: number) => `${+(sec / 3600).toFixed(2)} h`;
+    console.log(`\nHosted mode: every visitor gets their own session and ${h(c.freeSecondsPerMonth)} of free listening per month (${h(c.ipDailyFreeSeconds)} per network per day, ${h(c.globalDailyFreeSeconds)} per day overall).`);
+    console.log(`Open: ${process.env.QO_PUBLIC_ORIGIN || publicOrigin}/\n`);
+  } else console.log(`\nOpen the control page (keep this link private):\n  ${publicOrigin}/control#owner=${ownerToken}\n`);
 }
 
 main().catch((e) => {

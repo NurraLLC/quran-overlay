@@ -14,7 +14,7 @@ export class SonioxKeyError extends Error {
   }
 }
 
-export async function mintTemporaryKey(apiKey: string | undefined, clientReference: string, fetchImpl: typeof fetch = fetch): Promise<TemporaryKey> {
+export async function mintTemporaryKey(apiKey: string | undefined, clientReference: string, fetchImpl: typeof fetch = fetch, maxSessionSeconds = STREAM_CAP_SECONDS): Promise<TemporaryKey> {
   if (!apiKey) throw new SonioxKeyError('NOT_CONFIGURED');
   let res: Response;
   try {
@@ -25,7 +25,8 @@ export async function mintTemporaryKey(apiKey: string | undefined, clientReferen
         usage_type: 'transcribe_websocket',
         expires_in_seconds: 60,
         single_use: true,
-        max_session_duration_seconds: STREAM_CAP_SECONDS,
+        // The provider drops the stream at this length: in hosted mode it is the visitor's balance.
+        max_session_duration_seconds: Math.max(1, Math.min(STREAM_CAP_SECONDS, Math.floor(maxSessionSeconds))),
         client_reference_id: clientReference.slice(0, 256),
       }),
       redirect: 'manual',

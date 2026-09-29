@@ -186,6 +186,21 @@ export type CommandResult =
   /** A display/following setting requested by voice or typing. */
   | { kind: 'control'; label: string; style: StylePatch | null; hold: boolean | null; blank: boolean | null };
 
+/** Listening time left (hosted service only; a self-hosted server has no credits). */
+export type CreditView = {
+  /** Seconds a new stream may use now. */
+  available: number;
+  free: number;
+  paid: number;
+  freeUsedThisMonth: number;
+  freePerMonth: number;
+  limitedBy: 'month' | 'network' | 'service' | null;
+  /** When the monthly free allowance renews (ms since epoch). */
+  renewsAt: number;
+  /** Seconds used by the stream in progress, if listening. */
+  listeningSeconds: number;
+};
+
 export type CapturePhase = 'off' | 'starting' | 'recording' | 'reconnecting' | 'stopped' | 'error' | 'disconnected';
 export type TrackerPhase = 'idle' | 'listening_unlocated' | 'tracking' | 'uncertain' | 'held' | 'stopped' | 'disconnected' | 'error';
 
@@ -249,4 +264,5 @@ export type ControlSnapshot = {
 export type ControlServerMessage =
   | { type: 'snapshot'; snapshot: ControlSnapshot }
   | { type: 'command_pending'; requestId: string }
-  | { type: 'command_result'; requestId: string; result: CommandResult };
+  | { type: 'command_result'; requestId: string; result: CommandResult }
+  | { type: 'credits'; credits: CreditView };

@@ -361,3 +361,6 @@ html[data-surface='reader'] body { background: var(--ink-0); color: var(--text);
 .r-close { position: absolute; top: 6px; right: 6px; width: 32px; height: 32px; padding: 0; border-radius: 50%; font-size: 20px; line-height: 1; }
 @media (prefers-reduced-motion: reduce) { .r-mic.live { animation: none; } .r-ayah, .r-word { transition: none; } }
 .r-more { margin-left: 4px; padding: 4px 10px; border-radius: 999px; font-size: 13px; }
+.r-credits { font-size: 12.5px; color: var(--muted); }
+.r-credits.low, .credits-line.low { color: var(--held); }
+.credits-line { margin: 10px 0 0; font-size: 13px; color: var(--muted); }

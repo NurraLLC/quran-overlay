@@ -4,9 +4,9 @@
 // the control page's session, so a stream overlay, if open, follows along too.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot } from '../shared/contracts';
+import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView } from '../shared/contracts';
 import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
-import { connect, exchangeOwner } from './net';
+import { access, connect, formatListening } from './net';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { arabicNumber } from './VerseDisplay';
 
@@ -53,6 +53,8 @@ export function Reader() {
   const [result, setResult] = useState<{ id: string; r: CommandResult } | null>(null);
   const [follow, setFollow] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
+  /** Listening time left (hosted service only). */
+  const [credits, setCredits] = useState<CreditView | null>(null);
   const sock = useRef<ReturnType<typeof connect> | null>(null);
   const lastRequest = useRef<string | null>(null);
   const send = useCallback((m: ControlClientMessage) => sock.current?.send(m) ?? false, []);
@@ -63,12 +65,11 @@ export function Reader() {
   useEffect(() => {
     document.documentElement.dataset.surface = 'reader';
     let cancelled = false;
-    exchangeOwner()
-      .then(() => fetch('/api/owner/status', { credentials: 'same-origin' }))
-      .then((r) => r.json())
-      .then((s: { owner: boolean }) => {
+    access()
+      .then((s) => {
         if (cancelled) return;
         if (!s.owner) return setAuth('unauthorized');
+        if (s.credits) setCredits(s.credits);
         setAuth('owner');
         sock.current = connect('/ws/control', {
           onStatus: (_st, code) => code === 4401 && setAuth('unauthorized'),
@@ -76,6 +77,7 @@ export function Reader() {
           onMessage: (data) => {
             const m = data as ControlServerMessage;
             if (m.type === 'snapshot') setSnap(m.snapshot);
+            else if (m.type === 'credits') setCredits(m.credits);
             else if (m.type === 'command_pending') {
               if (m.requestId.startsWith('listen:')) lastRequest.current = m.requestId;
               if (m.requestId === lastRequest.current) {
@@ -335,6 +337,12 @@ export function Reader() {
               <span className="r-heard" lang="ar" dir="auto">{heard}</span>
             ) : (
               <span>{status}</span>
+            )}
+            {credits && (
+              <span className={`r-credits${credits.available < 600 ? ' low' : ''}`}>
+                {credits.available > 0 ? `${formatListening(credits.available)} of listening left` : 'No listening time left'}
+                {credits.paid === 0 && credits.limitedBy === null ? ' this month' : ''}
+              </span>
             )}
             {snap.held && (
               <button className="r-resume" onClick={() => send({ type: 'hold', on: false })}>

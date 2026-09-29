@@ -126,6 +126,8 @@ export class SonioxCapture {
   /** The newest recognised words are English (Latin script). */
   private latinTail = false;
   private lastResetAt = 0;
+  /** Set when the server refused a key for lack of listening time (a clean stop, not a failure). */
+  private noCredits: string | null = null;
   private resetting = false;
   private deviceId: string | null = null;
   private commandOnly = false;
@@ -164,7 +166,17 @@ export class SonioxCapture {
       config: async () => {
         const res = await fetch('/api/soniox/temporary-key', { method: 'POST', credentials: 'same-origin' });
         if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          const body = (await res.json().catch(() => ({}))) as { error?: string; limitedBy?: string | null; renewsAt?: number };
+          if (body.error === 'NO_CREDITS') {
+            const renews = body.renewsAt ? new Date(body.renewsAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', timeZone: 'UTC' }) : 'next month';
+            this.noCredits =
+              body.limitedBy === 'network'
+                ? "Today's free listening on this network is used up. It comes back tomorrow."
+                : body.limitedBy === 'service'
+                  ? "Today's free listening for everyone is used up. It comes back tomorrow."
+                  : `This month's free listening is used up. It renews on ${renews}.`;
+            throw new Error(this.noCredits);
+          }
           throw new Error(body.error === 'NOT_CONFIGURED' ? 'Soniox is not set up: add SONIOX_API_KEY to .env and restart the server.' : `Could not get a Soniox key (${body.error ?? res.status}).`);
         }
         const { api_key } = (await res.json()) as { api_key: string };
@@ -253,6 +265,22 @@ export class SonioxCapture {
     rec.on('source_unmuted', () => !this.commandOnly && this.send({ type: 'capture', captureEpoch: this.epoch, event: 'unmuted' }));
     rec.on('error', (e) => {
       if (this.recording !== rec || this.stopping) return;
+      // Out of listening time: stop cleanly (the page keeps its place) and say why.
+      if (this.noCredits) {
+        const detail = this.noCredits;
+        this.noCredits = null;
+        this.stop();
+        this.setStatus({ state: 'off', detail });
+        return;
+      }
+      // Each provider key has a maximum length (hosted: at most the time left, and 20 min per key).
+      // Reaching it is not a failure: continue on a fresh key, which the server grants only if time
+      // remains.
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!this.commandOnly && /session duration limit/i.test(msg) && performance.now() - this.startedAt > 10_000) {
+        void this.restart();
+        return;
+      }
       const detail = describeError(e);
       this.teardown();
       this.setStatus({ state: 'error', detail });
