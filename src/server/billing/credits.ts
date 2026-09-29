@@ -9,9 +9,11 @@
 // maximum has passed. Overlapping holds (a reconnect while the old stream winds down) are charged
 // once, as the union of their intervals.
 //
-// Pools: a monthly free allowance is used first, then purchased time. Free time is further capped
-// per network per day (clearing cookies does not mint new free time) and per service per day (the
-// owner's spending ceiling). Purchased time is not subject to those caps.
+// Pools: a monthly free allowance is used first, then purchased time, then sponsored time. Free
+// time is further capped per network per day (clearing cookies does not mint new free time) and per
+// service per day (the owner's spending ceiling). Purchased time is not subject to those caps.
+// Sponsored time is one shared pool that donations fill ("sponsor listening for others"); anyone
+// whose own time has run out draws from it, up to a daily amount each, so no one can drain it.
 
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
@@ -27,6 +29,8 @@ export type CreditConfig = {
   holdMaxSeconds: number;
   /** A key shorter than this is not worth minting. */
   holdMinSeconds: number;
+  /** Sponsored time one visitor may use per UTC day (default one hour). */
+  poolDailySecondsPerVisitor?: number;
 };
 
 export const DEFAULT_CREDITS: CreditConfig = {
@@ -35,6 +39,7 @@ export const DEFAULT_CREDITS: CreditConfig = {
   globalDailyFreeSeconds: 200 * 3600,
   holdMaxSeconds: 20 * 60,
   holdMinSeconds: 20,
+  poolDailySecondsPerVisitor: 3600,
 };
 
 export type Balance = {
@@ -42,6 +47,10 @@ export type Balance = {
   free: number;
   /** Purchased seconds. */
   paid: number;
+  /** Sponsored seconds this visitor may still use today (after their own time). */
+  sponsored: number;
+  /** Seconds left in the shared sponsored pool. */
+  pool: number;
   /** Seconds reserved by open streams. */
   reserved: number;
   /** What a new stream may use. */
@@ -87,7 +96,44 @@ export class CreditStore {
       CREATE INDEX IF NOT EXISTS holds_ip_day ON holds (ip, day);
       CREATE INDEX IF NOT EXISTS holds_day ON holds (day);
       CREATE TABLE IF NOT EXISTS grants (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, seconds INTEGER NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS pool (id INTEGER PRIMARY KEY CHECK (id = 1), seconds INTEGER NOT NULL);
+      INSERT OR IGNORE INTO pool (id, seconds) VALUES (1, 0);
+      CREATE TABLE IF NOT EXISTS pool_gifts (id TEXT PRIMARY KEY, seconds INTEGER NOT NULL, amount_cents INTEGER, currency TEXT, at INTEGER NOT NULL);
     `);
+    // Ledgers from before sponsored time gain the column (existing rows drew nothing from the pool).
+    const cols = this.db.prepare('PRAGMA table_info(holds)').all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === 'pool_seconds')) this.db.exec('ALTER TABLE holds ADD COLUMN pool_seconds INTEGER');
+  }
+
+  private get poolPerVisitorDay() {
+    return this.cfg.poolDailySecondsPerVisitor ?? 3600;
+  }
+
+  /** Seconds left in the shared sponsored pool. */
+  poolSeconds(): number {
+    return this.num('SELECT seconds AS n FROM pool WHERE id = 1');
+  }
+
+  /**
+   * Sponsored time added to the shared pool (a donation, or the owner). With an `id` (the payment's
+   * id) a repeated delivery adds nothing; returns whether time was added.
+   */
+  grantPool(seconds: number, id: string, amountCents: number | null = null, currency: string | null = null, now = Date.now()): boolean {
+    this.db.exec('BEGIN');
+    try {
+      const added = this.db.prepare('INSERT OR IGNORE INTO pool_gifts (id, seconds, amount_cents, currency, at) VALUES (?, ?, ?, ?, ?)').run(id, Math.round(seconds), amountCents, currency, now).changes > 0;
+      if (added) this.db.prepare('UPDATE pool SET seconds = seconds + ? WHERE id = 1').run(Math.round(seconds));
+      this.db.exec('COMMIT');
+      return added;
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+
+  private sponsoredFor(userId: string, day: string): number {
+    const usedToday = this.num('SELECT SUM(pool_seconds) AS n FROM holds WHERE user_id = ? AND day = ?', userId, day);
+    return Math.max(0, Math.min(this.poolSeconds(), this.poolPerVisitorDay - usedToday));
   }
 
   close() {
@@ -125,12 +171,15 @@ export class CreditStore {
     const free = Math.min(byMonth, byIp, byService);
     const limitedBy = free > 0 ? null : byMonth === 0 ? 'month' : byIp === 0 ? 'network' : 'service';
     const paid = this.num('SELECT paid_seconds AS n FROM users WHERE id = ?', userId);
+    const sponsored = this.sponsoredFor(userId, day);
     const reserved = this.openHolds(userId).reduce((n, h) => n + h.max_seconds, 0);
     return {
       free,
       paid,
+      sponsored,
+      pool: this.poolSeconds(),
       reserved,
-      available: Math.max(0, free + paid - reserved),
+      available: Math.max(0, free + paid + sponsored - reserved),
       freeUsedThisMonth: usedMonth,
       freePerMonth: this.cfg.freeSecondsPerMonth,
       limitedBy,
@@ -210,16 +259,19 @@ export class CreditStore {
     const paidOwed = used - free;
     const paidHave = this.num('SELECT paid_seconds AS n FROM users WHERE id = ?', userId);
     const paid = Math.min(paidOwed, paidHave);
+    // Then sponsored time (never below zero: a rare overlap of visitors drawing at once is absorbed).
+    const pooled = Math.min(paidOwed - paid, this.sponsoredFor(userId, day));
     this.db.exec('BEGIN');
     try {
-      const upd = this.db.prepare('UPDATE holds SET settled_at = ?, free_seconds = ?, paid_seconds = ?, day = ?, month = ? WHERE id = ?');
+      const upd = this.db.prepare('UPDATE holds SET settled_at = ?, free_seconds = ?, paid_seconds = ?, pool_seconds = ?, day = ?, month = ? WHERE id = ?');
       // The whole charge is recorded on the first hold; the rest settle at zero (union already counted).
       let first = true;
       for (const id of settledIds) {
-        upd.run(now, first ? free : 0, first ? paid : 0, day, month, id);
+        upd.run(now, first ? free : 0, first ? paid : 0, first ? pooled : 0, day, month, id);
         first = false;
       }
       if (paid) this.db.prepare('UPDATE users SET paid_seconds = paid_seconds - ? WHERE id = ?').run(paid, userId);
+      if (pooled) this.db.prepare('UPDATE pool SET seconds = MAX(0, seconds - ?) WHERE id = 1').run(pooled);
       this.db.exec('COMMIT');
     } catch (e) {
       this.db.exec('ROLLBACK');

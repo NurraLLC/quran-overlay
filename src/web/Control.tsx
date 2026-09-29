@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView, SearchCard } from '../shared/contracts';
 import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
 import { access, connect, formatListening } from './net';
+import { NurraBadge } from './Nurra';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { StageFrame, VerseDisplay, useFontsReady, type LayoutInfo } from './VerseDisplay';
 
@@ -590,6 +591,9 @@ function OutputCard({ snap, send, copied, onCopy }: { snap: ControlSnapshot; sen
       <button className="link" onClick={() => send({ type: 'rotate_view' })}>Replace overlay link (old links stop working)</button>
       <p className="fine">
         {snap.corpus.verses.toLocaleString()} ayahs · {snap.corpus.chapters} surahs · {snap.corpus.attribution}. Decisions: {snap.setup.jev.detail} Semantic search: {snap.setup.semantic}.
+      </p>
+      <p className="fine control-brand">
+        <NurraBadge /> <a href="/about">How and why</a>
       </p>
     </section>
   );

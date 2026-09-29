@@ -70,7 +70,10 @@ QO_HOSTED=1 QO_HOST=127.0.0.1 npm start
 | `QO_SECRET` | no | Visitor-cookie signing secret (48+ random bytes); otherwise generated into the state volume |
 | `QO_STATE_DIR` | no | Where credits and the secret live (default `data/state`) |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | no | Turn on buying listening time |
-| `QO_PACKS` | no | JSON list of packs, e.g. `[{"id":"h20","hours":20,"amountCents":300,"currency":"usd","label":"20 hours of listening"}]` |
+| `QO_PACKS` | no | JSON list of packs (default $5 for 20 h, $12 for 60 h), e.g. `[{"id":"h20","hours":20,"amountCents":500,"currency":"usd","label":"20 hours of listening"}]` |
+| `QO_SPONSORED_HOURS_PER_VISITOR_DAY` | no | Sponsored listening one visitor may use per day once their own time is gone (default 1) |
+| `QO_DONATIONS` | no | Donation amounts in cents (default `[500,1000,2500]`) |
+| `QO_SPONSOR_CENTS_PER_HOUR` | no | What a donated hour costs (default 13: $0.12 streamed hour plus the payment fee) |
 
 Keep `data/state` on a persistent volume and back it up: it holds the credit ledger and the visitor-signing secret (losing the secret signs every visitor out, and bought time becomes reachable only through their saved recovery codes).
 
@@ -85,6 +88,16 @@ quran.example {
 ```
 
 Set `QO_PUBLIC_ORIGIN=https://quran.example` and `QO_TRUST_PROXY=1`.
+
+## Sponsored listening
+
+Donations ("Sponsor listening for others", in the reader's Listening time sheet and on `/about`) go into one shared pool, converted at cost (`QO_SPONSOR_CENTS_PER_HOUR`, so $10 adds about 76 hours). Anyone whose own free and bought time is used up keeps listening from the pool, up to `QO_SPONSORED_HOURS_PER_VISITOR_DAY` each per day. Donations need Stripe (below). To add hours by hand (a gift received another way, or funding free listening yourself):
+
+```bash
+npm run pool:add -- 50 masjid-gift
+```
+
+In Docker: `docker compose -f deploy/compose.yml --env-file deploy/production.env exec app npx tsx scripts/sponsor-pool.ts 50 masjid-gift`.
 
 ## Payments (optional)
 

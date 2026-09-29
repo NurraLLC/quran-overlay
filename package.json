@@ -28,7 +28,8 @@
     "replay:session": "tsx scripts/replay-session.ts",
     "speedlab": "tsx scripts/speedlab/run.ts",
     "speedlab:audio": "tsx scripts/speedlab/make-audio.ts",
-    "speedlab:hosted": "tsx scripts/speedlab/hosted.ts"
+    "speedlab:hosted": "tsx scripts/speedlab/hosted.ts",
+    "pool:add": "tsx scripts/sponsor-pool.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.5",

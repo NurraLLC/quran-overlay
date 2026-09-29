@@ -102,3 +102,37 @@ describe('credit pools and caps', () => {
     expect(store.balance('a', 'ip1', nextMonth)).toMatchObject({ free: 200, freeUsedThisMonth: 0 });
   });
 });
+
+describe('sponsored pool', () => {
+  it('is used after free and bought time, at most a daily amount per visitor, and never below zero', () => {
+    make({ poolDailySecondsPerVisitor: 200 });
+    expect(store.grantPool(1000, 'gift1')).toBe(true);
+    expect(store.grantPool(1000, 'gift1')).toBe(false); // same payment again
+    store.grant('u1', 100, 'test', T0);
+    expect(store.balance('u1', 'ip1', T0)).toMatchObject({ free: 600, paid: 100, sponsored: 200, pool: 1000, available: 900 });
+    store.reserve('u1', 'ip1', T0);
+    store.settle('u1', T0 + 300 * S); // all free
+    store.reserve('u1', 'ip1', T0 + 400 * S);
+    store.settle('u1', T0 + 700 * S); // 300 free
+    store.reserve('u1', 'ip1', T0 + 800 * S);
+    store.settle('u1', T0 + 1100 * S); // 100 bought, then 200 sponsored
+    expect(store.balance('u1', 'ip1', T0 + 1200 * S)).toMatchObject({ free: 0, paid: 0, sponsored: 0, pool: 800, available: 0 });
+    // Another visitor still has their own daily share of the pool.
+    expect(store.balance('u2', 'ip2', T0 + 1200 * S)).toMatchObject({ sponsored: 200, pool: 800 });
+    // Next day the visitor's share returns.
+    expect(store.balance('u1', 'ip1', T0 + 86_400 * S)).toMatchObject({ sponsored: 200 });
+  });
+
+  it('adds the column to a ledger made before sponsored time', async () => {
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const path = await import('node:path');
+    const { DatabaseSync } = await import('node:sqlite');
+    const file = path.join(mkdtempSync(path.join(tmpdir(), 'qo-ledger-')), 'credits.db');
+    const old = new DatabaseSync(file);
+    old.exec('CREATE TABLE holds (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, ip TEXT NOT NULL, minted_at INTEGER NOT NULL, max_seconds INTEGER NOT NULL, settled_at INTEGER, free_seconds INTEGER, paid_seconds INTEGER, day TEXT, month TEXT)');
+    old.close();
+    store = new CreditStore(file, cfg);
+    expect(store.balance('u1', 'ip1', T0)).toMatchObject({ free: 600, pool: 0 });
+  });
+});

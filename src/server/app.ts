@@ -182,7 +182,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   const creditView = (id: string, ip: string): CreditView => {
     const c = hosted!.credits;
     const b = c.balance(id, ip);
-    return { available: b.available + b.reserved - c.openUsage(id).usedSeconds, free: b.free, paid: b.paid, freeUsedThisMonth: b.freeUsedThisMonth, freePerMonth: b.freePerMonth, freePerDay: c.cfg.ipDailyFreeSeconds, limitedBy: b.limitedBy, renewsAt: b.renewsAt, listeningSeconds: c.openUsage(id).usedSeconds };
+    return { available: b.available + b.reserved - c.openUsage(id).usedSeconds, free: b.free, paid: b.paid, sponsored: b.sponsored, pool: b.pool, freeUsedThisMonth: b.freeUsedThisMonth, freePerMonth: b.freePerMonth, freePerDay: c.cfg.ipDailyFreeSeconds, limitedBy: b.limitedBy, renewsAt: b.renewsAt, listeningSeconds: c.openUsage(id).usedSeconds };
   };
   /** Last known address per visitor (for pushing balances from the periodic sweep). */
   const lastIp = new Map<string, string>();
@@ -224,7 +224,12 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
       credits: creditView(id, clientIp(req)),
       // The visitor's own code to keep their time on another device or after clearing cookies.
       recoveryCode: cookieValue,
-      billing: hosted.billing ? { packs: hosted.billing.packs.map((p) => ({ id: p.id, hours: p.hours, label: p.label, price: formatPrice(p.amountCents, p.currency) })) } : null,
+      billing: hosted.billing
+        ? {
+            packs: hosted.billing.packs.map((p) => ({ id: p.id, hours: p.hours, label: p.label, price: formatPrice(p.amountCents, p.currency) })),
+            donations: hosted.billing.donations.amountsCents.map((c) => ({ amountCents: c, price: formatPrice(c, hosted.billing!.donations.currency), hours: hosted.billing!.sponsoredHours(c) })),
+          }
+        : null,
     };
   });
 
@@ -256,7 +261,23 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     }
   });
 
-  // Stripe's signed notification that a payment succeeded: grant the pack once.
+  // Sponsor listening for others: a Stripe-hosted checkout for a donation to the shared pool.
+  app.post('/api/billing/donate', async (req, reply) => {
+    if (!hosted?.billing) return reply.code(404).send({ error: 'not available' });
+    if (!originOk(req)) return reply.code(403).send({ error: 'origin' });
+    const id = visitor(req);
+    if (!id) return reply.code(401).send({ error: 'visitor' });
+    if (!checkoutLimit.take(id)) return reply.code(429).send({ error: 'Please wait a moment before trying again.' });
+    const amount = Number((req.body as { amountCents?: unknown } | undefined)?.amountCents);
+    if (!hosted.billing.donations.amountsCents.includes(amount)) return reply.code(400).send({ error: 'unknown amount' });
+    try {
+      return { url: await hosted.billing.checkoutDonation(id, amount, hosted.publicOrigin ?? `http://${req.headers.host}`) };
+    } catch {
+      return reply.code(502).send({ error: 'The payment page could not be opened. Please try again.' });
+    }
+  });
+
+  // Stripe's signed notification that a payment succeeded: grant the pack once (or fill the pool).
   app.post('/api/billing/webhook', { bodyLimit: 1_048_576 }, async (req, reply) => {
     if (!hosted?.billing) return reply.code(404).send({ error: 'not available' });
     const raw = (req as FastifyRequest & { rawBody?: string }).rawBody ?? '';
@@ -264,6 +285,8 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     if (!event) return reply.code(400).send({ error: 'signature' });
     const p = hosted.billing.purchase(event);
     if (p && hosted.credits.grant(p.visitorId, p.pack.hours * 3600, `stripe ${p.pack.id}`, Date.now(), `stripe:${p.paymentId}`)) pushCredits(p.visitorId);
+    const g = hosted.billing.gift(event);
+    if (g) hosted.credits.grantPool(g.seconds, `stripe:${g.paymentId}`, g.amountCents, g.currency);
     return { received: true };
   });
 
@@ -453,7 +476,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
         .replace('content="/og.png"', `content="${origin}/og.png"`)
         .replace('<meta property="og:type"', `<meta property="og:url" content="${origin}/" /><meta property="og:type"`);
     };
-    for (const route of ['/control', '/overlay', '/read', '/reader']) app.get(route, (_req, reply) => reply.type('text/html').send(indexHtml()));
+    for (const route of ['/control', '/overlay', '/read', '/reader', '/about']) app.get(route, (_req, reply) => reply.type('text/html').send(indexHtml()));
     app.get('/', (_req, reply) => (hosted ? reply.type('text/html').send(indexHtml()) : reply.redirect('/control')));
   } else {
     app.get('/', (_req, reply) => reply.type('text/plain').send('Frontend not built. Run `npm run build`, or use `npm run dev`.'));

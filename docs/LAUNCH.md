@@ -58,9 +58,11 @@ docker compose -f deploy/compose.yml --env-file deploy/production.env up -d --bu
 | GitHub, CI | $0 (public repository) |
 | Speech recognition (Soniox, $0.12 per hour a stream is open, pauses included) | the only real variable; see below. The silence skipper closes the stream after 8 s without voice: about 11% of recorded listening time, plus the silent minute before listening stops by itself |
 | Spoken requests and meaning search (JEV via OpenRouter, about $0.000015 each) | cents: 10,000 requests ≈ $0.15 |
-| Payments (Stripe) | nothing unless something is sold (their per-sale fee) |
+| Payments (Stripe) | nothing unless something is sold or given (their per-payment fee) |
 
 Listening is the only cost that grows with use, and `QO_FREE_HOURS_PER_SERVICE_DAY` caps it: 25 hours a day (the template's value) is at most about $3 a day, $90 a month, and only if the site is used that much every day. Realistic early use is far below: 50 people listening 2 hours a month each is 100 hours, $12. Reading, search and the overlay cost nothing per use. Expect roughly **$5–20 a month** at launch, with a hard ceiling you choose.
+
+Funding free listening: hour packs ($5 for 20 h leaves about $2.35 after costs) and donations to the shared sponsored pool (at cost: $10 adds about 76 hours anyone can recite from once their own time runs out). The site's `/about` page explains this to visitors, with the Islamic texts on the reward of such giving (only sahih and hasan narrations, linked to sunnah.com).
 
 ## Rules that still apply
 

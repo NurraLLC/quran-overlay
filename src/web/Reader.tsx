@@ -9,6 +9,7 @@ import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
 import { access, connect, formatListening, type Access } from './net';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { arabicNumber } from './VerseDisplay';
+import { NurraBadge } from './Nurra';
 
 type Ayah = { key: string; ayah: number; arabic: string; english: string; glosses: Array<string | null> | null };
 type Surah = { number: number; name: string; nameArabic: string; translation: string; glossCredit: string | null; ayahs: Ayah[] };
@@ -104,9 +105,10 @@ export function Reader() {
   const [credits, setCredits] = useState<CreditView | null>(null);
   const micWrap = useRef<HTMLDivElement>(null);
   const [account, setAccount] = useState<Pick<Access, 'recoveryCode' | 'billing'>>({});
-  const [timeOpen, setTimeOpen] = useState(false);
+  const [timeOpen, setTimeOpen] = useState<false | 'time' | 'sponsor'>(false);
   // Back from Stripe's checkout page.
   const [returned] = useState(() => new URLSearchParams(location.search).get('paid'));
+  const [donated] = useState(() => new URLSearchParams(location.search).has('donated'));
   const sock = useRef<ReturnType<typeof connect> | null>(null);
   const lastRequest = useRef<string | null>(null);
   const send = useCallback((m: ControlClientMessage) => sock.current?.send(m) ?? false, []);
@@ -123,7 +125,7 @@ export function Reader() {
         if (!s.owner) return setAuth('unauthorized');
         if (s.credits) setCredits(s.credits);
         setAccount({ recoveryCode: s.recoveryCode, billing: s.billing });
-        if (new URLSearchParams(location.search).has('paid') || new URLSearchParams(location.search).has('canceled')) history.replaceState(null, '', location.pathname);
+        if (new URLSearchParams(location.search).has('paid') || new URLSearchParams(location.search).has('donated') || new URLSearchParams(location.search).has('canceled')) history.replaceState(null, '', location.pathname);
         setAuth('owner');
         sock.current = connect('/ws/control', {
           onStatus: (_st, code) => code === 4401 && setAuth('unauthorized'),
@@ -376,6 +378,10 @@ export function Reader() {
               <span aria-hidden="true"> →</span>
             </a>
             <SurahIndex onOpen={(n) => goto(`${n}:1`)} />
+            <footer className="r-brand">
+              <NurraBadge />
+              <a href="/about">How and why we do this</a>
+            </footer>
           </section>
         )}
         {cur && !home && !shownSurah && <p className="r-loading">Opening {cur.surahName}…</p>}
@@ -458,6 +464,7 @@ export function Reader() {
       </main>
 
       {returned && credits && <p className="r-toast">Thank you. Your listening time is added as soon as the payment is confirmed.</p>}
+      {donated && credits && <p className="r-toast">Thank you. Your gift joins the sponsored listening as soon as the payment is confirmed. May Allah accept it.</p>}
       {menuOpen && (
         <div className="r-modal" role="dialog" aria-modal="true" aria-label="Menu" onClick={() => setMenuOpen(false)} onKeyDown={(e) => e.key === 'Escape' && setMenuOpen(false)}>
           <nav className="r-time r-menu" onClick={(e) => e.stopPropagation()}>
@@ -469,19 +476,30 @@ export function Reader() {
               All surahs<span>Open any of the 114, by name or number</span>
             </button>
             {credits ? (
-              <button className="r-menu-item" onClick={() => { setMenuOpen(false); setTimeOpen(true); }}>
-                Listening time<span>{credits.available > 0 ? `${formatListening(credits.available)} left` : 'None left right now'} · your account on this device</span>
+              <button className="r-menu-item" onClick={() => { setMenuOpen(false); setTimeOpen('time'); }}>
+                Listening time<span>{credits.available - Math.min(credits.sponsored, credits.available) > 0 ? `${formatListening(credits.available - Math.min(credits.sponsored, credits.available))} left` : credits.sponsored > 0 ? 'Using sponsored time today' : 'None left right now'} · your account on this device</span>
               </button>
             ) : (
               <p className="r-menu-item r-menu-static">Listening time<span>Unlimited: this reader runs on your own computer, with your own key</span></p>
             )}
+            {credits && !!account.billing?.donations?.length && (
+              <button className="r-menu-item" onClick={() => { setMenuOpen(false); setTimeOpen('sponsor'); }}>
+                Sponsor listening for others<span>{credits.pool > 0 ? `${formatListening(credits.pool)} sponsored so far is waiting for whoever needs it` : 'Keep the reader free for people whose time runs out'}</span>
+              </button>
+            )}
             <a className="r-menu-item" href="/control">
               Put it on your stream<span>OBS overlay and stream controls</span>
             </a>
+            <a className="r-menu-item" href="/about">
+              How and why<span>What it costs, where the money goes, and the reward of helping</span>
+            </a>
+            <div className="r-menu-brand">
+              <NurraBadge />
+            </div>
           </nav>
         </div>
       )}
-      {timeOpen && credits && <ListeningTime credits={credits} account={account} onClose={() => setTimeOpen(false)} />}
+      {timeOpen && credits && <ListeningTime credits={credits} account={account} focus={timeOpen} onClose={() => setTimeOpen(false)} />}
 
       {!follow && cur && !home && (
         <button className="r-back" onClick={() => setFollow(true)}>
@@ -568,7 +586,7 @@ export function Reader() {
               <span>{status}</span>
             )}
             {credits && (
-              <button className={`r-credits${credits.available < 600 ? ' low' : ''}`} onClick={() => setTimeOpen(true)}>
+              <button className={`r-credits${credits.available < 600 ? ' low' : ''}`} onClick={() => setTimeOpen('time')}>
                 {credits.available > 0 ? `${formatListening(credits.available)} of listening left` : account.billing ? 'No listening time left · get more' : 'No listening time left'}
                 {credits.available > 0 && credits.paid === 0 && credits.limitedBy === null ? ' this month' : ''}
               </button>
@@ -586,7 +604,14 @@ export function Reader() {
 }
 
 /** Listening time: what is left, buying more (when offered), and keeping it on another device. */
-function ListeningTime({ credits, account, onClose }: { credits: CreditView; account: Pick<Access, 'recoveryCode' | 'billing'>; onClose: () => void }) {
+function ListeningTime({ credits, account, focus, onClose }: { credits: CreditView; account: Pick<Access, 'recoveryCode' | 'billing'>; focus: 'time' | 'sponsor'; onClose: () => void }) {
+  const sponsorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focus === 'sponsor') sponsorRef.current?.scrollIntoView({ block: 'start' });
+  }, [focus]);
+  // The visitor's own time (free and bought) first; sponsored time is shown as what it is.
+  const sponsoredNow = Math.min(credits.sponsored, credits.available);
+  const own = credits.available - sponsoredNow;
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [code, setCode] = useState('');
@@ -602,6 +627,19 @@ function ListeningTime({ credits, account, onClose }: { credits: CreditView; acc
       setNote(body?.error ?? 'The payment page could not be opened. Please try again.');
     }
   };
+  const donate = async (amountCents: number) => {
+    setBusy(`d${amountCents}`);
+    setNote(null);
+    const r = await fetch('/api/billing/donate', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amountCents }) }).catch(() => null);
+    const body = (await r?.json().catch(() => ({}))) as { url?: string; error?: string };
+    if (body?.url) location.href = body.url;
+    else {
+      setBusy(null);
+      setNote(body?.error ?? 'The payment page could not be opened. Please try again.');
+    }
+  };
+  const donations = account.billing?.donations ?? [];
+  const example = donations[Math.min(1, donations.length - 1)];
   const restore = async () => {
     const r = await fetch('/api/me/restore', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code.trim() }) }).catch(() => null);
     if (r?.ok) location.reload();
@@ -612,12 +650,18 @@ function ListeningTime({ credits, account, onClose }: { credits: CreditView; acc
       <section className="r-time" onClick={(e) => e.stopPropagation()}>
         <button className="r-close" onClick={onClose} aria-label="Close">×</button>
         <h2>Listening time</h2>
-        <p className="r-time-big">{credits.available > 0 ? `${formatListening(credits.available)} left` : 'None left right now'}</p>
+        <p className="r-time-big">{own > 0 ? `${formatListening(own)} left` : sponsoredNow > 0 ? `${formatListening(sponsoredNow)} sponsored today` : 'None left right now'}</p>
+        {own > 0 && sponsoredNow > 0 && <p className="r-time-detail">Plus up to {formatListening(sponsoredNow)} a day of listening sponsored by others, once yours runs out.</p>}
         <p className="r-time-detail">
           Free each month: {formatListening(credits.freePerMonth)}{credits.freePerDay < credits.freePerMonth ? ` (up to ${formatListening(credits.freePerDay)} a day)` : ''}. Used so far: {credits.freeUsedThisMonth < 60 ? 'none' : formatListening(credits.freeUsedThisMonth)}. Renews {renews}.
           {credits.paid > 0 ? ` Bought: ${formatListening(credits.paid)}.` : ''}
           {credits.limitedBy === 'network' ? " Today's free time on this network is used up." : credits.limitedBy === 'service' ? " Today's free time for everyone is used up." : ''}
         </p>
+        {credits.free === 0 && credits.paid === 0 && credits.sponsored > 0 ? (
+          <p className="r-time-free">Your own time is used up, so you are listening on time others sponsored: up to {formatListening(credits.sponsored)} more today.</p>
+        ) : credits.pool > 0 ? (
+          <p className="r-time-free">{formatListening(credits.pool)} of listening sponsored by others is waiting for anyone whose time runs out.</p>
+        ) : null}
         <p className="r-time-free">Reading, search and everything about the Quran are free. Only live listening uses time, because speech recognition costs money per minute.</p>
         {account.billing && (
           <div className="r-packs">
@@ -627,6 +671,20 @@ function ListeningTime({ credits, account, onClose }: { credits: CreditView; acc
                 <strong>{busy === p.id ? 'Opening…' : p.price}</strong>
               </button>
             ))}
+          </div>
+        )}
+        {!!donations.length && (
+          <div className="r-sponsor" ref={sponsorRef}>
+            <h3>Sponsor listening for others</h3>
+            <p>Your gift keeps the reader free for people whose own time has run out: it goes into a shared pool anyone can recite from.{example ? ` ${example.price} gives about ${example.hours} hours.` : ''}</p>
+            <div className="r-packs">
+              {donations.map((d) => (
+                <button key={d.amountCents} disabled={!!busy} onClick={() => void donate(d.amountCents)}>
+                  <span>{d.price}</span>
+                  <strong>{busy === `d${d.amountCents}` ? 'Opening…' : `about ${d.hours} h for others`}</strong>
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {account.recoveryCode && (

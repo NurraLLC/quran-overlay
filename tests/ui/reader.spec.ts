@@ -88,3 +88,21 @@ test('reader: menu to home and all surahs; following comes back when recitation 
     await send({ type: 'capture', captureEpoch: epoch, event: 'stopped' });
   }
 });
+
+test('how and why: costs, the reward of helping with sources, and the Nurra mark', async ({ page }) => {
+  await page.goto(`/reader#owner=${OWNER}`);
+  await expect(page.locator('.r-top')).toBeVisible();
+  await page.getByRole('button', { name: /^Menu/ }).click();
+  await page.getByRole('link', { name: /^How and why/ }).click();
+  await expect(page.getByRole('heading', { name: 'How and why' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'The reward of helping' })).toBeVisible();
+  // Every narration links to its source; only sahih and hasan are shown.
+  const refs = page.locator('a.about-ref');
+  await expect(refs).toHaveCount(4);
+  for (const href of await refs.evaluateAll((as) => as.map((a) => (a as HTMLAnchorElement).href))) expect(href).toMatch(/^https:\/\/sunnah\.com\//);
+  await expect(page.locator('a.about-ref', { hasText: /da.?if/i })).toHaveCount(0);
+  // The ayah comes from the app's own text.
+  await expect(page.locator('.about-quran')).toBeVisible();
+  // Nurra: small, present, linking to nurra.org.
+  await expect(page.locator('a.nurra-badge').first()).toHaveAttribute('href', 'https://nurra.org');
+});

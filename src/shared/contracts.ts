@@ -193,6 +193,10 @@ export type CreditView = {
   available: number;
   free: number;
   paid: number;
+  /** Sponsored seconds this visitor may use today once their own time is gone. */
+  sponsored: number;
+  /** Seconds left in the shared sponsored pool (donations). */
+  pool: number;
   freeUsedThisMonth: number;
   freePerMonth: number;
   /** Free listening allowed per day (per network). */

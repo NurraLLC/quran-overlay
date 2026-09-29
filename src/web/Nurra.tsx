@@ -1,0 +1,25 @@
+// The Nurra wordmark (Britannic Bold, outlined to a path so no font file ships), in Nurra's colours:
+// cream on royal blue. Quran Reader is a Nurra project; the mark stays small and links to nurra.org.
+// The Nurra name and logo are Nurra LLC's marks and are not covered by this repository's MIT licence.
+
+const WORDMARK = 'M42.6 0L49.1 0L49.1 66.7L34.3 66.7L6.5 24.5L6.5 66.7L0 66.7L0 0L12.3 0L42.6 45.6L42.6 0M106.2 16.2L106.2 66.7L88.4 66.7L88.4 58.8Q82.2 67.6 72.6 67.6Q59.5 67.6 59.5 54.9L59.5 17.4Q68.5 17 77.3 16.2L77.3 54.4Q77.3 59.4 80.4 59.4Q88.4 59.4 88.4 42.2L88.4 17.4Q97.3 17 106.2 16.2M151.6 35.3L139.4 35.3Q140 32.4 140.5 31.1Q141.2 29.1 141.2 27.4Q141.2 24.3 139 24.3Q137.3 24.3 135.7 28.4Q134.1 32.6 134.1 37.2L134.1 66.7L116.3 66.7L116.3 17.4L119.8 17.5Q125.9 17.5 134.1 16.2L134.1 24.3Q138.5 16.2 144.8 16.2Q153.4 16.2 153.4 25.6Q153.4 28.1 152.5 31.3Q152.2 32.7 151.6 35.3M194.4 35.3L182.2 35.3Q182.8 32.4 183.3 31.1Q184 29.1 184 27.4Q184 24.3 181.7 24.3Q180 24.3 178.5 28.4Q176.9 32.6 176.9 37.2L176.9 66.7L159.1 66.7L159.1 17.4L162.5 17.5Q168.7 17.5 176.9 16.2L176.9 24.3Q181.3 16.2 187.5 16.2Q196.1 16.2 196.1 25.6Q196.1 28.1 195.3 31.3Q195 32.7 194.4 35.3M249.7 60.4L251.4 64.9Q244.9 67.4 238.7 67.4Q229.5 67.4 227.3 61.7Q222.9 67.7 214.6 67.7Q199 67.7 199 53.2Q199 42.2 213.2 37.8Q226.3 33.7 226.3 27.9Q226.3 20.4 218.8 20.4Q210.1 20.4 210.1 27.7Q210.1 30 211.5 33.7L202.6 32Q202.3 29.7 202.3 27.7Q202.3 16 223.7 16Q244 16 244 27L244 56.8Q244 61.4 247 61.4Q247.9 61.4 249.7 60.4M226.2 51.2L226.2 37.1Q224.5 39 222.3 40.2Q216.8 43.5 216.8 51.1Q216.8 60.8 220.6 60.8Q226.2 60.8 226.2 51.2';
+
+export function NurraWordmark({ height = 14 }: { height?: number }) {
+  return (
+    <svg viewBox="0 0 251.4 67.7" height={height} role="img" aria-label="Nurra" style={{ display: 'block' }}>
+      <path fill="currentColor" d={WORDMARK} />
+    </svg>
+  );
+}
+
+/** "A Nurra project": the small brand badge (blue pill, cream wordmark). */
+export function NurraBadge({ label = 'A project of' }: { label?: string }) {
+  return (
+    <a className="nurra-badge" href="https://nurra.org" target="_blank" rel="noopener" aria-label={`${label} Nurra (opens nurra.org)`}>
+      <span className="nurra-badge-label">{label}</span>
+      <span className="nurra-pill">
+        <NurraWordmark height={12} />
+      </span>
+    </a>
+  );
+}

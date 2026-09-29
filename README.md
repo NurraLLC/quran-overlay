@@ -1,5 +1,7 @@
 # Quran Overlay
 
+<a href="https://nurra.org"><img src="docs/nurra-badge.svg" height="22" alt="Nurra"></a> A [Nurra](https://nurra.org) project.
+
 **Recite, and the Quran follows you.** Open it, tap the microphone and recite any surah: the ayah you are reciting appears in large Uthmani script with the English translation, the word you are on lights up with its meaning underneath, and the page moves with you. Talk to it in plain English: "go to Surah Maryam, ayah three", "surah about elephants", "show the ayah about the orphan", "English only".
 
 It works as a personal reader on your phone or computer, and as an OBS/Twitch overlay for streamed recitation. All **6,236 ayahs in all 114 surahs**, validated against the Hafs verse map. It never generates scripture, translation or commentary.
@@ -15,7 +17,7 @@ It works as a personal reader on your phone or computer, and as an OBS/Twitch ov
 - **Understands how people actually recite.** Speech-recognition word splits ("ولا الآخرة" for "وللآخرة"), a basmala before a surah, one-word openings ("والضحى", "يس"), plainly read (unmelodic) recitation, and ayahs named by their sound in English letters ("go to inna fatahna").
 - **Talk to it.** English requests are recognised while you recite and never disturb following: references, surah names (asking when names are close, never guessing), natural-language finding ("surah about elephants" opens Al-Fil), and display commands ("Arabic only", "word by word", "pause", "hide").
 - **Reads beautifully.** Short ayahs share the screen as one mushaf-style passage; long ayahs are paged, never shrunk; Arabic + English, Arabic only, or English only; word-by-word meanings; ornaments, reduced-motion support, legible over any stream footage.
-- **Free, with an optional hosted service.** Run it yourself with your own keys, unlimited. The hosted mode gives every visitor their own session and a free monthly allowance of listening time; reading and search are always free (see [docs/DEPLOY.md](docs/DEPLOY.md)).
+- **Free, with an optional hosted service.** Run it yourself with your own keys, unlimited. The hosted mode gives every visitor their own session and a free monthly allowance of listening time; reading and search are always free. Gifts fill a shared pool of sponsored listening for people whose free time runs out, and the site's *How and why* page (`/about`) explains the costs, where the money goes and why we do it (see [docs/DEPLOY.md](docs/DEPLOY.md)).
 
 <p>
   <img src="docs/screenshots/overlay-english-passage.webp" width="49%" alt="English-only mode: Al-Ikhlas as an English passage with ayah ornaments, the current ayah bright">
@@ -86,6 +88,8 @@ Arabic text (Uthmani and Imlaei), Saheeh International translation, chapter meta
 ## License
 
 The code is [MIT licensed](LICENSE). The Quran text, translation, word-by-word data and font are not part of this repository and are not covered by that license: `npm run corpus:fetch` and `npm run wbw:import` download them from their publishers, whose terms apply (see *Attribution*).
+
+The Nurra name and logo belong to Nurra LLC and are not covered by the MIT license; a fork should use its own name and mark.
 
 ---
 

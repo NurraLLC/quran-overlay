@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { CreditStore, DEFAULT_CREDITS } from './billing/credits';
 import { SessionHub } from './billing/hub';
 import { VisitorIdentity } from './billing/identity';
-import { parsePacks, StripeBilling } from './billing/stripe';
+import { parseDonations, parsePacks, StripeBilling } from './billing/stripe';
 import net from 'node:net';
 import path from 'node:path';
 import { buildApp, type HostedOptions } from './app';
@@ -66,6 +66,7 @@ function hostedSetup(create: () => Session): HostedOptions {
     freeSecondsPerMonth: hours('QO_FREE_HOURS_PER_MONTH', 10),
     ipDailyFreeSeconds: hours('QO_FREE_HOURS_PER_NETWORK_DAY', 2),
     globalDailyFreeSeconds: hours('QO_FREE_HOURS_PER_SERVICE_DAY', 200),
+    poolDailySecondsPerVisitor: hours('QO_SPONSORED_HOURS_PER_VISITOR_DAY', 1),
   });
   return {
     hub: new SessionHub(create),
@@ -74,7 +75,7 @@ function hostedSetup(create: () => Session): HostedOptions {
     publicOrigin: process.env.QO_PUBLIC_ORIGIN || undefined,
     trustProxy: process.env.QO_TRUST_PROXY === '1',
     // Buying listening time turns on only with both Stripe keys (test keys work the same way).
-    billing: process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET ? new StripeBilling(process.env.STRIPE_SECRET_KEY, process.env.STRIPE_WEBHOOK_SECRET, parsePacks(process.env.QO_PACKS)) : null,
+    billing: process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET ? new StripeBilling(process.env.STRIPE_SECRET_KEY, process.env.STRIPE_WEBHOOK_SECRET, parsePacks(process.env.QO_PACKS), fetch, parseDonations(process.env.QO_DONATIONS, process.env.QO_SPONSOR_CENTS_PER_HOUR)) : null,
   };
 }
 
@@ -150,6 +151,7 @@ async function main() {
     const c = hosted.credits.cfg;
     const h = (sec: number) => `${+(sec / 3600).toFixed(2)} h`;
     console.log(`\nHosted mode: every visitor gets their own session and ${h(c.freeSecondsPerMonth)} of free listening per month (${h(c.ipDailyFreeSeconds)} per network per day, ${h(c.globalDailyFreeSeconds)} per day overall).`);
+    console.log(`Sponsored listening: ${h(hosted.credits.poolSeconds())} in the pool, up to ${h(c.poolDailySecondsPerVisitor ?? 3600)} per visitor per day once their own time is gone; donations ${hosted.billing ? 'on' : 'off'}.`);
     console.log(`Buying listening time: ${hosted.billing ? `on (${hosted.billing.packs.map((p) => p.label).join(', ')})` : 'off (set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET)'}.`);
     console.log(`Open: ${process.env.QO_PUBLIC_ORIGIN || publicOrigin}/\n`);
   } else console.log(`\nOpen the control page (keep this link private):\n  ${publicOrigin}/control#owner=${ownerToken}\n`);
