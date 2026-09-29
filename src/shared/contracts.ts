@@ -12,7 +12,8 @@ export const DisplayStyleSchema = z.object({
   readingMode: z.enum(['follow', 'ayah', 'word']).default('follow'),
   layout: LayoutSchema,
   background: BackgroundSchema,
-  showTranslation: z.boolean(),
+  /** What the audience reads: Arabic with the translation, Arabic alone, or the translation alone. */
+  language: z.enum(['both', 'arabic', 'english']).default('both'),
   showReference: z.boolean(),
   /** The following ayah, dimmed under the current one, so readers see what comes next. */
   showNext: z.boolean().default(true),
@@ -28,7 +29,7 @@ export const DEFAULT_STYLE: DisplayStyle = {
   readingMode: 'follow',
   layout: 'fullframe',
   background: 'scrim',
-  showTranslation: true,
+  language: 'both',
   showReference: true,
   showNext: true,
   groupShort: true,
@@ -64,7 +65,7 @@ export const DisplayStateSchema = z.object({
   cursor: z.object({ from: z.number().int().nonnegative(), to: z.number().int().nonnegative(), provisional: z.boolean() }).nullable().optional(),
   /** Short ayahs shown together with the current one, in order (it is among them); null = alone. */
   group: z
-    .array(z.object({ key: z.string().regex(/^\d{1,3}:\d{1,3}$/), ayah: z.number().int().min(1).max(286), arabic: z.string().min(1) }))
+    .array(z.object({ key: z.string().regex(/^\d{1,3}:\d{1,3}$/), ayah: z.number().int().min(1).max(286), arabic: z.string().min(1), english: z.string().min(1) }))
     .nullable()
     .optional(),
   /** The ayah after the current one (a preview, never a claim about where the reciter is). */
@@ -74,6 +75,7 @@ export const DisplayStateSchema = z.object({
       surah: z.number().int().min(1).max(114),
       ayah: z.number().int().min(1).max(286),
       arabic: z.string().min(1),
+      english: z.string().min(1),
       /** Set only when the next ayah opens a new surah. */
       surahName: z.string().nullable(),
     })

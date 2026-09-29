@@ -247,8 +247,13 @@ export function Control() {
             {lay?.promotedToFullFrame && <span className="warn">Too long for the lower third — shown full frame</span>}
             <SpeedMeter view={speedView} listening={cap.listening} />
           </div>
-          <div className="reading-view" role="radiogroup" aria-label="Reading view">
-            {([['follow', 'Follow words'], ['word', 'Word focus'], ['ayah', 'Full ayah']] as const).map(([value, label]) => <button key={value} role="radio" aria-checked={d.style.readingMode === value} className={d.style.readingMode === value ? 'primary' : ''} onClick={() => send({ type: 'style', patch: { readingMode: value } })}>{label}</button>)}
+          <div className="view-controls">
+            <div className="reading-view" role="radiogroup" aria-label="Language">
+              {([['both', 'Arabic + English'], ['arabic', 'Arabic'], ['english', 'English']] as const).map(([value, label]) => <button key={value} role="radio" aria-checked={d.style.language === value} className={d.style.language === value ? 'primary' : ''} onClick={() => send({ type: 'style', patch: { language: value } })}>{label}</button>)}
+            </div>
+            <div className="reading-view" role="radiogroup" aria-label="Reading view">
+              {([['follow', 'Follow words'], ['word', 'Word focus'], ['ayah', 'Full ayah']] as const).map(([value, label]) => <button key={value} role="radio" aria-checked={d.style.readingMode === value} className={d.style.readingMode === value ? 'primary' : ''} disabled={value === 'word' && d.style.language === 'english'} title={value === 'word' && d.style.language === 'english' ? 'Word focus shows one Arabic word' : undefined} onClick={() => send({ type: 'style', patch: { readingMode: value } })}>{label}</button>)}
+            </div>
           </div>
           <StageFrame className="preview">
             <VerseDisplay state={d} fontsReady={fontsReady} onLayout={onLayout} preview />
@@ -548,9 +553,6 @@ function OutputCard({ snap, send, copied, onCopy }: { snap: ControlSnapshot; sen
       <p className="hint">In OBS: Sources → + → Browser, paste the link, set 1920 × 1080. Leave “Shutdown source when not visible” off. The link can only show verses.</p>
       {seg('Layout', s.layout, [['fullframe', 'Full frame'], ['lowerthird', 'Lower third']], (v) => send({ type: 'style', patch: { layout: v } }))}
       {seg('Background', s.background, [['transparent', 'Transparent'], ['scrim', 'Shaded panel'], ['solid', 'Solid']], (v) => send({ type: 'style', patch: { background: v } }))}
-      <label className="row">
-        <input type="checkbox" checked={s.showTranslation} onChange={(e) => send({ type: 'style', patch: { showTranslation: e.target.checked } })} /> Show English translation ({snap.corpus.translation})
-      </label>
       <label className="row">
         <input type="checkbox" checked={s.showReference} onChange={(e) => send({ type: 'style', patch: { showReference: e.target.checked } })} /> Show surah and ayah number
       </label>

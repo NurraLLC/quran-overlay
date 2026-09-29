@@ -197,8 +197,8 @@ export class Session {
       arabicPage: this.arabicPage,
       progress: this.progress,
       cursor: this.cursor,
-      group: group ? group.map((g) => ({ key: g.key, ayah: g.ayah, arabic: g.arabicDisplay })) : null,
-      next: n ? { key: n.key, surah: n.surah, ayah: n.ayah, arabic: n.arabicDisplay, surahName: n.surah !== v!.surah ? this.o.corpus.chapter(n.surah)!.nameSimple : null } : null,
+      group: group ? group.map((g) => ({ key: g.key, ayah: g.ayah, arabic: g.arabicDisplay, english: g.english })) : null,
+      next: n ? { key: n.key, surah: n.surah, ayah: n.ayah, arabic: n.arabicDisplay, english: n.english, surahName: n.surah !== v!.surah ? this.o.corpus.chapter(n.surah)!.nameSimple : null } : null,
     };
   }
 

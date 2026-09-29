@@ -266,3 +266,15 @@ button.stop { background: #4a2620; border-color: #8a4a3e; color: #ffe0d8; }
 .stage[data-bg='transparent'] .passage .ayah-future { opacity: 1; color: rgba(236, 228, 210, 0.55); }
 .stage[data-bg='transparent'] .passage .ayah-future.ayah-upnext { color: rgba(250, 232, 190, 0.85); }
 @media (prefers-reduced-motion: reduce) { .passage .quran-word { transition: none; } }
+
+/* Language modes. English only: the translation is the text being read. */
+.view-controls { display: flex; gap: 18px; flex-wrap: wrap; margin: 0 0 12px; }
+.view-controls .reading-view { margin: 0; }
+.english-only { margin-top: 0; color: var(--ivory); line-height: 1.42; }
+.passage .en-word { transition: opacity 320ms ease, color 320ms ease; }
+.en-mark { font-family: 'Uthmanic Hafs', serif; font-size: 1.05em; line-height: 1; color: var(--gold); }
+.en-progress { width: 420px; height: 3px; margin: 26px auto 0; border-radius: 2px; background: rgba(207, 170, 98, 0.18); overflow: hidden; }
+.en-progress span { display: block; height: 100%; background: var(--gold); transform-origin: 0 50%; transition: transform 380ms ease; }
+.next-en { font-family: var(--serif); line-height: 1.42; }
+.next-en.next-cut { -webkit-mask-image: linear-gradient(to right, #000 70%, transparent 98%); mask-image: linear-gradient(to right, #000 70%, transparent 98%); }
+@media (prefers-reduced-motion: reduce) { .passage .en-word, .en-progress span { transition: none; } }
