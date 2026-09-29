@@ -60,6 +60,9 @@ export type SessionOptions = {
   mode: TrackerMode;
   setup: SessionSetup;
   overlayUrl: (viewToken: string) => string;
+  /** Self-hosted: the overlay link kept from the last run, and where a replaced one is saved. */
+  viewToken?: string;
+  onViewToken?: (token: string) => void;
   clock?: Clock;
   /** Explicit, bounded, local diagnostic capture of provider token events (no audio). */
   captureDir?: string | null;
@@ -81,7 +84,7 @@ const pct = (xs: number[], p: number) => {
 
 export class Session {
   readonly sessionEpoch = randomBytes(6).toString('hex');
-  private viewToken = randomBytes(18).toString('base64url');
+  private viewToken: string;
   readonly follower: RecitationFollower;
   private readonly clock: Clock;
 
@@ -136,6 +139,7 @@ export class Session {
   constructor(private readonly o: SessionOptions) {
     this.clock = o.clock ?? realClock;
     this.liveCursor = new LiveCursor(o.ix);
+    this.viewToken = o.viewToken ?? randomBytes(18).toString('base64url');
     this.arabicRequests = new ArabicSurahRequests(o.corpus.data.chapters);
     this.listeningCommands = new ListeningCommands(o.decisionClient, this.clock, (text, id, intent) => {
       if (this.capture.phase !== 'recording' || this.commandActive) return;
@@ -397,6 +401,7 @@ export class Session {
         return this.queueSnapshot();
       case 'rotate_view':
         this.viewToken = randomBytes(18).toString('base64url');
+        this.o.onViewToken?.(this.viewToken);
         this.logEvent('rotate_view', null);
         for (const fn of this.revokeListeners) fn();
         return this.queueSnapshot();
