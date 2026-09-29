@@ -30,7 +30,7 @@ The [final review](FINAL_REVIEW.md) records launch fixes and fresh local evidenc
 
 ## What the owner provides
 
-Update: nurra.org is already hosted on ChatGPT Sites. The owner selected a $10 starting project budget, covering all project costs rather than recognition alone. See [PROJECT_BUDGET.md](PROJECT_BUDGET.md) for the accounting changes and unresolved backend compatibility; do not purchase another host or copy sandbox hours into production by following the older example below.
+Update, 2026-09-29: nurra.org is hosted on ChatGPT Sites, with DNS managed in Squarespace, not the owner's Cloudflare account. The approved $6/month DigitalOcean server is now provisioned and passes a private container health check. `reader-origin.nurra.org` resolves to it. Public routing and production provider configuration are not complete. The owner selected a $10 starting project budget covering all project costs. See [PROJECT_BUDGET.md](PROJECT_BUDGET.md); do not purchase another host or copy sandbox hours into production. The Cloudflare route instructions below describe an alternative architecture and are not the current domain setup; evaluate forwarding through the existing Sites Worker first.
 
 The owner completes sign-up, passwords and payment details. Open the relevant provider pages for them when needed.
 
