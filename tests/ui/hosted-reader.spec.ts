@@ -86,6 +86,16 @@ test('shared lifetime totals, donation readback, and browser audio through the p
     await page.reload();
     await expect(page.locator('.r-toast')).toHaveCount(0);
     await page.getByRole('button', { name: 'Start listening', exact: true }).click();
+    const consent=page.getByRole('dialog',{name:'Before you turn on the microphone'});
+    await expect(consent).toBeVisible();
+    expect(bytes).toBe(0);
+    await consent.getByRole('button',{name:'Keep reading'}).click();
+    await expect(consent).toHaveCount(0);
+    expect(bytes).toBe(0);
+    await page.getByRole('button', { name: 'Start listening', exact: true }).click();
+    await consent.getByRole('checkbox').check();
+    await consent.screenshot({path:'test-results/voice-consent-phone.png'});
+    await consent.getByRole('button',{name:'Agree and continue'}).click();
     await expect.poll(() => bytes).toBeGreaterThan(0); // real browser SDK -> app -> local provider
     await expect(page.getByRole('button', { name: 'Stop listening', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Stop listening', exact: true }).click();

@@ -531,6 +531,8 @@ export function Reader() {
             <a className="r-menu-item" href={u('/about')}>
               Why we built this<span>Our purpose, the overlay, and community support</span>
             </a>
+            <a className="r-menu-item" href={u('/privacy.html')}>Privacy and your data</a>
+            <a className="r-menu-item" href={u('/terms.html')}>Terms of use</a>
             <div className="r-menu-brand">
               <NurraBadge />
             </div>

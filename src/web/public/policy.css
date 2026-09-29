@@ -1,0 +1,7 @@
+:root { color-scheme: dark; font: 17px/1.7 system-ui,sans-serif; background:#071518; color:#d6e1dc; }
+body { max-width:44rem; margin:auto; padding:24px 22px 64px; }
+nav,footer { display:flex; gap:24px; flex-wrap:wrap; padding:16px 0; }
+a { color:#e4bd70; text-underline-offset:3px; }
+h1,h2 { color:#f2e7cc; line-height:1.25; }
+h1 { font-size:clamp(30px,7vw,42px); } h2 { margin-top:38px; font-size:23px; }
+li { margin:12px 0; } small { color:#aebeb8; } :focus-visible { outline:3px solid #e4bd70; outline-offset:4px; }

@@ -65,6 +65,8 @@ test('a long silence closes the provider stream and the voice reopens it', async
   await page.goto(`/control#owner=${OWNER}`);
   await page.waitForSelector('.topbar');
   await page.getByRole('button', { name: 'Start listening' }).click();
+  await page.getByRole('dialog',{name:'Before you turn on the microphone'}).getByRole('checkbox').check();
+  await page.getByRole('button',{name:'Agree and continue'}).click();
   try {
     await expect.poll(() => streams.length, { timeout: 10_000 }).toBe(1);
     await expect.poll(() => streams[0].bytes, { timeout: 10_000 }).toBeGreaterThan(0);

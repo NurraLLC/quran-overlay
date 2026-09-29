@@ -9,6 +9,7 @@ import type { WireToken } from '../../shared/transcript';
 import { TokenRouter, type CommandCapture } from './command-lane';
 import { MicError, MicStreamSource, SharedMic } from './mic';
 import { u } from '../net';
+import {listeningConsent} from './consent';
 
 /** Restart before the explicit per-stream cap minted by the server (3 h), without replaying captions. */
 const PROACTIVE_RESTART_MS = 175 * 60 * 1000;
@@ -131,6 +132,7 @@ export class SonioxCapture {
   private mic: SharedMic | null = null;
   /** Listening is on (the user's choice); a provider stream may be open or dozing. */
   private active = false;
+  private consentRequest: AbortController | null = null;
   private dozing = false;
   /** Microphone input level 0..1 while listening (0 when not listening). */
   level(): number {
@@ -232,7 +234,11 @@ export class SonioxCapture {
   }
 
   async start(deviceId: string | null, opts: { commandOnly?: boolean } = {}) {
-    if (this.active) return;
+    if (this.active || this.consentRequest) return;
+    const consent=new AbortController();this.consentRequest=consent;
+    const agreed=await listeningConsent(consent.signal);
+    if(this.consentRequest===consent)this.consentRequest=null;
+    if(!agreed||consent.signal.aborted)return;
     this.active = true;
     this.deviceId = deviceId;
     this.commandOnly = !!opts.commandOnly;
@@ -476,6 +482,7 @@ export class SonioxCapture {
 
   /** Stop listening: close the microphone and the connection immediately; ignore anything after. */
   stop() {
+    this.consentRequest?.abort();this.consentRequest=null;
     if (!this.active) return;
     this.stopping = true;
     const epoch = this.epoch;

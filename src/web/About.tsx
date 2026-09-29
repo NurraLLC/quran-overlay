@@ -104,7 +104,7 @@ export function About() {
           <h2>How it works</h2>
           <ul>
             <li>Listening starts only when you turn on the microphone. {me?.mode === 'hosted' ? 'Your voice passes through our server to Soniox, so we can stop unused streams and protect the shared hours.' : 'Your voice goes directly to Soniox for recognition.'} We never record or keep the audio. During a long pause the stream closes.</li>
-            <li>The Arabic and the translation are shown exactly as published (Quran.com, Saheeh International). Nothing about the Quran is written by a machine.</li>
+            <li>Quran text, word meanings, transliteration and the Uthmani display font are provided through <a href="https://quran.foundation">Quran Foundation</a>. The English translation is Saheeh International. The reader never generates scripture or translations.</li>
             <li>The code is open. Anyone can read it, check it, or run their own copy for free: <a href={REPO}>github.com/NurraLLC/quran-reader</a>.</li>
           </ul>
         </section>
@@ -162,6 +162,8 @@ export function About() {
         <footer className="r-brand">
           <NurraBadge />
           <a href={u('/')}>Open the reader</a>
+          <a href={u('/privacy.html')}>Privacy</a>
+          <a href={u('/terms.html')}>Terms</a>
         </footer>
       </main>
     </div>
