@@ -17,6 +17,25 @@ type Auth = 'checking' | 'owner' | 'unauthorized';
 /** Binds the ayah-end ornament to the last word so a line never starts with it. */
 const NBSP = String.fromCharCode(0xa0);
 
+/** Per-device memory: the last place and language, and today's recited ayahs. Never required. */
+type Saved = { key?: string; name?: string; lang?: 'both' | 'arabic' | 'english'; day?: string; recited?: string[] };
+const today = () => new Date().toLocaleDateString('en-CA');
+function loadSaved(): Saved {
+  try {
+    const s = JSON.parse(localStorage.getItem('qo.reader') ?? '{}') as Saved;
+    return s.day === today() ? s : { ...s, day: today(), recited: [] };
+  } catch {
+    return {};
+  }
+}
+function save(patch: Saved) {
+  try {
+    localStorage.setItem('qo.reader', JSON.stringify({ ...loadSaved(), ...patch }));
+  } catch {
+    /* storage unavailable (private window): nothing is remembered */
+  }
+}
+
 const QUICK = [
   { n: 1, name: 'Al-Fatihah' },
   { n: 36, name: 'Ya-Sin' },
@@ -124,6 +143,31 @@ export function Reader() {
   const d = snap?.display;
   const cur = d?.verse ?? null;
   const lang = d?.style.language ?? 'both';
+  const [saved, setSaved] = useState<Saved>(loadSaved);
+
+  // Remember the place and language on this device.
+  useEffect(() => {
+    if (cur) save({ key: cur.key, name: cur.surahName });
+  }, [cur?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (snap) save({ lang });
+  }, [lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A fresh session starts in the language this device last used.
+  const langRestored = useRef(false);
+  useEffect(() => {
+    if (!snap || langRestored.current) return;
+    langRestored.current = true;
+    if (!snap.display.verse && saved.lang && saved.lang !== snap.display.style.language) send({ type: 'style', patch: { language: saved.lang } });
+  }, [snap]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Today's progress: ayahs the tracker followed while this device was listening.
+  useEffect(() => {
+    if (!cur || !cap.listening || snap?.phase !== 'tracking') return;
+    const s = loadSaved();
+    if (s.recited?.includes(cur.key)) return;
+    const recited = [...(s.recited ?? []), cur.key].slice(-2000);
+    save({ recited, day: today() });
+    setSaved({ ...s, recited });
+  }, [cur?.key, snap?.phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The surah being read, fetched once per surah.
   useEffect(() => {
@@ -225,6 +269,13 @@ export function Reader() {
             <h1>Recite, and the Quran follows you.</h1>
             <p>Tap the microphone and start reciting any surah. Or just say it: “Go to Surah Al-Mulk”, “Show the ayah about the orphan”, “English only”. Tap any word to see its meaning.</p>
             <p className="r-privacy">Your voice is sent to our speech-recognition provider (Soniox) only while the microphone is on. We do not record or keep your audio. Reading and search never use the microphone.</p>
+            {saved.key && (
+              <button className="r-continue" onClick={() => goto(saved.key!)}>
+                Continue at {saved.name ? `${saved.name} ` : ''}
+                {saved.key}
+              </button>
+            )}
+            {!!saved.recited?.length && <p className="r-today">Today: {saved.recited.length} {saved.recited.length === 1 ? 'ayah' : 'ayahs'} recited</p>}
             <div className="r-quick">
               {QUICK.map((q) => (
                 <button key={q.n} onClick={() => goto(`${q.n}:1`)}>{q.name}</button>
@@ -243,7 +294,22 @@ export function Reader() {
               const cursor = isCur ? d!.cursor : null;
               const words = toQpcHafsEncoding(a.arabic).split(/\s+/).filter(Boolean);
               return (
-                <section key={a.key} id={`a-${a.key}`} className={`r-ayah${isCur ? ' current' : ''}`} onClick={() => goto(a.key)} aria-current={isCur ? 'true' : undefined}>
+                <section
+                  key={a.key}
+                  id={`a-${a.key}`}
+                  className={`r-ayah${isCur ? ' current' : ''}`}
+                  onClick={() => goto(a.key)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      goto(a.key);
+                    }
+                  }}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`${shownSurah.name} ${a.key}${isCur ? ', on screen' : ', follow from here'}`}
+                  aria-current={isCur ? 'true' : undefined}
+                >
                   {lang !== 'english' && (
                     <p className="r-ar" lang="ar" dir="rtl">
                       {words.map((w, i) => {

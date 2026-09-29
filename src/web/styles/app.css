@@ -384,3 +384,7 @@ button.r-credits { align-self: flex-start; background: none; border: none; paddi
 .r-code { display: flex; gap: 8px; margin-top: 8px; }
 .r-code code, .r-code input { flex: 1; min-width: 0; font: 12.5px/1.4 ui-monospace, Consolas, monospace; background: var(--ink-0); border: 1px solid var(--line); border-radius: 10px; padding: 10px; overflow-wrap: anywhere; }
 .r-word.peeked { background: rgba(143, 182, 214, 0.18); box-shadow: 0 2px 0 var(--seek); }
+
+.r-continue { display: block; margin: 0 auto 14px; padding: 14px 22px; border-radius: 999px; background: #3a3220; border-color: var(--gold-dim); color: #f6dfa8; font-size: 16px; font-weight: 600; }
+.r-today { margin: 0 0 18px !important; font-size: 13.5px; color: var(--follow) !important; }
+.r-ayah:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
