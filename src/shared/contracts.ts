@@ -22,6 +22,10 @@ export const DisplayStyleSchema = z.object({
   arabicScale: z.number().min(0.8).max(1.25),
   /** Seconds per translation page when a translation overflows; 0 = broadcaster pages manually. */
   translationPageSeconds: z.number().int().min(0).max(60),
+  /** Highlight colour of the stream (the recited word, meanings, ornaments); gold by default. */
+  accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#cfaa62'),
+  /** A small "Quran Overlay by Nurra" credit on the stream while an ayah is shown. */
+  credit: z.boolean().default(true),
 });
 export type DisplayStyle = z.infer<typeof DisplayStyleSchema>;
 
@@ -35,6 +39,8 @@ export const DEFAULT_STYLE: DisplayStyle = {
   groupShort: true,
   arabicScale: 1,
   translationPageSeconds: 0,
+  accent: '#cfaa62',
+  credit: true,
 };
 
 export const DisplayVerseSchema = z.object({

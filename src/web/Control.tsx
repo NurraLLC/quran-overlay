@@ -12,6 +12,16 @@ import { StageFrame, VerseDisplay, useFontsReady, type LayoutInfo } from './Vers
 type ChapterRow = { number: number; nameSimple: string; nameArabic: string; verseCount: number };
 type Auth = 'checking' | 'owner' | 'unauthorized';
 
+/** Stream colours: gold (the default), and a few that sit well over most footage. */
+const ACCENTS: Array<[string, string]> = [
+  ['#cfaa62', 'Gold'],
+  ['#5fbf98', 'Emerald'],
+  ['#7fb2e5', 'Sky'],
+  ['#e39aa8', 'Rose'],
+  ['#b99be6', 'Lavender'],
+  ['#e8e3d6', 'Pearl'],
+];
+
 function statusLine(s: ControlSnapshot): { tone: string; title: string; detail: string } {
   const key = s.display.verse ? `${s.display.verse.surahName} ${s.display.verse.key}` : null;
   const onScreen = key ? `${key} is on screen.` : 'The screen is empty.';
@@ -555,6 +565,18 @@ function OutputCard({ snap, send, copied, onCopy }: { snap: ControlSnapshot; sen
       <p className="hint">In OBS: Sources → + → Browser, paste the link, set 1920 × 1080. Leave “Shutdown source when not visible” off. The link can only show verses.</p>
       {seg('Layout', s.layout, [['fullframe', 'Full frame'], ['lowerthird', 'Lower third']], (v) => send({ type: 'style', patch: { layout: v } }))}
       {seg('Background', s.background, [['transparent', 'Transparent'], ['scrim', 'Shaded panel'], ['solid', 'Solid']], (v) => send({ type: 'style', patch: { background: v } }))}
+      <div className="seg accent-row" role="radiogroup" aria-label="Colour">
+        <span className="seg-label">Colour</span>
+        {ACCENTS.map(([hex, name]) => (
+          <button key={hex} role="radio" aria-checked={s.accent.toLowerCase() === hex} aria-label={name} title={name} className={`swatch${s.accent.toLowerCase() === hex ? ' on' : ''}`} style={{ background: hex }} onClick={() => send({ type: 'style', patch: { accent: hex } })} />
+        ))}
+        <label className={`swatch custom${ACCENTS.some(([h]) => h === s.accent.toLowerCase()) ? '' : ' on'}`} title="Your own colour">
+          <input type="color" value={s.accent} aria-label="Your own colour" onChange={(e) => send({ type: 'style', patch: { accent: e.target.value } })} />
+        </label>
+      </div>
+      <label className="row">
+        <input type="checkbox" checked={s.credit} onChange={(e) => send({ type: 'style', patch: { credit: e.target.checked } })} /> Show a small “Quran Overlay by Nurra” in the corner
+      </label>
       <label className="row">
         <input type="checkbox" checked={s.showReference} onChange={(e) => send({ type: 'style', patch: { showReference: e.target.checked } })} /> Show surah and ayah number
       </label>

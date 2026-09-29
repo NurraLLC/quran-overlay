@@ -6,6 +6,26 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { DisplayState } from '../shared/contracts';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
+import { NurraWordmark } from './Nurra';
+
+/**
+ * The stream's highlight colour as CSS variables for the stage: the colour itself, a brighter tint
+ * for the recited word and meanings, a soft wash and a line. Gold (the default) keeps the
+ * stylesheet's own values untouched.
+ */
+function accentVars(hex: string | undefined): Record<string, string> {
+  if (!hex || hex.toLowerCase() === '#cfaa62') return {};
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const mix = (c: number, t: number, w: number) => Math.round(c + (t - c) * w);
+  return {
+    '--gold': hex,
+    '--gold-dim': `rgb(${mix(r, 10, 0.3)}, ${mix(g, 20, 0.3)}, ${mix(b, 24, 0.3)})`,
+    '--accent-bright': `rgb(${mix(r, 255, 0.5)}, ${mix(g, 255, 0.5)}, ${mix(b, 255, 0.5)})`,
+    '--accent-soft': `rgba(${r}, ${g}, ${b}, 0.16)`,
+    '--accent-line': `rgba(${r}, ${g}, ${b}, 0.6)`,
+  };
+}
 
 export const STAGE_W = 1920;
 export const STAGE_H = 1080;
@@ -384,7 +404,16 @@ export function VerseDisplay({
   const gloss = lang === 'both' && state.cursor && v?.glosses ? v.glosses.slice(state.cursor.from, state.cursor.to + 1).filter(Boolean).join(' ') || null : null;
   const focusText = state.cursor ? displayWords.slice(state.cursor.from, state.cursor.to + 1).join(' ') : lastFocus.current?.key === v?.key ? lastFocus.current?.text : null;
   return (
-    <div className="stage" data-bg={state.style.background} data-layout={layout} data-reading={mode} data-lang={lang} data-preview={preview || undefined}>
+    <div className="stage" data-bg={state.style.background} data-layout={layout} data-reading={mode} data-lang={lang} data-preview={preview || undefined} style={accentVars(state.style.accent) as React.CSSProperties}>
+      {/* Small, quiet credit while an ayah is up (the broadcaster can turn it off). */}
+      {visible && state.style.credit !== false && (
+        <div className="stage-credit" aria-label="Quran Overlay by Nurra">
+          <span>Quran Overlay by</span>
+          <span className="stage-credit-mark">
+            <NurraWordmark height={15} />
+          </span>
+        </div>
+      )}
       <div className={`panel ${visible ? 'panel-on' : 'panel-off'}`} aria-hidden={!visible}>
         {visible && plan && v && (
           <article className={`verse${flow.current.arrived ? ' arrive' : ''}${plan.passage ? ' passage' : ''}`} key={articleKey ?? v.key} aria-label={`${v.surahName} ${v.key}`}>

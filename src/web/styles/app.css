@@ -609,3 +609,28 @@ a.about-ref:hover { text-decoration: underline; }
 .r-time .r-pool { margin: 14px 0 16px; }
 @media (prefers-reduced-motion: reduce) { .r-pool-track span { transition: none; } }
 .r-pool .r-give-legend { margin: 0 auto 14px !important; text-align: center; max-width: 34em; }
+
+/* Stream colour: the stage's highlight follows the broadcaster's choice (gold keeps these defaults). */
+.stage[data-reading='follow'] .active-word { color: var(--accent-bright, #ffe0a0); background: var(--accent-soft, rgba(207, 170, 98, 0.16)); }
+.focus-word[data-active='true'] { color: var(--accent-bright, #ffe0a0); }
+.stage .gloss, .stage .focus-gloss { color: var(--accent-bright, #f3d898); }
+.stage .next-ayah[data-anticipate] .next-line { color: var(--accent-bright, #f6e3b8); }
+.stage .sb-frame { border-color: var(--accent-line, rgba(207, 170, 98, 0.6)); }
+.stage[data-bg='transparent'] .sb-ar { color: var(--accent-bright, #f6e3b4); }
+.stage[data-bg='transparent'] .sb-frame { border-color: var(--accent-line, rgba(246, 227, 180, 0.8)); }
+.stage[data-bg='transparent'] .sb-frame::before, .stage[data-bg='transparent'] .sb-frame::after { background: var(--accent-bright, #f6e3b4); }
+
+/* "Quran Overlay by Nurra": small and quiet, in the corner away from the text. */
+.stage-credit { position: absolute; right: 36px; bottom: 28px; z-index: 3; display: flex; align-items: center; gap: 10px; font: 500 17px/1 var(--ui); color: rgba(244, 236, 218, 0.72); text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); pointer-events: none; }
+.stage-credit-mark { display: inline-flex; padding: 5px 9px 5px; border-radius: 7px; background: #062194; color: #fff7b2; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35); }
+.stage[data-layout='lowerthird'] .stage-credit { top: 28px; bottom: auto; }
+
+/* Stream colour swatches on the control page. */
+.accent-row { align-items: center; }
+.swatch { width: 30px; height: 30px; min-width: 0; padding: 0; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.18); }
+.swatch.on { border-color: var(--ivory); box-shadow: 0 0 0 2px rgba(244, 236, 218, 0.35); }
+.swatch.custom { position: relative; overflow: hidden; display: inline-block; background: conic-gradient(#e06c6c, #e3c26c, #6ce39a, #6cb4e3, #b46ce3, #e06c6c); cursor: pointer; }
+.swatch.custom input { position: absolute; inset: -6px; opacity: 0; cursor: pointer; }
+.stage .next-ayah::before { background: linear-gradient(90deg, transparent, var(--accent-line, rgba(207, 170, 98, 0.6)), transparent); }
+/* Lower third, Arabic + English, following: leave room for the recited word's meaning above the translation. */
+.stage[data-layout='lowerthird'][data-lang='both'][data-reading='follow'] .english { margin-top: 44px; }
