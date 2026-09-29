@@ -2,7 +2,7 @@
 
 <a href="https://nurra.org"><img src="docs/nurra-badge.svg" height="22" alt="Nurra"></a> A [Nurra](https://nurra.org) project.
 
-**Recite, and the Quran follows you.** Open it, tap the microphone and recite any surah: the ayah you are reciting appears in large Uthmani script with the English translation, the word you are on lights up with its meaning underneath, and the page moves with you. Talk to it in plain English: "go to Surah Maryam, ayah three", "surah about elephants", "show the ayah about the orphan", "English only".
+**Recite, and the page keeps up with you.** Open it, tap the microphone and recite any surah: the ayah you are reciting appears in large Uthmani script with the English translation, the word you are on lights up with its meaning underneath, and the page moves with you. Talk to it in plain English: "go to Surah Maryam, ayah three", "surah about elephants", "show the ayah about the orphan", "English only".
 
 It works as a personal reader on your phone or computer, and as an OBS/Twitch overlay for streamed recitation. All **6,236 ayahs in all 114 surahs**, validated against the Hafs verse map. It never generates scripture, translation or commentary.
 

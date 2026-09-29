@@ -63,10 +63,14 @@ function hostedSetup(create: () => Session): HostedOptions {
   mkdirSync(stateDir, { recursive: true });
   const credits = new CreditStore(path.join(stateDir, 'credits.db'), {
     ...DEFAULT_CREDITS,
-    freeSecondsPerMonth: hours('QO_FREE_HOURS_PER_MONTH', 10),
+    // Listening is free for everyone from the shared pool (donations and the owner fill it); a
+    // personal monthly allowance is optional (QO_FREE_HOURS_PER_MONTH).
+    freeSecondsPerMonth: hours('QO_FREE_HOURS_PER_MONTH', 0),
     ipDailyFreeSeconds: hours('QO_FREE_HOURS_PER_NETWORK_DAY', 2),
     globalDailyFreeSeconds: hours('QO_FREE_HOURS_PER_SERVICE_DAY', 200),
-    poolDailySecondsPerVisitor: hours('QO_SPONSORED_HOURS_PER_VISITOR_DAY', 1),
+    poolDailySecondsPerVisitor: hours('QO_SPONSORED_HOURS_PER_VISITOR_DAY', 2),
+    poolDailySecondsPerNetwork: hours('QO_SPONSORED_HOURS_PER_NETWORK_DAY', 4),
+    poolGoalSecondsPerMonth: hours('QO_POOL_GOAL_HOURS_PER_MONTH', 100),
   });
   return {
     hub: new SessionHub(create),

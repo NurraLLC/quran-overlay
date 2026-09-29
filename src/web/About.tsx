@@ -5,7 +5,8 @@ import { useEffect, useState } from 'react';
 import type { CreditView, SearchCard } from '../shared/contracts';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { NurraBadge } from './Nurra';
-import { access, formatListening, type Access } from './net';
+import { SharedHours } from './Sponsor';
+import { access, type Access } from './net';
 
 const REPO = 'https://github.com/NurraLLC/quran-overlay';
 
@@ -44,8 +45,6 @@ const NARRATIONS: Array<{ ar: string; en: string; ref: string; grade: string; ur
 export function About() {
   const [me, setMe] = useState<Access | null>(null);
   const [ayah, setAyah] = useState<SearchCard | null>(null);
-  const [busy, setBusy] = useState<number | null>(null);
-  const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.surface = 'reader';
@@ -62,17 +61,6 @@ export function About() {
 
   const credits: CreditView | undefined = me?.credits;
   const donations = me?.billing?.donations ?? [];
-  const donate = async (amountCents: number) => {
-    setBusy(amountCents);
-    setNote(null);
-    const r = await fetch('/api/billing/donate', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amountCents }) }).catch(() => null);
-    const body = (await r?.json().catch(() => ({}))) as { url?: string; error?: string };
-    if (body?.url) location.href = body.url;
-    else {
-      setBusy(null);
-      setNote(body?.error ?? 'The payment page could not be opened. Please try again.');
-    }
-  };
 
   return (
     <div className="reader about">
@@ -108,28 +96,15 @@ export function About() {
           <h2>What it costs, and where the money goes</h2>
           <p>Reading, search and the stream overlay cost almost nothing to run. Live listening does: speech recognition costs about 12 cents for every hour a stream is open. So:</p>
           <ul>
-            <li>Everyone gets free listening every month.</li>
-            <li>Anyone who needs more can buy hours; the margin on those keeps listening free for others.</li>
+            <li>Listening is free for everyone. There are no accounts, plans or limits to buy past.</li>
             <li>
-              Gifts go into a shared pool of <strong>sponsored listening</strong>. When someone’s free time runs out they keep reciting from it, up to an hour a day each, so no one can use it all up. A gift becomes listening at cost: 13 cents an hour covers the recognition and the payment fee.
+              Everyone recites from one pool of <strong>shared hours</strong>, filled by gifts (ours included). Each person can use up to two hours a day, so there is always some for the next person.
             </li>
+            <li>A gift becomes listening at cost: 13 cents an hour covers the recognition and the payment fee, so $10 is about 76 hours of someone’s recitation. The numbers below are live.</li>
+            <li>If the pool ever runs dry, listening pauses for everyone until it is refilled, and reading and search carry on as always.</li>
             <li>No ads, no selling data, no tracking.</li>
           </ul>
-          {credits && credits.pool > 0 && <p className="about-pool">Right now {formatListening(credits.pool)} of sponsored listening is waiting for whoever needs it.</p>}
-          {donations.length > 0 && (
-            <div className="r-sponsor about-give">
-              <h3>Sponsor listening for others</h3>
-              <div className="r-packs">
-                {donations.map((d) => (
-                  <button key={d.amountCents} disabled={busy !== null} onClick={() => void donate(d.amountCents)}>
-                    <span>{d.price}</span>
-                    <strong>{busy === d.amountCents ? 'Opening…' : `about ${d.hours} h for others`}</strong>
-                  </button>
-                ))}
-              </div>
-              {note && <p className="r-note">{note}</p>}
-            </div>
-          )}
+          {credits && <SharedHours stats={me?.sponsored} donations={donations} defaultOpen />}
         </section>
 
         <section>

@@ -39,6 +39,12 @@ Fill in `deploy/production.env` (domain, keys; keep the conservative `QO_FREE_HO
 docker compose -f deploy/compose.yml --env-file deploy/production.env up -d --build
 ```
 
+Then fill the shared hours (listening is free for everyone from this pool; nothing is spent that was not put in):
+
+```bash
+docker compose -f deploy/compose.yml --env-file deploy/production.env exec app npx tsx scripts/sponsor-pool.ts 100 launch
+```
+
 ## Check after deploy
 
 - `https://<domain>/healthz` returns `{"ok":true}`.

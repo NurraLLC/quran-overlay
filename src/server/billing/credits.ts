@@ -31,6 +31,10 @@ export type CreditConfig = {
   holdMinSeconds: number;
   /** Sponsored time one visitor may use per UTC day (default one hour). */
   poolDailySecondsPerVisitor?: number;
+  /** Sponsored time one network may use per UTC day, across visitors (clearing cookies is not a new share). */
+  poolDailySecondsPerNetwork?: number;
+  /** This month's gifts are shown against this goal (the community bar). */
+  poolGoalSecondsPerMonth?: number;
 };
 
 export const DEFAULT_CREDITS: CreditConfig = {
@@ -58,8 +62,13 @@ export type Balance = {
   /** Free seconds used this month and the monthly allowance. */
   freeUsedThisMonth: number;
   freePerMonth: number;
-  /** Why free time is limited right now, if it is. */
-  limitedBy: 'month' | 'network' | 'service' | null;
+  /**
+   * Why nothing is available right now, if so: the free allowance's month, network or service
+   * cap, the shared pool being empty, or this visitor's (or network's) daily share of it used.
+   */
+  limitedBy: 'month' | 'network' | 'service' | 'pool' | 'share' | null;
+  /** Shared (pool) time this visitor may use per day. */
+  sharePerDay: number;
   /** When the monthly allowance renews (ms since epoch). */
   renewsAt: number;
 };
@@ -131,9 +140,33 @@ export class CreditStore {
     }
   }
 
-  private sponsoredFor(userId: string, day: string): number {
+  private sponsoredFor(userId: string, ip: string, day: string): { seconds: number; by: 'pool' | 'share' | null } {
+    const left = this.poolSeconds();
     const usedToday = this.num('SELECT SUM(pool_seconds) AS n FROM holds WHERE user_id = ? AND day = ?', userId, day);
-    return Math.max(0, Math.min(this.poolSeconds(), this.poolPerVisitorDay - usedToday));
+    const ipToday = this.num('SELECT SUM(pool_seconds) AS n FROM holds WHERE ip = ? AND day = ?', ip, day);
+    const share = Math.min(this.poolPerVisitorDay - usedToday, (this.cfg.poolDailySecondsPerNetwork ?? Infinity) - ipToday);
+    const seconds = Math.max(0, Math.min(left, share));
+    return { seconds, by: seconds > 0 ? null : left <= 0 ? 'pool' : 'share' };
+  }
+
+  /**
+   * The pool's story, for the community bar: all-time totals (given, recited from it, left), this
+   * month's gifts against the goal, and recent activity. Totals and counts only, never who.
+   */
+  poolStats(now = Date.now()) {
+    const monthStart = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), 1);
+    const week = now - 7 * 86_400_000;
+    return {
+      given: this.num('SELECT SUM(seconds) AS n FROM pool_gifts'),
+      used: this.num('SELECT SUM(pool_seconds) AS n FROM holds'),
+      left: this.poolSeconds(),
+      givenThisMonth: this.num('SELECT SUM(seconds) AS n FROM pool_gifts WHERE at >= ?', monthStart),
+      giftsThisMonth: this.num('SELECT COUNT(*) AS n FROM pool_gifts WHERE at >= ?', monthStart),
+      lastGiftAt: this.num('SELECT MAX(at) AS n FROM pool_gifts') || null,
+      recitersThisWeek: this.num('SELECT COUNT(DISTINCT user_id) AS n FROM holds WHERE pool_seconds > 0 AND settled_at >= ?', week),
+      recitedThisWeek: this.num('SELECT SUM(pool_seconds) AS n FROM holds WHERE settled_at >= ?', week),
+      goalThisMonth: this.cfg.poolGoalSecondsPerMonth ?? 100 * 3600,
+    };
   }
 
   close() {
@@ -169,9 +202,12 @@ export class CreditStore {
     const byIp = Math.max(0, this.cfg.ipDailyFreeSeconds - usedIpDay - openIpOthers);
     const byService = Math.max(0, this.cfg.globalDailyFreeSeconds - usedDay - openOthers);
     const free = Math.min(byMonth, byIp, byService);
-    const limitedBy = free > 0 ? null : byMonth === 0 ? 'month' : byIp === 0 ? 'network' : 'service';
     const paid = this.num('SELECT paid_seconds AS n FROM users WHERE id = ?', userId);
-    const sponsored = this.sponsoredFor(userId, day);
+    const pool = this.sponsoredFor(userId, ip, day);
+    const sponsored = pool.seconds;
+    // Why nothing is available (reported only then): with a free allowance configured, its cap; else the pool.
+    const freeBy = byMonth === 0 ? 'month' : byIp === 0 ? 'network' : 'service';
+    const limitedBy = free + paid + sponsored > 0 ? null : this.cfg.freeSecondsPerMonth > 0 && pool.by === 'pool' ? freeBy : pool.by;
     const reserved = this.openHolds(userId).reduce((n, h) => n + h.max_seconds, 0);
     return {
       free,
@@ -183,6 +219,7 @@ export class CreditStore {
       freeUsedThisMonth: usedMonth,
       freePerMonth: this.cfg.freeSecondsPerMonth,
       limitedBy,
+      sharePerDay: this.poolPerVisitorDay,
       renewsAt: nextMonth(now),
     };
   }
@@ -260,7 +297,7 @@ export class CreditStore {
     const paidHave = this.num('SELECT paid_seconds AS n FROM users WHERE id = ?', userId);
     const paid = Math.min(paidOwed, paidHave);
     // Then sponsored time (never below zero: a rare overlap of visitors drawing at once is absorbed).
-    const pooled = Math.min(paidOwed - paid, this.sponsoredFor(userId, day));
+    const pooled = Math.min(paidOwed - paid, this.sponsoredFor(userId, ip, day).seconds);
     this.db.exec('BEGIN');
     try {
       const upd = this.db.prepare('UPDATE holds SET settled_at = ?, free_seconds = ?, paid_seconds = ?, pool_seconds = ?, day = ?, month = ? WHERE id = ?');

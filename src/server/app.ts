@@ -182,7 +182,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   const creditView = (id: string, ip: string): CreditView => {
     const c = hosted!.credits;
     const b = c.balance(id, ip);
-    return { available: b.available + b.reserved - c.openUsage(id).usedSeconds, free: b.free, paid: b.paid, sponsored: b.sponsored, pool: b.pool, freeUsedThisMonth: b.freeUsedThisMonth, freePerMonth: b.freePerMonth, freePerDay: c.cfg.ipDailyFreeSeconds, limitedBy: b.limitedBy, renewsAt: b.renewsAt, listeningSeconds: c.openUsage(id).usedSeconds };
+    return { available: b.available + b.reserved - c.openUsage(id).usedSeconds, free: b.free, paid: b.paid, sponsored: b.sponsored, pool: b.pool, freeUsedThisMonth: b.freeUsedThisMonth, freePerMonth: b.freePerMonth, freePerDay: c.cfg.ipDailyFreeSeconds, sharePerDay: b.sharePerDay, limitedBy: b.limitedBy, renewsAt: b.renewsAt, listeningSeconds: c.openUsage(id).usedSeconds };
   };
   /** Last known address per visitor (for pushing balances from the periodic sweep). */
   const lastIp = new Map<string, string>();
@@ -224,6 +224,8 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
       credits: creditView(id, clientIp(req)),
       // The visitor's own code to keep their time on another device or after clearing cookies.
       recoveryCode: cookieValue,
+      // Sponsored listening so far (totals only; nothing about who gave or who recited).
+      sponsored: hosted.credits.poolStats(),
       billing: hosted.billing
         ? {
             packs: hosted.billing.packs.map((p) => ({ id: p.id, hours: p.hours, label: p.label, price: formatPrice(p.amountCents, p.currency) })),
@@ -231,6 +233,12 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
           }
         : null,
     };
+  });
+
+  // The shared pool's live story (the community bar polls it). Totals only.
+  app.get('/api/pool', async (_req, reply) => {
+    if (!hosted) return reply.code(404).send({ error: 'not available' });
+    return hosted.credits.poolStats();
   });
 
   // Restore a visitor identity from its recovery code (another device, cleared cookies).

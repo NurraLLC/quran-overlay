@@ -74,6 +74,17 @@ export async function exchangeOwner(): Promise<void> {
 }
 
 export type Pack = { id: string; hours: number; label: string; price: string };
+export type PoolStats = {
+  given: number;
+  used: number;
+  left: number;
+  givenThisMonth: number;
+  giftsThisMonth: number;
+  lastGiftAt: number | null;
+  recitersThisWeek: number;
+  recitedThisWeek: number;
+  goalThisMonth: number;
+};
 /** A donation to the shared sponsored-listening pool, and the hours it adds. */
 export type Donation = { amountCents: number; price: string; hours: number };
 export type Access = {
@@ -84,6 +95,8 @@ export type Access = {
   recoveryCode?: string | null;
   /** Hosted with payments on: what can be bought. */
   billing?: { packs: Pack[]; donations?: Donation[] } | null;
+  /** Hosted: the shared pool's story (seconds, counts; totals only). */
+  sponsored?: PoolStats;
 };
 
 /** Local: trade the owner link for the cookie. Hosted: get (or be issued) this visitor's identity. */
@@ -91,6 +104,14 @@ export async function access(): Promise<Access> {
   await exchangeOwner();
   const r = await fetch('/api/me', { credentials: 'same-origin' });
   return (await r.json()) as Access;
+}
+
+/** The one-line listening status: free and shared, or the personal allowance when one is configured. */
+export function listeningLine(c: import('../shared/contracts').CreditView): string {
+  if (c.freePerMonth > 0) return c.available > 0 ? `${formatListening(c.available)} of listening left` : 'No listening time left';
+  if (c.limitedBy === 'pool') return 'Shared hours have run out · sponsor more';
+  if (c.limitedBy === 'share') return "Today's share recited · back tomorrow";
+  return `Free · ${Math.round(c.pool / 3600).toLocaleString()} h shared right now`;
 }
 
 /** "9 h 41 min", "12 min", "under a minute". */

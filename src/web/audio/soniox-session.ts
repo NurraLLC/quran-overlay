@@ -201,7 +201,11 @@ export class SonioxCapture {
           if (body.error === 'NO_CREDITS') {
             const renews = body.renewsAt ? new Date(body.renewsAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', timeZone: 'UTC' }) : 'next month';
             this.noCredits =
-              body.limitedBy === 'network'
+              body.limitedBy === 'pool'
+                ? 'The shared listening hours have run out for now. Reading and search still work, and anyone can sponsor more hours for everyone.'
+                : body.limitedBy === 'share'
+                  ? "You have recited today's share of the shared hours. It comes back tomorrow, so there is enough for everyone."
+                  : body.limitedBy === 'network'
                 ? "Today's free listening on this network is used up. It comes back tomorrow."
                 : body.limitedBy === 'service'
                   ? "Today's free listening for everyone is used up. It comes back tomorrow."

@@ -39,8 +39,9 @@ export function parseDonations(amounts: string | undefined, centsPerHour: string
   return { amountsCents: list as number[], currency: DEFAULT_DONATIONS.currency, centsPerHour: cph };
 }
 
+/** Packs to sell: none unless QO_PACKS lists some (listening is free, funded by the shared pool). */
 export function parsePacks(json: string | undefined): Pack[] {
-  if (!json) return DEFAULT_PACKS;
+  if (!json) return [];
   const raw = JSON.parse(json) as Pack[];
   if (!Array.isArray(raw) || !raw.every((p) => /^[a-z0-9_-]{1,32}$/.test(p.id) && p.hours > 0 && p.amountCents >= 50 && /^[a-z]{3}$/.test(p.currency) && p.label)) throw new Error('QO_PACKS must be a JSON array of {id, hours, amountCents, currency, label}');
   return raw;

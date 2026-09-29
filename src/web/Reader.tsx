@@ -6,10 +6,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView } from '../shared/contracts';
 import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
-import { access, connect, formatListening, type Access } from './net';
+import { access, connect, formatListening, listeningLine, type Access } from './net';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { arabicNumber } from './VerseDisplay';
 import { NurraBadge } from './Nurra';
+import { SharedHours } from './Sponsor';
 
 type Ayah = { key: string; ayah: number; arabic: string; english: string; glosses: Array<string | null> | null };
 type Surah = { number: number; name: string; nameArabic: string; translation: string; glossCredit: string | null; ayahs: Ayah[] };
@@ -104,7 +105,7 @@ export function Reader() {
   /** Listening time left (hosted service only). */
   const [credits, setCredits] = useState<CreditView | null>(null);
   const micWrap = useRef<HTMLDivElement>(null);
-  const [account, setAccount] = useState<Pick<Access, 'recoveryCode' | 'billing'>>({});
+  const [account, setAccount] = useState<Pick<Access, 'recoveryCode' | 'billing' | 'sponsored'>>({});
   const [timeOpen, setTimeOpen] = useState<false | 'time' | 'sponsor'>(false);
   // Back from Stripe's checkout page.
   const [returned] = useState(() => new URLSearchParams(location.search).get('paid'));
@@ -124,7 +125,7 @@ export function Reader() {
         if (cancelled) return;
         if (!s.owner) return setAuth('unauthorized');
         if (s.credits) setCredits(s.credits);
-        setAccount({ recoveryCode: s.recoveryCode, billing: s.billing });
+        setAccount({ recoveryCode: s.recoveryCode, billing: s.billing, sponsored: s.sponsored });
         if (new URLSearchParams(location.search).has('paid') || new URLSearchParams(location.search).has('donated') || new URLSearchParams(location.search).has('canceled')) history.replaceState(null, '', location.pathname);
         setAuth('owner');
         sock.current = connect('/ws/control', {
@@ -346,8 +347,15 @@ export function Reader() {
       <main className="r-page">
         {(!cur || home) && (
           <section className="r-welcome">
-            <p className="r-iqra" lang="ar" dir="rtl" aria-hidden="true">{toQpcHafsEncoding('ٱقۡرَأۡ')}</p>
-            <h1>Recite, and the Quran follows you.</h1>
+            <figure className="r-iqra-figure">
+              <p className="r-iqra" lang="ar" dir="rtl">{toQpcHafsEncoding('ٱقۡرَأۡ')}</p>
+              <figcaption className="r-iqra-meaning">
+                <span className="r-iqra-en">Recite</span>
+                <span className="r-iqra-ref">the first word revealed (96:1)</span>
+              </figcaption>
+            </figure>
+            <h1>Recite, and the page keeps up with you.</h1>
+            <p className="r-sub">Each word you recite lights up with its meaning, on your phone or on your stream.</p>
             <DemoLine />
             {cur && home ? (
               <button className="r-continue" onClick={() => { setHome(false); setFollow(true); }}>
@@ -361,7 +369,7 @@ export function Reader() {
             )}
             {!!saved.recited?.length && <p className="r-today">Today: {saved.recited.length} {saved.recited.length === 1 ? 'ayah' : 'ayahs'} recited</p>}
             <div className="r-try">
-              <p className="r-try-label">Tap the microphone and recite, or try saying</p>
+              <p className="r-try-label">Start reciting, or try asking</p>
               <div className="r-quick">
                 {TRY.map((t) => (
                   <button key={t} onClick={() => run(t)}>“{t}”</button>
@@ -372,6 +380,7 @@ export function Reader() {
               <summary>How your voice is used</summary>
               <p>While the microphone is on, your voice goes to our speech-recognition provider (Soniox) and nowhere else. We do not record or keep your audio, and nothing is sent during long pauses; listening stops by itself after a while without recitation. Reading and search never use the microphone.</p>
             </details>
+            {credits && <SharedHours stats={account.sponsored} donations={account.billing?.donations ?? []} />}
             {/* Streamers: the same following, as a broadcast overlay driven from the control page. */}
             <a className="r-stream" href="/control">
               <span className="r-stream-k">Streaming?</span> Put the ayah you recite on your stream, with OBS
@@ -477,14 +486,14 @@ export function Reader() {
             </button>
             {credits ? (
               <button className="r-menu-item" onClick={() => { setMenuOpen(false); setTimeOpen('time'); }}>
-                Listening time<span>{credits.available - Math.min(credits.sponsored, credits.available) > 0 ? `${formatListening(credits.available - Math.min(credits.sponsored, credits.available))} left` : credits.sponsored > 0 ? 'Using sponsored time today' : 'None left right now'} · your account on this device</span>
+                Listening<span>{listeningLine(credits)}</span>
               </button>
             ) : (
               <p className="r-menu-item r-menu-static">Listening time<span>Unlimited: this reader runs on your own computer, with your own key</span></p>
             )}
             {credits && !!account.billing?.donations?.length && (
               <button className="r-menu-item" onClick={() => { setMenuOpen(false); setTimeOpen('sponsor'); }}>
-                Sponsor listening for others<span>{credits.pool > 0 ? `${formatListening(credits.pool)} sponsored so far is waiting for whoever needs it` : 'Keep the reader free for people whose time runs out'}</span>
+                Sponsor shared hours<span>Keep listening free for everyone</span>
               </button>
             )}
             <a className="r-menu-item" href="/control">
@@ -587,8 +596,7 @@ export function Reader() {
             )}
             {credits && (
               <button className={`r-credits${credits.available < 600 ? ' low' : ''}`} onClick={() => setTimeOpen('time')}>
-                {credits.available > 0 ? `${formatListening(credits.available)} of listening left` : account.billing ? 'No listening time left · get more' : 'No listening time left'}
-                {credits.available > 0 && credits.paid === 0 && credits.limitedBy === null ? ' this month' : ''}
+                {listeningLine(credits)}
               </button>
             )}
             {snap.held && (
@@ -604,17 +612,16 @@ export function Reader() {
 }
 
 /** Listening time: what is left, buying more (when offered), and keeping it on another device. */
-function ListeningTime({ credits, account, focus, onClose }: { credits: CreditView; account: Pick<Access, 'recoveryCode' | 'billing'>; focus: 'time' | 'sponsor'; onClose: () => void }) {
+function ListeningTime({ credits, account, focus, onClose }: { credits: CreditView; account: Pick<Access, 'recoveryCode' | 'billing' | 'sponsored'>; focus: 'time' | 'sponsor'; onClose: () => void }) {
   const sponsorRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (focus === 'sponsor') sponsorRef.current?.scrollIntoView({ block: 'start' });
   }, [focus]);
-  // The visitor's own time (free and bought) first; sponsored time is shown as what it is.
-  const sponsoredNow = Math.min(credits.sponsored, credits.available);
-  const own = credits.available - sponsoredNow;
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [code, setCode] = useState('');
+  const packs = account.billing?.packs ?? [];
+  const personal = credits.freePerMonth > 0; // a personal monthly allowance is configured (optional)
   const renews = new Date(credits.renewsAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', timeZone: 'UTC' });
   const buy = async (pack: string) => {
     setBusy(pack);
@@ -627,45 +634,43 @@ function ListeningTime({ credits, account, focus, onClose }: { credits: CreditVi
       setNote(body?.error ?? 'The payment page could not be opened. Please try again.');
     }
   };
-  const donate = async (amountCents: number) => {
-    setBusy(`d${amountCents}`);
-    setNote(null);
-    const r = await fetch('/api/billing/donate', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amountCents }) }).catch(() => null);
-    const body = (await r?.json().catch(() => ({}))) as { url?: string; error?: string };
-    if (body?.url) location.href = body.url;
-    else {
-      setBusy(null);
-      setNote(body?.error ?? 'The payment page could not be opened. Please try again.');
-    }
-  };
-  const donations = account.billing?.donations ?? [];
-  const example = donations[Math.min(1, donations.length - 1)];
   const restore = async () => {
     const r = await fetch('/api/me/restore', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code.trim() }) }).catch(() => null);
     if (r?.ok) location.reload();
     else setNote(((await r?.json().catch(() => ({}))) as { error?: string })?.error ?? 'That code did not work.');
   };
   return (
-    <div className="r-modal" role="dialog" aria-modal="true" aria-label="Listening time" onClick={onClose}>
+    <div className="r-modal" role="dialog" aria-modal="true" aria-label="Listening" onClick={onClose}>
       <section className="r-time" onClick={(e) => e.stopPropagation()}>
         <button className="r-close" onClick={onClose} aria-label="Close">×</button>
-        <h2>Listening time</h2>
-        <p className="r-time-big">{own > 0 ? `${formatListening(own)} left` : sponsoredNow > 0 ? `${formatListening(sponsoredNow)} sponsored today` : 'None left right now'}</p>
-        {own > 0 && sponsoredNow > 0 && <p className="r-time-detail">Plus up to {formatListening(sponsoredNow)} a day of listening sponsored by others, once yours runs out.</p>}
-        <p className="r-time-detail">
-          Free each month: {formatListening(credits.freePerMonth)}{credits.freePerDay < credits.freePerMonth ? ` (up to ${formatListening(credits.freePerDay)} a day)` : ''}. Used so far: {credits.freeUsedThisMonth < 60 ? 'none' : formatListening(credits.freeUsedThisMonth)}. Renews {renews}.
-          {credits.paid > 0 ? ` Bought: ${formatListening(credits.paid)}.` : ''}
-          {credits.limitedBy === 'network' ? " Today's free time on this network is used up." : credits.limitedBy === 'service' ? " Today's free time for everyone is used up." : ''}
-        </p>
-        {credits.free === 0 && credits.paid === 0 && credits.sponsored > 0 ? (
-          <p className="r-time-free">Your own time is used up, so you are listening on time others sponsored: up to {formatListening(credits.sponsored)} more today.</p>
-        ) : credits.pool > 0 ? (
-          <p className="r-time-free">{formatListening(credits.pool)} of listening sponsored by others is waiting for anyone whose time runs out.</p>
-        ) : null}
-        <p className="r-time-free">Reading, search and everything about the Quran are free. Only live listening uses time, because speech recognition costs money per minute.</p>
-        {account.billing && (
+        <h2>Listening</h2>
+        {personal ? (
+          <>
+            <p className="r-time-big">{credits.available > 0 ? `${formatListening(credits.available)} left` : 'None left right now'}</p>
+            <p className="r-time-detail">
+              Free each month: {formatListening(credits.freePerMonth)}. Used so far: {credits.freeUsedThisMonth < 60 ? 'none' : formatListening(credits.freeUsedThisMonth)}. Renews {renews}.
+              {credits.paid > 0 ? ` Bought: ${formatListening(credits.paid)}.` : ''} Then shared hours, up to {formatListening(credits.sharePerDay)} a day.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="r-time-big">Free for everyone</p>
+            <p className="r-time-detail">
+              {credits.limitedBy === 'pool'
+                ? 'The shared hours have run out for now. Reading and search still work, and listening opens again as soon as someone sponsors more hours.'
+                : credits.limitedBy === 'share'
+                  ? `You have recited today's share (${formatListening(credits.sharePerDay)}). It comes back tomorrow, so there is enough for everyone.`
+                  : `Everyone recites from the shared hours, up to ${formatListening(credits.sharePerDay)} a day each. You have ${formatListening(credits.available)} left today.`}
+            </p>
+          </>
+        )}
+        <p className="r-time-free">Reading, search and everything about the Quran are always free. Only live listening costs money (speech recognition, about 12 cents an hour).</p>
+        <div ref={sponsorRef}>
+          <SharedHours stats={account.sponsored} donations={account.billing?.donations ?? []} defaultOpen />
+        </div>
+        {packs.length > 0 && (
           <div className="r-packs">
-            {account.billing.packs.map((p) => (
+            {packs.map((p) => (
               <button key={p.id} disabled={!!busy} onClick={() => void buy(p.id)}>
                 <span>{p.label}</span>
                 <strong>{busy === p.id ? 'Opening…' : p.price}</strong>
@@ -673,21 +678,7 @@ function ListeningTime({ credits, account, focus, onClose }: { credits: CreditVi
             ))}
           </div>
         )}
-        {!!donations.length && (
-          <div className="r-sponsor" ref={sponsorRef}>
-            <h3>Sponsor listening for others</h3>
-            <p>Your gift keeps the reader free for people whose own time has run out: it goes into a shared pool anyone can recite from.{example ? ` ${example.price} gives about ${example.hours} hours.` : ''}</p>
-            <div className="r-packs">
-              {donations.map((d) => (
-                <button key={d.amountCents} disabled={!!busy} onClick={() => void donate(d.amountCents)}>
-                  <span>{d.price}</span>
-                  <strong>{busy === `d${d.amountCents}` ? 'Opening…' : `about ${d.hours} h for others`}</strong>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {account.recoveryCode && (
+        {account.recoveryCode && (packs.length > 0 || credits.paid > 0) && (
           <details className="r-recover">
             <summary>Keep your time on another device</summary>
             <p>Save this code. Enter it on another phone or computer (or after clearing your browser) to keep your listening time.</p>
@@ -740,7 +731,6 @@ function DemoLine() {
           </span>
         ))}
       </p>
-      <figcaption>The word you are reciting lights up, with its meaning.</figcaption>
     </figure>
   );
 }
@@ -751,6 +741,7 @@ type ChapterRow = { number: number; nameSimple: string; nameArabic: string; vers
 function SurahIndex({ onOpen }: { onOpen: (n: number) => void }) {
   const [list, setList] = useState<ChapterRow[] | null>(null);
   const [q, setQ] = useState('');
+  const [all, setAll] = useState(false);
   useEffect(() => {
     fetch('/api/chapters', { credentials: 'same-origin' })
       .then((r) => (r.ok ? r.json() : null))
@@ -760,7 +751,8 @@ function SurahIndex({ onOpen }: { onOpen: (n: number) => void }) {
   if (!list) return null;
   const flat = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, '');
   const t = q.trim();
-  const shown = t ? list.filter((c) => String(c.number) === t || (flat(t) && flat(c.nameSimple).includes(flat(t))) || c.nameArabic.includes(t)) : list;
+  const matches = t ? list.filter((c) => String(c.number) === t || (flat(t) && flat(c.nameSimple).includes(flat(t))) || c.nameArabic.includes(t)) : list;
+  const shown = t || all ? matches : matches.slice(0, 12);
   return (
     <section className="r-index" id="r-surahs" aria-label="All surahs">
       <h2>All surahs</h2>
@@ -780,6 +772,11 @@ function SurahIndex({ onOpen }: { onOpen: (n: number) => void }) {
         ))}
       </ol>
       {!shown.length && <p className="r-index-none">No surah matches “{t}”.</p>}
+      {!t && !all && (
+        <button className="r-index-more" onClick={() => setAll(true)}>
+          Show all 114 surahs
+        </button>
+      )}
     </section>
   );
 }

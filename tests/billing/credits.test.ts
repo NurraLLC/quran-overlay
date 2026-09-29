@@ -61,7 +61,7 @@ describe('credit pools and caps', () => {
     store.settle('u1', T0 + 300 * S);
     store.reserve('u1', 'ip1', T0 + 400 * S);
     store.settle('u1', T0 + 700 * S);
-    expect(store.balance('u1', 'ip1', T0 + 701 * S)).toMatchObject({ free: 0, paid: 400, limitedBy: 'month' });
+    expect(store.balance('u1', 'ip1', T0 + 701 * S)).toMatchObject({ free: 0, paid: 400, limitedBy: null }); // bought time remains, so nothing is limiting
     store.reserve('u1', 'ip1', T0 + 800 * S);
     store.settle('u1', T0 + 900 * S);
     expect(store.balance('u1', 'ip1', T0 + 901 * S)).toMatchObject({ free: 0, paid: 300 });
@@ -134,5 +134,22 @@ describe('sponsored pool', () => {
     old.close();
     store = new CreditStore(file, cfg);
     expect(store.balance('u1', 'ip1', T0)).toMatchObject({ free: 600, pool: 0 });
+  });
+});
+
+describe('free for everyone from the shared pool', () => {
+  it('gives each visitor a daily share, limits a network, and says why when nothing is left', () => {
+    make({ freeSecondsPerMonth: 0, poolDailySecondsPerVisitor: 300, poolDailySecondsPerNetwork: 400 });
+    expect(store.balance('u1', 'ip1', T0)).toMatchObject({ available: 0, limitedBy: 'pool', sharePerDay: 300 });
+    store.grantPool(10_000, 'gift', 1000, 'usd', T0);
+    expect(store.balance('u1', 'ip1', T0)).toMatchObject({ free: 0, sponsored: 300, available: 300, limitedBy: null });
+    store.reserve('u1', 'ip1', T0);
+    store.settle('u1', T0 + 300 * S);
+    expect(store.balance('u1', 'ip1', T0 + 301 * S)).toMatchObject({ available: 0, limitedBy: 'share' });
+    // A new cookie on the same network gets only what is left of the network's share.
+    expect(store.balance('u2', 'ip1', T0 + 301 * S)).toMatchObject({ sponsored: 100 });
+    expect(store.balance('u3', 'ip2', T0 + 301 * S)).toMatchObject({ sponsored: 300 });
+    const s = store.poolStats(T0 + 400 * S);
+    expect(s).toMatchObject({ given: 10_000, used: 300, left: 9_700, givenThisMonth: 10_000, giftsThisMonth: 1, lastGiftAt: T0, recitersThisWeek: 1, recitedThisWeek: 300 });
   });
 });

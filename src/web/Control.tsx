@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView, SearchCard } from '../shared/contracts';
 import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
-import { access, connect, formatListening } from './net';
+import { access, connect, formatListening, listeningLine } from './net';
 import { NurraBadge } from './Nurra';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { StageFrame, VerseDisplay, useFontsReady, type LayoutInfo } from './VerseDisplay';
@@ -447,8 +447,7 @@ function VoiceCard(p: {
 
       {p.credits && (
         <p className={`credits-line${p.credits.available < 600 ? ' low' : ''}`}>
-          {p.credits.available > 0 ? `${formatListening(p.credits.available)} of listening left` : 'No listening time left'}
-          {p.credits.paid === 0 && p.credits.limitedBy === null ? ' this month' : ''}
+          {listeningLine(p.credits)}
         </p>
       )}
       <form

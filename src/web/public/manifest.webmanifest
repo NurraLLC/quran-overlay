@@ -1,7 +1,7 @@
 {
   "name": "Quran Reader",
   "short_name": "Quran",
-  "description": "Recite, and the Quran follows you. Word-by-word meanings, voice requests, reading in Arabic and English.",
+  "description": "Recite, and the page keeps up with you. Word-by-word meanings, voice requests, reading in Arabic and English.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

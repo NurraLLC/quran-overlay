@@ -201,7 +201,9 @@ export type CreditView = {
   freePerMonth: number;
   /** Free listening allowed per day (per network). */
   freePerDay: number;
-  limitedBy: 'month' | 'network' | 'service' | null;
+  limitedBy: 'month' | 'network' | 'service' | 'pool' | 'share' | null;
+  /** Shared (pool) time one visitor may use per day. */
+  sharePerDay: number;
   /** When the monthly free allowance renews (ms since epoch). */
   renewsAt: number;
   /** Seconds used by the stream in progress, if listening. */
