@@ -1,5 +1,11 @@
 # Launch status — 2026-09-29
 
+**Public reader launched:** https://nurra.org/quran-reader/ . Sites version 14
+(`fea5e1f`) forwards only the reader path to backend image
+`quran-reader:48183d0`. Production deployment
+`appgdep_6abc3065205c8191b753b01720b88939` succeeded with environment revision 1.
+Live payments are explicitly disabled while the owner finishes Stripe.
+
 Use this status before the older alternative deployment examples in LAUNCH.md.
 The main Nurra website remains on Sites; Squarespace manages its DNS. Do not
 migrate nameservers or buy another server.
@@ -33,17 +39,41 @@ migrate nameservers or buy another server.
 
 ## Still needed for public launch
 
-- Publish and exercise the prepared Sites path proxy. A working authenticated origin does not prove the
-  public Sites WebSocket path or visitor-IP handling.
-- Finish publicly reachable reader-specific privacy/terms and Quran Foundation
-  attribution. The current about page has an audio explanation; it does not yet
-  constitute the complete privacy policy required by the provider.
+The public routing, reader policies and consent flow are now published. Remaining
+operational verification and payment work:
+
+- Test fairness from two distinct external networks. The proxy validates the
+  trusted Cloudflare address and overwrites incoming forwarding headers; live
+  multi-network quota isolation has not been measured.
 - Confirm Stripe activation; install the live key and signed webhook only when
   available. Live contributions remain disabled. Test-mode funding is separate.
 - Reconcile actual provider and hosting bills against the estimated ledger.
   Stripe fees are automatic; this is not yet a fully reconciled cash ledger.
 - Test the owner's live microphone and rendered OBS output. Browser fixtures
   and relay handshake checks do not replace those tests.
+
+## Public verification
+
+- Public health, privacy, terms, styles, scripts and pool endpoints return 200.
+  Assets stay under `/quran-reader/`. Anonymous sessions work with Secure,
+  HttpOnly cookies; public control WebSocket receives a snapshot.
+- Direct origin access without the private gateway token returns 404.
+- Browser walkthrough opened Al-Fatihah with Arabic and English, showed the
+  unchecked voice-consent dialog, cancelled it, and retained the reading page.
+  No owner microphone audio was captured during this walkthrough.
+- Privacy and terms are available at `/quran-reader/privacy.html` and
+  `/quran-reader/terms.html`, with Quran Foundation attribution on About.
+  The owner requested email-only contact, `ashfaq@nurra.org`. These pages describe
+  implemented practices; publication is not legal certification or confirmation
+  of all provider contracts.
+- Local checks on `48183d0`: typecheck, 208 tests, build and ten browser tests pass;
+  GitHub CI passed. Voice tests cover cancel before any audio, explicit unchecked
+  consent, retry, protected relay and silence reopening using synthetic fixtures.
+- Main homepage content exactly matches the pre-existing Sites static export.
+  The public response adds only Cloudflare's delivery/challenge script; its
+  changing bytes explain the raw HTML checksum difference.
+- Screenshots: `artifacts/hosting/public-reader-live.png` and
+  `artifacts/hosting/public-voice-consent.png` (ignored local proof).
 
 Preserve unrelated local edits in the cookie-path and Cloudflare Worker changes;
 they were not included in these commits. Keep all production settings, origin
