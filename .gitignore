@@ -12,3 +12,6 @@ test-results/
 playwright-report/
 artifacts/
 data/models/
+data/speedlab/
+data/state/
+data/inbox/

@@ -145,7 +145,7 @@ Set `QO_DIAGNOSTIC_CAPTURE=1` to write recognized text tokens (never audio) to `
 
 | Evidence layer | Status |
 |---|---|
-| Source and tests | 151 tests + typecheck + production build pass (tracker, commands, sound search, credits, hosted isolation, payments). |
+| Source and tests | 158 tests + typecheck + production build pass (tracker, commands, sound search, credits, hosted isolation, payments). |
 | Corpus | 25/25 validation checks; all 6,236 ayahs present in display, search and English with matching keys. |
 | Replay (synthetic) | 19 hand-authored scenarios over real corpus text, three modes: deterministic 0 wrong displays, 168/178 ayahs shown; hybrid identical with a *simulated* decider; jev_required 0 wrong but slower (see `docs/BENCHMARK.md`). Streams use assumed provider timing and error rates. |
 | Browser | Playwright walkthrough in Edge (control page + separate reading screen): privacy of search, show/pause/resume, hide/unhide, paging, lower-third promotion, reload recovery. Frames reviewed visually. |

@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # The corpus is not in the repository: fetch it (hash-verified) once per source pin, then reuse.
+      - uses: actions/cache@v4
+        id: corpus
+        with:
+          path: |
+            data/raw
+            data/processed
+          key: corpus-${{ hashFiles('corpus/sources.json', 'scripts/fetch-corpus.ts', 'scripts/import-corpus.ts', 'scripts/import-wbw.ts') }}
+      - if: steps.corpus.outputs.cache-hit != 'true'
+        run: |
+          npm run corpus:fetch
+          npm run corpus:import -- --manifest corpus/sources.json
+          npm run wbw:import
+      - run: npm run corpus:validate
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
