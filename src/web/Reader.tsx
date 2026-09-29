@@ -58,6 +58,11 @@ const Stop = () => (
     <rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" />
   </svg>
 );
+const MenuIcon = () => (
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+    <path fill="currentColor" d="M4 6.5h16v2H4v-2Zm0 4.5h16v2H4v-2Zm0 4.5h10v2H4v-2Z" />
+  </svg>
+);
 const Keys = () => (
   <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
     <path fill="currentColor" d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm0 2v8h16V8H4Zm2 1h2v2H6V9Zm3 0h2v2H9V9Zm3 0h2v2h-2V9Zm3 0h3v2h-3V9ZM6 12h2v2H6v-2Zm3 0h6v2H9v-2Zm7 0h2v2h-2v-2Z" />
@@ -74,6 +79,12 @@ export function Reader() {
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<{ id: string; r: CommandResult } | null>(null);
   const [follow, setFollow] = useState(true);
+  /** The start page, opened from the menu while a surah is up (recitation or a request leaves it). */
+  const [home, setHome] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  /** When the reader last scrolled by hand (wheel, touch). */
+  const lastScroll = useRef(-Infinity);
+  const curKey = useRef<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   // Confirmations ("Opened 55:13.", "Showing Arabic only.") fade on their own; choices stay.
   useEffect(() => {
@@ -201,6 +212,16 @@ export function Reader() {
     return () => cancelAnimationFrame(raf);
   }, [isListening, cap]);
 
+  curKey.current = cur?.key ?? null;
+  useEffect(() => {
+    if (!follow && performance.now() - lastScroll.current > 3000) setFollow(true);
+  }, [cur?.key, d?.cursor?.from]);
+  const prevKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (cur?.key && prevKey.current && cur.key !== prevKey.current) setHome(false);
+    prevKey.current = cur?.key ?? null;
+  }, [cur?.key]);
+
   // Keep the recited word (or the new ayah) in view, unless the reader scrolled away on purpose.
   useEffect(() => {
     if (!follow || !cur) return;
@@ -212,13 +233,34 @@ export function Reader() {
     if (r.top < top || r.bottom > bottom) el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }, [cur?.key, d?.cursor?.from, surah?.number, follow]);
 
+  // Scrolling by hand pauses following only once the recited ayah is out of view (a nudge, or
+  // scrolling back to it, keeps following). The next word recited after a few still seconds brings
+  // the page back; just browsing without reciting leaves it where the reader put it.
   useEffect(() => {
-    const away = () => setFollow(false);
-    window.addEventListener('wheel', away, { passive: true });
-    window.addEventListener('touchmove', away, { passive: true });
+    let t = 0;
+    const check = () => {
+      const el = document.querySelector<HTMLElement>('.r-word.active') ?? (curKey.current ? document.getElementById(`a-${curKey.current}`) : null);
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setFollow(r.bottom > 96 && r.top < window.innerHeight - 150);
+    };
+    const byHand = () => {
+      lastScroll.current = performance.now();
+      clearTimeout(t);
+      t = window.setTimeout(check, 250);
+    };
+    // Momentum keeps scrolling after the finger lifts: keep checking while it settles.
+    const onScroll = () => {
+      if (performance.now() - lastScroll.current < 1500) byHand();
+    };
+    window.addEventListener('wheel', byHand, { passive: true });
+    window.addEventListener('touchmove', byHand, { passive: true });
+    window.addEventListener('scroll', onScroll, { passive: true });
     return () => {
-      window.removeEventListener('wheel', away);
-      window.removeEventListener('touchmove', away);
+      clearTimeout(t);
+      window.removeEventListener('wheel', byHand);
+      window.removeEventListener('touchmove', byHand);
+      window.removeEventListener('scroll', onScroll);
     };
   }, []);
 
@@ -233,6 +275,7 @@ export function Reader() {
   const goto = (key: string) => {
     send({ type: 'goto', key });
     setFollow(true);
+    setHome(false);
   };
 
   if (auth === 'unauthorized') {
@@ -267,8 +310,11 @@ export function Reader() {
   return (
     <div className="reader" data-lang={lang}>
       <header className="r-top">
+        <button className="r-menu-btn" onClick={() => setMenuOpen(true)} aria-label="Menu: home, surahs, listening time" aria-haspopup="dialog">
+          <MenuIcon />
+        </button>
         <div className="r-title">
-          {cur ? (
+          {cur && !home ? (
             <>
               <span className="r-name">{cur.surahName}</span>
               <span className="r-name-ar" lang="ar">{cur.surahNameArabic}</span>
@@ -285,7 +331,7 @@ export function Reader() {
             </button>
           ))}
         </div>
-        {shownSurahForBar && cur && (
+        {shownSurahForBar && cur && !home && (
           // Where in the surah: a hairline that fills as the recitation moves through it.
           <div className="r-progress" role="progressbar" aria-label="Position in the surah" aria-valuemin={1} aria-valuemax={shownSurahForBar.ayahs.length} aria-valuenow={cur.ayah}>
             <span style={{ transform: `scaleX(${cur.ayah / shownSurahForBar.ayahs.length})` }} />
@@ -294,12 +340,16 @@ export function Reader() {
       </header>
 
       <main className="r-page">
-        {!cur && (
+        {(!cur || home) && (
           <section className="r-welcome">
             <p className="r-iqra" lang="ar" dir="rtl" aria-hidden="true">{toQpcHafsEncoding('ٱقۡرَأۡ')}</p>
             <h1>Recite, and the Quran follows you.</h1>
             <DemoLine />
-            {saved.key && (
+            {cur && home ? (
+              <button className="r-continue" onClick={() => { setHome(false); setFollow(true); }}>
+                Continue at {cur.surahName} {cur.key}
+              </button>
+            ) : saved.key && (
               <button className="r-continue" onClick={() => goto(saved.key!)}>
                 Continue at {saved.name ? `${saved.name} ` : ''}
                 {saved.key}
@@ -323,10 +373,11 @@ export function Reader() {
               <span className="r-stream-k">Streaming?</span> Put the ayah you recite on your stream, with OBS
               <span aria-hidden="true"> →</span>
             </a>
+            <SurahIndex onOpen={(n) => goto(`${n}:1`)} />
           </section>
         )}
-        {cur && !shownSurah && <p className="r-loading">Opening {cur.surahName}…</p>}
-        {shownSurah && (
+        {cur && !home && !shownSurah && <p className="r-loading">Opening {cur.surahName}…</p>}
+        {shownSurah && !home && (
           <>
             <header className="r-surah">
               <div className="r-surah-frame">
@@ -405,9 +456,32 @@ export function Reader() {
       </main>
 
       {returned && credits && <p className="r-toast">Thank you. Your listening time is added as soon as the payment is confirmed.</p>}
+      {menuOpen && (
+        <div className="r-modal" role="dialog" aria-modal="true" aria-label="Menu" onClick={() => setMenuOpen(false)} onKeyDown={(e) => e.key === 'Escape' && setMenuOpen(false)}>
+          <nav className="r-time r-menu" onClick={(e) => e.stopPropagation()}>
+            <button className="r-close" onClick={() => setMenuOpen(false)} aria-label="Close">×</button>
+            <button className="r-menu-item" autoFocus onClick={() => { setHome(true); setMenuOpen(false); window.scrollTo(0, 0); }}>
+              Home<span>{cur ? `Start page, with a way back to ${cur.surahName} ${cur.key}` : 'Start page'}</span>
+            </button>
+            <button className="r-menu-item" onClick={() => { setHome(true); setMenuOpen(false); requestAnimationFrame(() => document.getElementById('r-surahs')?.scrollIntoView({ block: 'start' })); }}>
+              All surahs<span>Open any of the 114, by name or number</span>
+            </button>
+            {credits ? (
+              <button className="r-menu-item" onClick={() => { setMenuOpen(false); setTimeOpen(true); }}>
+                Listening time<span>{credits.available > 0 ? `${formatListening(credits.available)} left` : 'None left right now'} · your account on this device</span>
+              </button>
+            ) : (
+              <p className="r-menu-item r-menu-static">Listening time<span>Unlimited: this reader runs on your own computer, with your own key</span></p>
+            )}
+            <a className="r-menu-item" href="/control">
+              Put it on your stream<span>OBS overlay and stream controls</span>
+            </a>
+          </nav>
+        </div>
+      )}
       {timeOpen && credits && <ListeningTime credits={credits} account={account} onClose={() => setTimeOpen(false)} />}
 
-      {!follow && cur && (
+      {!follow && cur && !home && (
         <button className="r-back" onClick={() => setFollow(true)}>
           Back to {cur.key}
         </button>
@@ -608,5 +682,44 @@ function DemoLine() {
       </p>
       <figcaption>The word you are reciting lights up, with its meaning.</figcaption>
     </figure>
+  );
+}
+
+type ChapterRow = { number: number; nameSimple: string; nameArabic: string; verseCount: number };
+
+/** Every surah, findable by English name, Arabic name or number. */
+function SurahIndex({ onOpen }: { onOpen: (n: number) => void }) {
+  const [list, setList] = useState<ChapterRow[] | null>(null);
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    fetch('/api/chapters', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((l: ChapterRow[] | null) => l && setList(l))
+      .catch(() => undefined);
+  }, []);
+  if (!list) return null;
+  const flat = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const t = q.trim();
+  const shown = t ? list.filter((c) => String(c.number) === t || (flat(t) && flat(c.nameSimple).includes(flat(t))) || c.nameArabic.includes(t)) : list;
+  return (
+    <section className="r-index" id="r-surahs" aria-label="All surahs">
+      <h2>All surahs</h2>
+      <input className="r-index-find" type="search" placeholder="Find a surah by name or number" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find a surah" />
+      <ol className="r-index-list">
+        {shown.map((c) => (
+          <li key={c.number}>
+            <button onClick={() => onOpen(c.number)} aria-label={`${c.number}. ${c.nameSimple}, ${c.verseCount} ayahs`}>
+              <span className="r-index-n">{c.number}</span>
+              <span className="r-index-en">
+                {c.nameSimple}
+                <small>{c.verseCount} ayahs</small>
+              </span>
+              <span className="r-index-ar" lang="ar" dir="rtl">{c.nameArabic}</span>
+            </button>
+          </li>
+        ))}
+      </ol>
+      {!shown.length && <p className="r-index-none">No surah matches “{t}”.</p>}
+    </section>
   );
 }

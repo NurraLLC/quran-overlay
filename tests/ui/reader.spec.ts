@@ -38,3 +38,53 @@ test('reader: request, word meaning, language and continue where you left off', 
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('qo.reader') ?? '{}'));
   expect(saved.key).toBe('55:14');
 });
+
+test('reader: menu to home and all surahs; following comes back when recitation moves on', async ({ page }) => {
+  await page.goto(`/reader#owner=${OWNER}`);
+  await expect(page.locator('.r-top')).toBeVisible();
+
+  // Home and the surah list, from the menu.
+  await page.getByRole('button', { name: /^Menu/ }).click();
+  await page.getByRole('button', { name: /^All surahs/ }).click();
+  await page.getByLabel('Find a surah').fill('mulk');
+  await page.getByRole('button', { name: '67. Al-Mulk, 30 ayahs' }).click();
+  await expect(page.locator('.r-ayah.current')).toHaveAttribute('id', 'a-67:1');
+  await page.getByRole('button', { name: /^Menu/ }).click();
+  await page.getByRole('button', { name: /^Home/ }).click();
+  await expect(page.getByRole('button', { name: 'Continue at Al-Mulk 67:1' })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue at Al-Mulk 67:1' }).click();
+  await expect(page.locator('.r-ayah.current')).toHaveAttribute('id', 'a-67:1');
+
+  // Recite 67:1..2 while having scrolled far away by hand: following pauses, then returns with the
+  // next recited words once the hand has been still for a few seconds.
+  const { readFileSync } = await import('node:fs');
+  const corpus = JSON.parse(readFileSync('data/processed/corpus.json', 'utf8'));
+  const words = ['67:1', '67:2'].flatMap((k) => corpus.verses.find((v: { key: string }) => v.key === k).searchText.split(/\s+/));
+  await page.evaluate(async () => {
+    const s = new WebSocket(`${location.origin.replace('http', 'ws')}/ws/control`);
+    await new Promise<void>((r) => s.addEventListener('open', () => r(), { once: true }));
+    (window as unknown as { t: WebSocket }).t = s;
+  });
+  const send = (m: unknown) => page.evaluate((x) => (window as unknown as { t: WebSocket }).t.send(JSON.stringify(x)), m);
+  const epoch = Date.now();
+  let seq = 0;
+  const say = (n: number) => send({ type: 'transcript', captureEpoch: epoch, seq: seq++, receivedAt: 0, tokens: [{ text: words.slice(0, n).join(' '), isFinal: false }] });
+  // The UI suite shares one session: start from following, not a pause another test left.
+  await send({ type: 'hold', on: false });
+  await send({ type: 'blank', on: false });
+  await send({ type: 'style', patch: { readingMode: 'follow' } });
+  await send({ type: 'goto', key: '67:1' });
+  await send({ type: 'capture', captureEpoch: epoch, event: 'recording' });
+  try {
+    await say(4);
+    await expect(page.locator('.r-word.active')).toHaveCount(1);
+    await page.mouse.wheel(0, 4000);
+    await expect(page.locator('.r-back')).toBeVisible();
+    await page.waitForTimeout(3200);
+    await say(10);
+    await expect(page.locator('.r-back')).toHaveCount(0);
+    await expect(page.locator('.r-word.active')).toBeInViewport();
+  } finally {
+    await send({ type: 'capture', captureEpoch: epoch, event: 'stopped' });
+  }
+});
