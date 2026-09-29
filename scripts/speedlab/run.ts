@@ -56,12 +56,16 @@ try {
   // Record every change of the previewed ayah at frame resolution.
   await page.evaluate(`(() => {
     window.__qoLog = [];
+    window.__qoAntLog = [];
+    window.__qoAnt = false;
     let last;
     const tick = () => {
       const el = document.querySelector('.panel-on .verse');
       const label = el ? el.getAttribute('aria-label') : null;
       const key = label ? label.split(' ').pop() : null;
       if (key !== last) { window.__qoLog.push({ t: performance.now(), key }); last = key; }
+      const ant = !!document.querySelector('.panel-on .next-ayah[data-anticipate]');
+      if (ant !== window.__qoAnt) { window.__qoAnt = ant; if (ant) window.__qoAntLog.push({ t: performance.now(), key }); }
       requestAnimationFrame(tick);
     };
     tick();
@@ -71,6 +75,7 @@ try {
   await page.waitForTimeout(truth.durationMs + 2500);
   const origin = await page.evaluate(() => (window as unknown as { __qoAudioOrigin: () => number }).__qoAudioOrigin());
   const log = await page.evaluate(() => (window as unknown as { __qoLog: Array<{ t: number; key: string | null }> }).__qoLog);
+  const antLog = await page.evaluate(() => (window as unknown as { __qoAntLog: Array<{ t: number; key: string | null }> }).__qoAntLog);
   const meter = await page.locator('.speed').innerText().catch(() => '');
   await page.getByRole('button', { name: 'Stop listening' }).click().catch(() => undefined);
 
@@ -96,6 +101,15 @@ try {
   console.log(`\n${name} (${mode}, ${label}): ${truth.segments.length} ayahs, shown ${truth.segments.length - missed.length}, missed ${missed.length}${missed.length ? ` (${missed.join(' ')})` : ''}, wrong ${wrong}`);
   console.log(`ayah starts in audio -> on screen: p50 ${q(0.5)} s, p90 ${q(0.9)} s, best ${q(0)} s`);
   console.log(`control-page meter: ${meter}`);
+  // Anticipation: the next-ayah preview brightened (last word reached) before the ayah changed.
+  const leads: number[] = [];
+  for (let i = 1; i < log.length; i++) {
+    const prev = log[i - 1];
+    const a = antLog.filter((x) => x.key === prev.key && x.t >= prev.t && x.t <= log[i].t).at(0);
+    if (a && prev.key && log[i].key) leads.push(log[i].t - a.t);
+  }
+  const ls = [...leads].sort((a, b) => a - b);
+  console.log(`next-ayah preview brightened before ${leads.length} of ${Math.max(0, log.filter((l) => l.key).length - 1)} changes${ls.length ? `, lead p50 ${(ls[Math.floor(ls.length / 2)] / 1000).toFixed(2)} s` : ''}`);
 } finally {
   await browser.close();
   if (process.platform === 'win32' && server.pid) spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f']);

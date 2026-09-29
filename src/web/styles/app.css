@@ -93,6 +93,30 @@ html[data-surface='control'] body { background: var(--ink-0); color: var(--text)
 .ref-credit { font: 400 18px/1 var(--ui); color: var(--muted); letter-spacing: 0.02em; }
 .stage[data-bg='transparent'] .ref-credit { color: #c9d2d0; }
 
+/* Next ayah: a dimmed preview line under a short gold hairline. It brightens when the reciter
+   reaches the last word, and rises into place when it becomes the current ayah. */
+.next-ayah { position: relative; width: 1480px; margin-top: 20px; padding-top: 20px; text-align: center; --next-dim: 0.4; }
+.next-ayah::before { content: ''; position: absolute; top: 0; left: 50%; width: 260px; height: 1.5px; transform: translateX(-50%);
+  background: linear-gradient(90deg, transparent, rgba(207, 170, 98, 0.6), transparent); }
+.next-label { font: 600 17px/1 var(--ui); letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold); margin-bottom: 10px; }
+.next-line { font-family: 'Uthmanic Hafs', serif; line-height: 1.95; white-space: nowrap; overflow: hidden; color: var(--ivory); opacity: var(--next-dim); transition: color 420ms ease, opacity 420ms ease; }
+/* Right-to-left: the ayah continues past the left edge, so it fades out there. */
+.next-cut { -webkit-mask-image: linear-gradient(to left, #000 70%, transparent 98%); mask-image: linear-gradient(to left, #000 70%, transparent 98%); }
+.next-ayah[data-anticipate] { --next-dim: 0.66; }
+.next-ayah[data-anticipate] .next-line { color: #f6e3b8; }
+/* Over stream footage the shadow is what keeps text legible: dim the letters, never the shadow. */
+.stage[data-bg='transparent'] .next-ayah { --next-dim: 1; }
+.stage[data-bg='transparent'] .next-line { color: rgba(236, 228, 210, 0.6); }
+.stage[data-bg='transparent'] .next-ayah[data-anticipate] .next-line { color: rgba(250, 232, 190, 0.88); }
+
+.verse.arrive { transform-origin: 50% 100%; animation: arrive 360ms cubic-bezier(0.16, 0.84, 0.3, 1) both; }
+.verse.arrive .next-ayah { animation: next-in 460ms ease 180ms both; }
+@keyframes arrive { from { transform: translateY(150px) scale(0.6); opacity: 0.45; } }
+@keyframes next-in { from { opacity: 0; transform: translateY(18px); } }
+@media (prefers-reduced-motion: reduce) {
+  .verse.arrive, .verse.arrive .next-ayah { animation: none; }
+}
+
 .overlay-denied { position: fixed; inset: auto 24px 24px; padding: 14px 18px; border-radius: 10px; background: #2b1714; color: #ffd9cf; font: 16px var(--ui); }
 
 @media (prefers-reduced-motion: reduce) {

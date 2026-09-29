@@ -168,6 +168,7 @@ export class Session {
   private buildDisplay(): DisplayState {
     const v = this.displayVerse === null ? null : this.o.corpus.at(this.displayVerse)!;
     const ch = v ? this.o.corpus.chapter(v.surah)! : null;
+    const n = v && this.style.showNext && this.style.readingMode !== 'word' ? this.o.corpus.at(this.displayVerse! + 1) : undefined;
     return {
       v: PROTOCOL_VERSION,
       revision: this.revision,
@@ -191,6 +192,7 @@ export class Session {
       arabicPage: this.arabicPage,
       progress: this.progress,
       cursor: this.cursor,
+      next: n ? { key: n.key, surah: n.surah, ayah: n.ayah, arabic: n.arabicDisplay, surahName: n.surah !== v!.surah ? this.o.corpus.chapter(n.surah)!.nameSimple : null } : null,
     };
   }
 

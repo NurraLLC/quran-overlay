@@ -14,6 +14,8 @@ export const DisplayStyleSchema = z.object({
   background: BackgroundSchema,
   showTranslation: z.boolean(),
   showReference: z.boolean(),
+  /** The following ayah, dimmed under the current one, so readers see what comes next. */
+  showNext: z.boolean().default(true),
   arabicScale: z.number().min(0.8).max(1.25),
   /** Seconds per translation page when a translation overflows; 0 = broadcaster pages manually. */
   translationPageSeconds: z.number().int().min(0).max(60),
@@ -26,6 +28,7 @@ export const DEFAULT_STYLE: DisplayStyle = {
   background: 'scrim',
   showTranslation: true,
   showReference: true,
+  showNext: true,
   arabicScale: 1,
   translationPageSeconds: 0,
 };
@@ -56,6 +59,18 @@ export const DisplayStateSchema = z.object({
   progress: z.number().min(0).max(1).nullable(),
   /** Display-word coordinates, validated against the selected display script. */
   cursor: z.object({ from: z.number().int().nonnegative(), to: z.number().int().nonnegative(), provisional: z.boolean() }).nullable().optional(),
+  /** The ayah after the current one (a preview, never a claim about where the reciter is). */
+  next: z
+    .object({
+      key: z.string().regex(/^\d{1,3}:\d{1,3}$/),
+      surah: z.number().int().min(1).max(114),
+      ayah: z.number().int().min(1).max(286),
+      arabic: z.string().min(1),
+      /** Set only when the next ayah opens a new surah. */
+      surahName: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 export type DisplayState = z.infer<typeof DisplayStateSchema>;
 

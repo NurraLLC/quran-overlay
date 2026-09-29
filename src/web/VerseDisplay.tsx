@@ -79,12 +79,17 @@ type Plan = {
   arabicPages: Lines[];
   englishPages: Lines[];
   arabicPageWordStarts: number[];
+  /** The dimmed next-ayah line: its first measured line, and whether the ayah continues past it. */
+  next: { px: number; words: string[]; cut: boolean } | null;
 };
 
 type Geometry = { width: number; height: number; refH: number; gap: number };
 
 const FULL: Geometry = { width: 1560, height: 812, refH: 64, gap: 34 };
 const LOWER: Geometry = { width: 1600, height: 318, refH: 48, gap: 16 };
+/** Height kept for the next-ayah preview (hairline, optional surah label, one Arabic line). */
+const NEXT_H = 160;
+const NEXT_W = 1480;
 
 function planFor(state: DisplayState): Plan | null {
   const v = state.verse;
@@ -103,7 +108,16 @@ function planFor(state: DisplayState): Plan | null {
     }
     return null;
   };
-  const single = (fit: { a: number; e: number; al: Lines; el: Lines }, layout: Plan['layout'], promoted: boolean): Plan => ({
+  const nextLine = (a: number): Plan['next'] => {
+    const n = state.next;
+    if (!n) return null;
+    const px = Math.max(40, Math.min(54, Math.round(a * 0.52)));
+    // The end-of-ayah ornament closes the preview when the whole ayah fits on the line.
+    const words = [...toQpcHafsEncoding(n.arabic).split(/\s+/).filter(Boolean), arabicNumber(n.ayah)];
+    const lines = measureLines(words, ARABIC_FONT, px, AR_LH, NEXT_W, true);
+    return { px, words: lines[0] ?? [], cut: lines.length > 1 };
+  };
+  const single = (fit: { a: number; e: number; al: Lines; el: Lines }, layout: Plan['layout'], promoted: boolean, next: Plan['next'] = null): Plan => ({
     layout,
     promoted,
     arabicPx: fit.a,
@@ -111,14 +125,20 @@ function planFor(state: DisplayState): Plan | null {
     arabicPages: [fit.al],
     englishPages: [fit.el],
     arabicPageWordStarts: [0],
+    next,
   });
 
   if (state.style.layout === 'lowerthird' && state.style.readingMode !== 'word') {
     const fit = tryFit(LOWER, Math.round(62 * scale), Math.round(46 * scale), 30, 26);
     if (fit) return single(fit, 'lowerthird', false);
   }
-  const fit = tryFit(FULL, Math.round(108 * scale), Math.round(54 * scale), 44, 31);
   const promoted = state.style.layout === 'lowerthird';
+  // The preview only takes space the current ayah can spare at a comfortable size.
+  if (state.next && state.style.readingMode !== 'word') {
+    const withNext = tryFit({ ...FULL, height: FULL.height - NEXT_H }, Math.round(108 * scale), Math.round(64 * scale), 44, 31);
+    if (withNext) return single(withNext, 'fullframe', promoted, nextLine(withNext.a));
+  }
+  const fit = tryFit(FULL, Math.round(108 * scale), Math.round(54 * scale), 44, 31);
   if (fit) return single(fit, 'fullframe', promoted);
 
   // Deliberate paging: fixed comfortable sizes; Arabic and translation page independently.
@@ -145,6 +165,7 @@ function planFor(state: DisplayState): Plan | null {
     arabicPages,
     englishPages: el.length ? chunk(el, enLinesPerPage) : [[]],
     arabicPageWordStarts: starts,
+    next: null,
   };
 }
 
@@ -182,9 +203,15 @@ export function VerseDisplay({
   useLayoutEffect(() => {
     if (v && state.cursor) lastFocus.current = { key: v.key, text: toQpcHafsEncoding(v.arabic).split(/\s+/).filter(Boolean).slice(state.cursor.from, state.cursor.to + 1).join(' ') };
   }, [v?.key, state.cursor?.from, state.cursor?.to]);
-  const planKey = v ? `${v.key}|${state.style.layout}|${state.style.readingMode}|${state.style.arabicScale}|${state.style.showTranslation}` : '';
+  const planKey = v ? `${v.key}|${state.next?.key}|${state.style.layout}|${state.style.readingMode}|${state.style.arabicScale}|${state.style.showTranslation}` : '';
   // Layout is computed synchronously from measured line boxes before paint.
   const plan = useMemo(() => (fontsReady && v ? planFor(state) : null), [planKey, fontsReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reading forward: when the new ayah is the one that was previewed, it rises out of the preview
+  // line into place (a teleprompter scroll); any other change (jump, search) simply cuts.
+  const flow = useRef<{ key: string | null; nextKey: string | null; arrived: boolean }>({ key: null, nextKey: null, arrived: false });
+  if ((v?.key ?? null) !== flow.current.key) flow.current = { key: v?.key ?? null, nextKey: state.next?.key ?? null, arrived: !!v && v.key === flow.current.nextKey };
+  else flow.current.nextKey = state.next?.key ?? null;
 
   const lastReported = useRef('');
   useLayoutEffect(() => {
@@ -230,7 +257,7 @@ export function VerseDisplay({
     <div className="stage" data-bg={state.style.background} data-layout={layout} data-reading={mode} data-preview={preview || undefined}>
       <div className={`panel ${visible ? 'panel-on' : 'panel-off'}`} aria-hidden={!visible}>
         {visible && plan && v && (
-          <article className="verse" key={v.key} aria-label={`${v.surahName} ${v.key}`}>
+          <article className={`verse${flow.current.arrived ? ' arrive' : ''}`} key={v.key} aria-label={`${v.surahName} ${v.key}`}>
             <div className={`arabic ${mode === 'word' ? 'word-focus' : ''}`} lang="ar" dir="rtl" style={{ fontSize: mode === 'word' ? 128 * state.style.arabicScale : plan.arabicPx }}>
               {mode === 'word' ? (
                 <div className="focus-word" data-active={!!state.cursor}>
@@ -282,6 +309,19 @@ export function VerseDisplay({
                 </span>
                 <span className="ref-credit">{v.translationName}</span>
               </footer>
+            )}
+            {plan.next && state.next && (
+              <aside
+                className="next-ayah"
+                aria-label={`Next: ${state.next.key}`}
+                // The reciter has reached the last word: what comes next brightens, without moving.
+                data-anticipate={(!!state.cursor && state.cursor.to >= displayWords.length - 1) || undefined}
+              >
+                {state.next.surahName && <div className="next-label">Next surah · {state.next.surahName}</div>}
+                <div className={`next-line${plan.next.cut ? ' next-cut' : ''}`} lang="ar" dir="rtl" style={{ fontSize: plan.next.px }}>
+                  {plan.next.words.join(' ')}
+                </div>
+              </aside>
             )}
           </article>
         )}

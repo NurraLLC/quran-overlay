@@ -620,6 +620,9 @@ function OutputCard({ snap, send, copied, onCopy }: { snap: ControlSnapshot; sen
         <input type="checkbox" checked={s.showReference} onChange={(e) => send({ type: 'style', patch: { showReference: e.target.checked } })} /> Show surah and ayah number
       </label>
       <label className="row">
+        <input type="checkbox" checked={s.showNext} onChange={(e) => send({ type: 'style', patch: { showNext: e.target.checked } })} /> Show the next ayah, dimmed (full frame)
+      </label>
+      <label className="row">
         Arabic size
         <input type="range" min={0.8} max={1.25} step={0.05} value={s.arabicScale} onChange={(e) => send({ type: 'style', patch: { arabicScale: Number(e.target.value) } })} />
       </label>
