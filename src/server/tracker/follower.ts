@@ -44,7 +44,7 @@ export type DecisionRecord = {
 
 export type FollowerEvent =
   | { kind: 'commit'; verseIndex: number; reason: string; via: 'deterministic' | 'jev'; margin: number; decisionId: string | null }
-  | { kind: 'clear'; reason: 'contradictory_speech' }
+  | { kind: 'clear'; reason: 'contradictory_speech'; keepDisplay: boolean }
   | { kind: 'step'; step: StepResult }
   | { kind: 'decision'; record: DecisionRecord };
 
@@ -167,10 +167,10 @@ export class RecitationFollower {
     } else if (step.ask && this.mode !== 'deterministic') {
       this.submit(step.ask, null);
     }
-    if (step.clear) {
+    if (step.lost) {
       this.committedVerse = null;
       this.scheduler?.cancelAll();
-      this.emit({ kind: 'clear', reason: 'contradictory_speech' });
+      this.emit({ kind: 'clear', reason: 'contradictory_speech', keepDisplay: !step.clear });
     }
   }
 

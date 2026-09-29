@@ -576,8 +576,8 @@ function OutputCard({ snap, send, copied, onCopy }: { snap: ControlSnapshot; sen
       <label className="row">
         When recitation stops matching
         <select value={snap.keepOnUncertain ? 'keep' : 'clear'} onChange={(e) => send({ type: 'uncertain_policy', keep: e.target.value === 'keep' })}>
+          <option value="keep">keep the last ayah until the new one is found</option>
           <option value="clear">clear the screen after 3 s</option>
-          <option value="keep">keep the last ayah</option>
         </select>
       </label>
       <label className="row">

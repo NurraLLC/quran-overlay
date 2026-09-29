@@ -146,6 +146,10 @@ export class Session {
       void this.command(id, text, intent === 'show');
     }, message => this.say(message));
     this.follower = new RecitationFollower(o.ix, o.corpus.id, this.sessionEpoch, o.decisionClient, o.mode, (e) => this.onFollower(e), this.clock);
+    // When recitation stops matching (a jump to somewhere new, a pause to talk), the last ayah stays
+    // up until the new place is found: a blank screen tells the audience nothing. The control page
+    // can still choose to clear after 3 s.
+    this.follower.engine.cfg = { ...this.follower.engine.cfg, keepOnUncertain: true };
     if (o.catalog) attachCatalog(this.follower, o.catalog);
     this.display = this.buildDisplay();
   }
@@ -292,8 +296,10 @@ export class Session {
       this.liveVerse = null;
       this.liveCursor.reset();
       this.cursor = null;
-      this.logEvent('clear', null, e.reason);
-      if (!this.held) this.showVerse(null);
+      this.logEvent(e.keepDisplay ? 'lost' : 'clear', null, e.reason);
+      // Kept on screen (the default): the place is forgotten, so the next one is found as quickly
+      // as from a clear screen, but the audience keeps the last ayah until then.
+      if (!this.held && !e.keepDisplay) this.showVerse(null);
       this.publish();
     } else if (e.kind === 'step') {
       this.candidatesView = e.step.top.slice(0, 5).map((c) => ({

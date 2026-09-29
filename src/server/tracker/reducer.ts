@@ -62,6 +62,8 @@ export type StepResult = {
   proposal: Proposal | null;
   ask: Ask | null;
   clear: boolean;
+  /** The location was given up (speech stopped matching); `clear` says whether the screen empties too. */
+  lost?: boolean;
   top: Candidate[];
   /** Within-verse word progress for the committed verse (search-word index). */
   progress: { verseIndex: number; word: number } | null;
@@ -318,6 +320,7 @@ export class TrackerEngine {
     if (this.anchor) this.phase = 'uncertain';
     const limit = this.cfg.uncertainClearMs + (forming ? this.cfg.formingGraceMs : 0);
     if (end - this.unexplainedSince >= limit && this.anchor) {
+      res.lost = true;
       if (!this.cfg.keepOnUncertain) res.clear = true;
       this.prior = this.anchor.verseIndex;
       this.anchor = null;

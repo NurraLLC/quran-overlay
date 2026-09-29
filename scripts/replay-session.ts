@@ -118,6 +118,8 @@ export async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
     await new Promise((r) => setImmediate(r));
   }
   clock.advanceTo(clock.now() + 4000);
+  // --log: the session's own events (commits, lost place, clears, requests).
+  if (process.argv.includes('--log')) for (const e of session.log) if (/commit|clear|lost|goto/.test(e.event)) console.log(`    ${(e.t / 1000).toFixed(1).padStart(6)}s  ${e.event} ${e.key ?? ''} ${e.detail ?? ''}`);
 
   // First recognised word of each shown ayah, from the final transcript.
   const buf = new TranscriptBuffer();
