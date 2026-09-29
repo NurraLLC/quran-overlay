@@ -42,7 +42,7 @@ function starts(ix: CorpusIndex): Starts {
 }
 
 /** Index in `obs` just after the latest spoken basmala (at most one near-miss word), or -1. */
-function afterBasmala(obs: readonly Obs[]): number {
+export function afterBasmala(obs: readonly Obs[]): number {
   for (let i = obs.length - BASMALA.length; i >= 0; i--) {
     let fuzzy = 0;
     let ok = true;
@@ -114,7 +114,11 @@ export function openingAfterBasmala(ix: CorpusIndex, obs: readonly Obs[], anchor
     if (hits.length !== 1) return null;
     const v = hits[0];
     const { surah } = ix.verses[v];
-    if (openingOf.get(surah) !== v) return null;
+    // Ayah 2 also opens a surah whose ayah 1 is only disjoint letters (يس, الم, طه): recognisers
+    // often drop spoken letter names, so "basmala + والقرآن الحكيم" is the start of Ya-Sin.
+    const first = openingOf.get(surah);
+    const afterLetters = first !== undefined && v === first + 1 && ix.verseLen[first] === 1 && ix.letterWords.has(ix.words[ix.verseStart[first]]);
+    if (first !== v && !afterLetters) return null;
     if (heard.length === 1) {
       if (ix.df[ix.wordId[ix.verseStart[v]]] > LONE_WORD_MAX_DF) return null;
       if (heard[0].partial && canGrow(ix, heard[0].key)) return null;

@@ -9,7 +9,7 @@ import type { Obs } from './align';
 import { bestPerVerse, buildCandidates, type Candidate, type NeighbourProvider, type Relation } from './candidates';
 import { canonicalizeLetterNames, type CorpusIndex } from './index';
 import { tokenize } from './normalize';
-import { openingAfterBasmala, uniqueFirstWord } from './opening';
+import { afterBasmala, openingAfterBasmala, uniqueFirstWord } from './opening';
 
 export type Phase = 'unlocated' | 'tracking' | 'uncertain';
 
@@ -225,7 +225,9 @@ export class TrackerEngine {
       // current location cannot already explain. Words shared with the committed passage (e.g.
       // 36:4 "على صراط مستقيم" also ends 67:22) must not be double-counted as evidence for a jump.
       const local = this.anchor ? top.find((c) => c.relation === 'same' || c.relation === 'next') : undefined;
-      const fresh = this.freshStats(B, local ? obs.length - local.trailing : 0);
+      // A spoken basmala precedes nearly every surah, so its words never count as evidence for a
+      // place: basmala + "الحمد لله" reads exactly like Al-Fatihah's start but opens 18:1 as well.
+      const fresh = this.freshStats(B, Math.max(local ? obs.length - local.trailing : 0, afterBasmala(obs)));
       const evidenced = fresh.matched >= 3 && (fresh.weight >= (this.anchor ? 2.0 : 1.6) || fresh.run >= 4);
       const target = B.inVerse >= need(B.verseIndex, 2) ? { verseIndex: B.verseIndex, pos: B.endPos } : null;
       // A long exact run of fresh words is itself distinguishing, so it needs less score margin.

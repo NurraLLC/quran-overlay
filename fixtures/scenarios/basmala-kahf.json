@@ -1,0 +1,12 @@
+{
+  "name": "basmala-kahf",
+  "description": "Basmala, then Al-Kahf: basmala + \"الحمد لله\" reads exactly like the start of Al-Fatihah (1:1, 1:2) but opens 18:1. The basmala is no evidence for 1:2; wait for \"الذي أنزل\".",
+  "synthetic": true,
+  "seed": 13,
+  "script": [
+    { "say": "أعوذ بالله من الشيطان الرجيم" }, { "pause": 600 },
+    { "say": "بسم الله الرحمن الرحيم" }, { "pause": 500 },
+    { "recite": "18:1-18:3" }
+  ],
+  "expect": { "finalDisplay": "18:3", "mustShow": ["18:1", "18:2"] }
+}

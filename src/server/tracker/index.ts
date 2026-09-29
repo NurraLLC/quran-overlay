@@ -192,6 +192,12 @@ function lettersOfFusedNames(key: string): string | null {
  * Collapse such runs into the written muqatta'at word *only* when the result is an actual
  * muqatta'at word in this corpus; ordinary words like "يا" or "لام" are otherwise untouched.
  */
+/**
+ * Whole words the recogniser writes for a recited disjoint-letter opening that are neither the
+ * letters nor their names (measured: "يس", recited "yaa-seen", came back as "إياس").
+ */
+const HEARD_LETTER_WORDS: Record<string, string> = { اياس: 'يس', ياس: 'يس' };
+
 export function canonicalizeLetterNames(ix: CorpusIndex, toks: NormToken[]): NormToken[] {
   const out: NormToken[] = [];
   for (let i = 0; i < toks.length; i++) {
@@ -221,6 +227,11 @@ export function canonicalizeLetterNames(ix: CorpusIndex, toks: NormToken[]): Nor
         }
       }
       if (letters === '') continue;
+    }
+    const heard = HEARD_LETTER_WORDS[t.key];
+    if (heard && ix.letterWords.has(heard)) {
+      out.push({ key: heard, cons: heard, foreign: false });
+      continue;
     }
     const fused = lettersOfFusedNames(t.key);
     if (fused && fused.length >= 2 && ix.letterWords.has(fused)) {

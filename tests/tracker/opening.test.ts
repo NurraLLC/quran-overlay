@@ -47,3 +47,13 @@ describe('surah openings', () => {
     expect(uniqueFirstWord(ix, obsOf('والضحى والليل'))).toBeNull();
   });
 });
+
+describe('openings whose disjoint letters were not heard', () => {
+  const { corpus, ix } = fullCorpus();
+  it('treats the second ayah after a letters-only first ayah as the surah opening', () => {
+    const m = openingAfterBasmala(ix, obsOf('بسم الله الرحمن الرحيم والقرآن الحكيم'), null);
+    expect(m ? corpus.at(m.verseIndex)!.key : null).toBe('36:2');
+    // Not for surahs whose first ayah is ordinary text.
+    expect(openingAfterBasmala(ix, obsOf('بسم الله الرحمن الرحيم ما ودعك'), null)).toBeNull();
+  });
+});
