@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Local Quran recitation display and OBS overlay with recitation following and English navigation.",
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.13"
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:ui": "vite build && playwright test",
+    "corpus:fetch": "tsx scripts/fetch-corpus.ts",
     "corpus:import": "tsx scripts/import-corpus.ts",
     "corpus:validate": "tsx scripts/validate-corpus.ts",
     "replay": "tsx scripts/replay.ts",

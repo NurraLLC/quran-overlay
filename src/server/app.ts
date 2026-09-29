@@ -182,6 +182,9 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     return true;
   };
 
+  // Liveness for a process manager or load balancer (no data).
+  app.get('/healthz', async () => ({ ok: true }));
+
   // Who am I: local mode reports ownership; hosted mode issues the visitor cookie on first visit.
   app.get('/api/me', async (req, reply) => {
     if (!hosted) return { mode: 'local', owner: isOwner(req) };

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "narration": "hafs",
-  "note": "Inputs for npm run corpus:import. Paths are relative to this repository root. Files live in the git-ignored work/ research pack and are copied into data/raw on import.",
+  "note": "Inputs for npm run corpus:import. Paths are relative to this repository root and git-ignored; npm run corpus:fetch downloads each source and verifies its sha256.",
   "sources": [
     {
       "role": "arabicDisplay",
@@ -39,14 +39,14 @@
     },
     {
       "role": "chapters",
-      "path": "work/datasets/chapters-derived-from-qul.json",
-      "sourceUrl": "derived:mini_quran_dev.sql.zip:quran.chapters",
-      "sha256": "8d3e2b678bb94a1961c9952f088b912c428aeabc08ebf5f895092c257cb2832f",
-      "bytes": 22542,
-      "downloadedAt": "2026-09-28 (research pack; exact time not recorded)",
+      "path": "work/datasets/chapters-quran-com.json",
+      "sourceUrl": "https://api.quran.com/api/v4/chapters?language=en",
+      "sha256": "f75e0c8714b42e7cf0969ff3859b9d10da35f5b6b30ac9afa63b67e5e35aef92",
+      "bytes": 21566,
+      "downloadedAt": "2026-09-29 (npm run corpus:fetch; identical chapter table to the earlier QUL-dump derivation, 114/114)",
       "licenseStatus": "unverified: resource-specific redistribution terms not yet checked; local use only",
-      "sourceResourceId": "qul:mini_quran_dev.sql:quran.chapters",
-      "attribution": "Chapter names and counts from the QUL public development dump chapter table"
+      "sourceResourceId": "quran.com:chapters",
+      "attribution": "Chapter names and counts via Quran.com API v4"
     },
     {
       "role": "font",
