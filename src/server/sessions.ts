@@ -9,6 +9,8 @@
 
 import { shortGroup } from './corpus/groups';
 import type { WordGlosses } from './corpus/wbw';
+import type { LatinReader } from './tracker/latin';
+import type { Word } from '../shared/transcript';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, mkdirSync, statSync } from 'node:fs';
 import { EOL } from 'node:os';
@@ -64,6 +66,8 @@ export type SessionOptions = {
   catalog?: ResourceCatalog | null;
   /** Word-by-word English glosses (optional resource). */
   glosses?: WordGlosses | null;
+  /** Reads recitation that arrives in Latin letters (optional; null until built). */
+  latin?: { get(): LatinReader | null } | null;
 };
 
 const CAPTURE_MAX_BYTES = 20 * 1024 * 1024;
@@ -452,7 +456,7 @@ export class Session {
     this.writeCapture(msg.tokens);
     const r = this.buffer.apply(msg.tokens);
     const heard = this.buffer.heardText(1);
-    const liveWords = this.buffer.liveWords();
+    const liveWords = this.readable(this.buffer.liveWords());
     const english = !this.commandActive && this.listeningCommands.observe(liveWords, this.buffer.hasProvisional, r.endpoint);
     if (english) {
       this.englishTail = true;
@@ -472,7 +476,7 @@ export class Session {
     }
     this.batchingTranscript = true;
     try {
-      this.follower.onTranscript(this.buffer.evidence(), heard.provisional, r.evidenceChanged);
+      this.follower.onTranscript(this.readable(this.buffer.evidence()), heard.provisional, r.evidenceChanged);
       if (!this.held && !this.commandActive && (r.evidenceChanged || r.provisionalChanged)) {
         this.updateLiveCursor();
       }
@@ -480,8 +484,15 @@ export class Session {
     this.publish();
   }
 
+  /** Heard words with recitation that arrived in Latin letters read as the Arabic it matches. */
+  private readable(words: Word[]): Word[] {
+    const reader = this.o.latin?.get();
+    if (!reader) return words;
+    return reader.apply(words, this.displayVerse ?? this.follower.engine.anchor?.verseIndex ?? null);
+  }
+
   private updateLiveCursor() {
-    const words = this.buffer.liveWords().slice(this.liveFloor);
+    const words = this.readable(this.buffer.liveWords()).slice(this.liveFloor);
     const live = this.liveCursor.update(words, this.follower.engine.anchor, this.buffer.hasProvisional, this.follower.engine.prior, this.follower.engine.neighbours);
     if (live && (this.follower.mode !== 'jev_required' || live.verseIndex === this.trackerVerse)) {
       const verseChanged = live.verseIndex !== this.displayVerse;

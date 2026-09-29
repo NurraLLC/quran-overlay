@@ -8,7 +8,7 @@
 //   - flip-backs (screen returning to an ayah it already left; real repeats also count),
 //   - blanks, and highlight gaps (word highlight vanishing while the same ayah stays up).
 // Compares the live cursor's two-word and one-word advance on identical input.
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { CommandResolver } from '../src/server/commands/reducer';
 import { Corpus, loadCorpus } from '../src/server/corpus/load';
@@ -16,6 +16,7 @@ import { Session } from '../src/server/sessions';
 import type { Clock } from '../src/server/tracker/scheduler';
 import { buildIndex } from '../src/server/tracker/index';
 import { tokenize } from '../src/server/tracker/normalize';
+import { LatinReader } from '../src/server/tracker/latin';
 import { loadFixture } from '../src/replay/run';
 import { TranscriptBuffer, type WireToken } from '../src/shared/transcript';
 
@@ -50,6 +51,9 @@ class VClock implements Clock {
 const corpus = new Corpus(loadCorpus());
 const ix = buildIndex(corpus.verses);
 const resolver = new CommandResolver(corpus, null, null);
+// Recitation written in Latin letters (needs npm run wbw:import; skipped without it). --no-latin compares.
+const translitFile = path.join('data', 'processed', 'translit-en.json');
+const latinReader = !process.argv.includes('--no-latin') && existsSync(translitFile) ? new LatinReader(ix, corpus, JSON.parse(readFileSync(translitFile, 'utf8')).verses) : null;
 const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const onlyAdv = process.argv.includes('--one') ? [1 as const] : process.argv.includes('--two') ? [2 as const] : ([2, 1] as const);
 const expand = (p: string) =>
@@ -74,6 +78,7 @@ export async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
     setup: { soniox: true, jev: { provider: null, configured: false, detail: '' }, semantic: () => '' },
     overlayUrl: (v) => v,
     clock,
+    latin: { get: () => latinReader },
   });
   (session as unknown as { liveCursor: { advanceWords: 1 | 2 } }).liveCursor.advanceWords = advanceWords;
   const changes: Array<{ t: number; key: string | null }> = [];

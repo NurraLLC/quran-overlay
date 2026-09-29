@@ -16,7 +16,7 @@ const MIN_SKELETON = 5;
 const RUN_ON = 40;
 
 /** The article's l is not pronounced before sun letters ("l-raḥmāni" is said "r-raḥmāni"). */
-function assimilate(word: string): string {
+export function assimilate(word: string): string {
   return word.replace(/^(.*?)l-(?=(t|th|d|dh|r|z|s|sh|ṣ|ḍ|ṭ|ẓ|n|l)[^h]?)/i, '$1');
 }
 

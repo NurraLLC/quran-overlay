@@ -18,6 +18,7 @@ import { buildIndex } from './tracker/index';
 import { ResourceCatalog } from './resources/catalog';
 import { WordGlosses } from './corpus/wbw';
 import { Transliteration } from './search/transliteration';
+import { LatinReader } from './tracker/latin';
 
 function loadEnvFile() {
   const file = path.join(ROOT, '.env');
@@ -120,8 +121,13 @@ async function main() {
     captureDir: !hosted && process.env.QO_DIAGNOSTIC_CAPTURE === '1' ? path.join(ROOT, 'data', 'captures') : null,
     catalog,
     glosses,
+    latin,
   });
   const glosses = WordGlosses.load();
+  // Built once, in the background after start-up (a few seconds); until then Latin stays Latin.
+  const latin = { reader: null as LatinReader | null, get() { return this.reader; } };
+  const translitFile = path.join(ROOT, 'data', 'processed', 'translit-en.json');
+  if (existsSync(translitFile)) setTimeout(() => (latin.reader = new LatinReader(ix, corpus, JSON.parse(readFileSync(translitFile, 'utf8')).verses)), 1000);
   const session = hostedMode ? undefined : new Session(sessionOptions(false));
   const hosted = hostedMode ? hostedSetup(() => new Session(sessionOptions(true))) : undefined;
   // QO_OWNER_TOKEN exists only so automated browser tests can open the control page; normal runs
