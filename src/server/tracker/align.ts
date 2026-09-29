@@ -49,6 +49,15 @@ export const ALIGN = {
   /** Per-word decay for older heard words: current speech dominates, older context still counts. */
   recency: 0.85,
   recencyFloor: 0.1,
+  /**
+   * Going back (waqf and ibtida): after a breath the reciter restarts a few words back, often at the
+   * start of the ayah. A heard word may match a corpus word at or before the previous match, in
+   * the same ayah and up to `backMax` words back, at a cost that makes re-matching a lone common
+   * word ("الله", "لا", "من", weight ≈ 0.4–0.55) worth nothing: only a real restart gains. Without it a repeat was unexplained speech: the screen
+   * cleared, or a distant ayah sharing the repeated words won (36:10 "أم لم تنذرهم" → 2:6).
+   */
+  back: 0.55,
+  backMax: 20,
 };
 
 const simCache = new Map<string, number>();
@@ -82,6 +91,7 @@ const UP = 2; // heard word inserted
 const LEFT = 3; // corpus word skipped
 const MERGE = 4; // two heard words = one corpus word ("ولا الآخرة" for "وللآخرة")
 const SPLIT = 5; // one heard word = two corpus words
+const BACK = 6; // the reciter went back: this heard word re-matches a corpus word at or before the last
 
 /**
  * ASR engines split and merge Arabic words at attached particles, usually inserting or dropping an
@@ -113,6 +123,11 @@ function joinSim(heard: string, corpus: string): number {
 let H = new Float64Array(0);
 let D = new Uint8Array(0);
 let S = new Float32Array(0);
+/** For BACK cells, the corpus column the path came from. */
+let P = new Int32Array(0);
+/** Sliding-window maximum of the previous row (for BACK): column of the best value in [j, j + backMax]. */
+let WIN = new Int32Array(0);
+let DQ = new Int32Array(0);
 
 /** Align heard words `obs` against corpus positions [from, to). */
 export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, to: number): Alignment | null {
@@ -126,6 +141,11 @@ export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, 
     H = new Float64Array(size * 2);
     D = new Uint8Array(size * 2);
     S = new Float32Array(size * 2);
+    P = new Int32Array(size * 2);
+  }
+  if (WIN.length < n + 2) {
+    WIN = new Int32Array((n + 2) * 2);
+    DQ = new Int32Array((n + 2) * 2);
   }
   const W = n + 1;
   for (let j = 0; j <= n; j++) {
@@ -142,6 +162,21 @@ export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, 
     const ins = (o.foreign ? ALIGN.insForeign : ALIGN.insArabic) * f;
     H[i * W] = 0;
     D[i * W] = 0;
+    // Best previous-row column in [j, j + backMax] for every j, right to left (monotonic deque).
+    const prevRow = (i - 1) * W;
+    if (i >= 2) {
+      let head = 0;
+      let tail = 0;
+      for (let j = n; j >= 1; j--) {
+        // Never back into another ayah: the window restarts at each ayah boundary.
+        if (j < n && ix.wordVerse[from + j - 1] !== ix.wordVerse[from + j]) head = tail = 0;
+        const v = H[prevRow + j];
+        while (tail > head && H[prevRow + DQ[tail - 1]] <= v) tail--;
+        DQ[tail++] = j;
+        while (DQ[head] > j + ALIGN.backMax) head++;
+        WIN[j] = DQ[head];
+      }
+    }
     for (let j = 1; j <= n; j++) {
       const pos = from + j - 1;
       const w = ix.weight[ix.wordId[pos]];
@@ -152,6 +187,17 @@ export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, 
       if (diag > best) {
         best = diag;
         dir = DIAG;
+      }
+      // Went back: re-match a corpus word at or before the previous heard word's match.
+      if (i >= 2 && ps.score > 0) {
+        const jp = WIN[j];
+        const hv = H[prevRow + jp];
+        const v = hv + (ps.score - ALIGN.back) * f;
+        if (hv > 0 && v > best) {
+          best = v;
+          dir = BACK;
+          P[i * W + j] = jp;
+        }
       }
       const up = H[(i - 1) * W + j] - ins;
       if (up > best) {
@@ -249,6 +295,15 @@ export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, 
       if (sm < 1) subs++;
       i--;
       j -= 2;
+    } else if (dir === BACK) {
+      const s = S[i * W + j];
+      const pos = from + j - 1;
+      pairs.push([i - 1, pos, s]);
+      matched++;
+      matchedWeight += ix.weight[ix.wordId[pos]] * (s === 1 ? 1 : s * 0.8);
+      if (s < 1) subs++;
+      j = P[i * W + j];
+      i--;
     } else if (dir === UP) {
       ins++;
       i--;
@@ -273,7 +328,7 @@ export function alignRegion(ix: CorpusIndex, obs: readonly Obs[], from: number, 
   }
   return {
     score: bestScore - trailingPenalty,
-    startPos: pairs[0][1],
+    startPos: Math.min(...pairs.map((p) => p[1])),
     endPos,
     matched,
     matchedWeight,

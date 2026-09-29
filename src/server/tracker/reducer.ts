@@ -288,8 +288,11 @@ export class TrackerEngine {
   private freshStats(c: Candidate, fromObs: number): { matched: number; weight: number; run: number } {
     let matched = 0;
     let weight = 0;
+    // Each corpus word counts once: a repeated phrase is not new evidence for a place.
+    const seen = new Set<number>();
     for (const [oi, pos, sim] of c.pairs) {
-      if (oi < fromObs) continue;
+      if (oi < fromObs || seen.has(pos)) continue;
+      seen.add(pos);
       matched++;
       weight += this.ix.weight[this.ix.wordId[pos]] * (sim === 1 ? 1 : sim * 0.8);
     }

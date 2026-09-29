@@ -105,8 +105,8 @@ export function buildCandidates(
       const verseIndex = ix.wordVerse[a.endPos];
       const prev = byEnd.get(a.endPos);
       if (prev && prev.score >= a.score) continue;
-      let inVerse = 0;
-      for (const [, pos] of a.pairs) if (ix.wordVerse[pos] === verseIndex) inVerse++;
+      // Distinct words: a phrase recited twice (going back after a breath) is not twice the evidence.
+      const inVerse = new Set(a.pairs.filter(([, pos]) => ix.wordVerse[pos] === verseIndex).map(([, pos]) => pos)).size;
       byEnd.set(a.endPos, {
         ...a,
         verseIndex,

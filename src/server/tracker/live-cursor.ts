@@ -11,11 +11,14 @@ type Anchor = { pos: number; verseIndex: number };
 export class LiveCursor {
   private anchor: Anchor | null = null;
   private confirmedVerse: number | null = null;
+  private last: LivePosition | null = null;
+  /** Heard words when `last` was found. */
+  private lastLen = 0;
   constructor(
     private readonly ix: CorpusIndex,
     public advanceWords: 1 | 2 = 1,
   ) {}
-  reset() { this.anchor = null; this.confirmedVerse = null; }
+  reset() { this.anchor = null; this.confirmedVerse = null; this.last = null; }
 
   update(words: readonly Word[], confirmed: Anchor | null, provisional: boolean, prior: number | null = null, neighbours: NeighbourProvider | null = null): LivePosition | null {
     if (!words.length) { this.reset(); return null; }
@@ -46,6 +49,13 @@ export class LiveCursor {
       if (candidate) pos = { verseIndex: candidate.verseIndex, pos: candidate.endPos };
     }
     if (pos) this.anchor = pos;
-    return pos ? { verseIndex: pos.verseIndex, word: Math.max(0, pos.pos - this.ix.verseStart[pos.verseIndex]), provisional } : null;
+    // One new word that does not match yet is not evidence of anything: an elongated madd or a long
+    // word spoken slowly arrives in pieces ("وملائ" before "كته", sometimes finalized mid-word).
+    // Keep the last position rather than blinking the highlight off; a second unmatched word, or a
+    // rewritten (shorter) hypothesis, clears it.
+    if (!pos) return this.last && words.length >= this.lastLen && words.length <= this.lastLen + 1 ? { ...this.last, provisional } : (this.last = null);
+    this.last = { verseIndex: pos.verseIndex, word: Math.max(0, pos.pos - this.ix.verseStart[pos.verseIndex]), provisional };
+    this.lastLen = words.length;
+    return this.last;
   }
 }

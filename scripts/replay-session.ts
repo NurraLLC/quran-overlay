@@ -82,13 +82,21 @@ export async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
   });
   (session as unknown as { liveCursor: { advanceWords: 1 | 2 } }).liveCursor.advanceWords = advanceWords;
   const changes: Array<{ t: number; key: string | null }> = [];
+  // --trace: every screen change and highlight gap, with the words heard just before it.
+  const trace = process.argv.includes('--trace');
+  const heard = new TranscriptBuffer();
+  const recent = () => heard.liveWords().slice(-6).map((w) => w.text.trim()).join(' ');
   let last: string | null = null;
   let hadCursor = false;
   let gaps = 0;
   session.onDisplay((s) => {
     const key = s.visible ? (s.verse?.key ?? null) : null;
     const cursor = (s as unknown as { cursor: unknown }).cursor;
-    if (key === last && key !== null && hadCursor && !cursor) gaps++;
+    if (key === last && key !== null && hadCursor && !cursor) {
+      gaps++;
+      if (trace) console.log(`    ${(clock.now() / 1000).toFixed(1).padStart(6)}s  highlight off  ${key}   heard: ${recent()}`);
+    }
+    if (trace && key !== last) console.log(`    ${(clock.now() / 1000).toFixed(1).padStart(6)}s  ${key ?? 'BLANK'}${' '.repeat(Math.max(1, 14 - (key ?? 'BLANK').length))}heard: ${recent()}`);
     hadCursor = !!cursor;
     if (key !== last) {
       changes.push({ t: clock.now(), key });
@@ -101,7 +109,10 @@ export async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
   let seq = 0;
   for (const e of fx.events) {
     clock.advanceTo(e.t);
-    if (e.type === 'result') session.handle({ type: 'transcript', captureEpoch: 1, seq: seq++, tokens: e.tokens as WireToken[], receivedAt: e.t });
+    if (e.type === 'result') {
+      heard.apply(e.tokens as WireToken[]);
+      session.handle({ type: 'transcript', captureEpoch: 1, seq: seq++, tokens: e.tokens as WireToken[], receivedAt: e.t });
+    }
     else if (e.action.kind === 'manual') session.handle({ type: 'goto', key: e.action.key });
   }
   clock.advanceTo(clock.now() + 4000);

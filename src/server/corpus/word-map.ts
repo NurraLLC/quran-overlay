@@ -10,9 +10,11 @@ export function mapDisplayWords(search: string, display: string): Array<WordSpan
   const visibleWords = display.trim().split(/\s+/).map((text, index) => ({ text, index })).filter(w => relaxed(w.text));
   const displayTokens = visibleWords.map(w => w.text);
   const b = displayTokens.map(relaxed);
-  // Uthmani small letters may be explicit letters in Imlaei. Accept either source spelling
-  // only when it exactly matches the ordered search group; never change displayed scripture.
-  const variants = displayTokens.map(w => [...new Set([relaxed(w), relaxed(w.replace(/\u0670/g, 'ا').replace(/\u06e5/g, 'و').replace(/\u06e6/g, 'ي'))])]);
+  // Uthmani spellings that Imlaei writes differently are accepted only when they exactly match the
+  // ordered search group; displayed scripture is never changed. Each applicable rule may or may
+  // not apply (every combination is tried): "وَمَلَـٰٓئِكَتِهِۦ" needs its small alif read as ا
+  // but not its closing small ya (a sound extension Imlaei does not write) read as ي.
+  const variants = displayTokens.map(spellings);
   const forms = (j: number, y: number) => {
     let parts = [''];
     for (let k = j; k < j + y; k++) parts = parts.flatMap(p => variants[k].map(v => p + v));
@@ -62,4 +64,29 @@ export function mapDisplayWords(search: string, display: string): Array<WordSpan
     const [from, to] = [...c][0].split(':').map(Number);
     return { from: visibleWords[from].index, to: visibleWords[to].index };
   });
+}
+
+/** Uthmani → Imlaei spelling differences (pair rules first, so they take the dagger alif). */
+const SPELLING_RULES: Array<[RegExp, string]> = [
+  [/ى([ً-ْ]*)ٰ/g, 'ا$1'], // مَوْلَىٰنَا → مولانا
+  [/و([ً-ْ]*)ٰ/g, 'ا$1'], // ٱلصَّلَوٰةَ → الصلاة
+  [/ـ([ً-ْ]*)ٔ/g, 'ئ$1'], // يَـُٔودُهُۥ → يئوده
+  [/^([وفب]?[ً-ْ]*)ٱل([ً-ِْ]*)ّ/g, '$1ٱلل$2'], // ٱلَّيْلِ → الليل
+  [/ء/g, 'ا'], // ءَأَنذَرْتَهُمْ → أأنذرتهم
+  [/ٰ/g, 'ا'], // small alif written in full
+  [/ۥ/g, 'و'], // small waw
+  [/ۦ/g, 'ي'], // small ya
+];
+
+function spellings(word: string): string[] {
+  const applicable = SPELLING_RULES.filter(([re]) => new RegExp(re.source).test(word));
+  const out = new Set<string>();
+  for (let mask = 0; mask < 1 << applicable.length; mask++) {
+    let w = word;
+    applicable.forEach(([re, to], k) => {
+      if (mask & (1 << k)) w = w.replace(re, to);
+    });
+    out.add(relaxed(w));
+  }
+  return [...out];
 }
