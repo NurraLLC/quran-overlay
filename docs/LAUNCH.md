@@ -18,13 +18,13 @@ The [final review](FINAL_REVIEW.md) records launch fixes and fresh local evidenc
 - Tracking: replaying every recorded session and scenario (105 files, 805 ayahs) shows 0 wrong ayahs and 0 blank screens.
 - The hosted site under `/quran-reader`, run locally in a browser: every request stayed under the prefix (font, scripts, API, live connection, links), and the OBS link and share card carry it.
 - Silence skipper: a real browser with a fake microphone (tone, 11 s of silence, tone) and a stand-in provider. The stream closed after 8 s of silence and reopened when the voice returned.
-- Community donations: tested against a mocked Stripe (signed webhooks, one grant per payment, tampered amounts rejected). Personal purchases and recovery codes have been removed. Real Stripe remains untested.
+- Community support: mocked tests cover signed webhooks, one grant per payment, and tampered amounts. Real Stripe sandbox checkout is also verified: the owner completed a $5 test payment, the local webhook returned 200, and the isolated pool gained exactly 38 hours. Live payments and payouts remain untested. Personal purchases and recovery codes have been removed.
 
 ## Not verified yet (do these first)
 
 1. **Check CI on the latest commit.** The image, Caddy validation, startup, pool funding and pool readback passed with the hosted audio relay on `5581706`. Check subsequent changes on their own commit.
 2. **The Cloudflare Worker has never run.** Check that the live connection (WebSocket) works through it: opening a surah from the list uses it.
-3. **Stripe for real.** Use test mode first. Verify business/payment activation and the content requirements below before live payments.
+3. **Stripe live setup.** Sandbox checkout and the local webhook have passed. Complete business/payout activation, configure the deployed webhook, and check the content requirements below before enabling live payments.
 4. **OBS.** The overlay is the page verified in Edge; it has not been loaded as an OBS browser source.
 5. **Live recitation by the owner.** Today's tracker fixes and the silence skipper have not had a live session yet. Do not generate recitation with TTS; the owner tests by reciting.
 
