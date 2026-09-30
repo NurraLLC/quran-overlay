@@ -71,7 +71,7 @@ export const DisplayStateSchema = z.object({
   /** Recited position within the verse as a fraction of its words, only for paging long verses. */
   progress: z.number().min(0).max(1).nullable(),
   /** Display-word coordinates, validated against the selected display script. */
-  cursor: z.object({ from: z.number().int().nonnegative(), to: z.number().int().nonnegative(), provisional: z.boolean() }).nullable().optional(),
+  cursor: z.object({ from: z.number().int().nonnegative(), to: z.number().int().nonnegative() }).nullable().optional(),
   /** Short ayahs shown together with the current one, in order (it is among them); null = alone. */
   group: z
     .array(z.object({ key: z.string().regex(/^\d{1,3}:\d{1,3}$/), ayah: z.number().int().min(1).max(286), arabic: z.string().min(1), english: z.string().min(1) }))
@@ -107,11 +107,14 @@ export type OverlayServerMessage =
 
 // ---------- control channel ----------
 
+/** Provider audio times are within one stream, which lasts at most three hours. */
+const AudioMs = z.number().finite().min(0).max(6 * 3600_000);
+
 export const WireTokenSchema = z.object({
   text: z.string().max(200),
   isFinal: z.boolean(),
-  startMs: z.number().finite().optional(),
-  endMs: z.number().finite().optional(),
+  startMs: AudioMs.optional(),
+  endMs: AudioMs.optional(),
   confidence: z.number().finite().optional(),
 });
 
@@ -132,7 +135,7 @@ export const ControlClientMessageSchema = z.discriminatedUnion('type', [
      * Provider audio time (ms since this stream's first audio) at that receipt: where the reciter
      * is now, while the tokens describe where they were. Keeps the highlight in step (pace.ts).
      */
-    audioMs: z.number().finite().nonnegative().optional(),
+    audioMs: AudioMs.optional(),
   }),
   z.object({
     type: z.literal('voice'),
@@ -143,7 +146,7 @@ export const ControlClientMessageSchema = z.discriminatedUnion('type', [
      * highlight waits during a breath and moves on when the voice returns.
      */
     speaking: z.boolean(),
-    audioMs: z.number().finite().nonnegative(),
+    audioMs: AudioMs,
   }),
   z.object({
     type: z.literal('capture'),

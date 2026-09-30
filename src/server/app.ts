@@ -11,6 +11,7 @@
 // (never in a URL the server logs). Exact Host/Origin checks; no wildcard CORS.
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { isIPv6 } from 'node:net';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import fastifyStatic from '@fastify/static';
@@ -45,6 +46,8 @@ export type HostedOptions = {
   billing?: StripeBilling | null;
   safety?: ListeningSafety;
   isRecitation?: (text: string) => boolean;
+  /** Reading needs no visitor cookie (surah text, translation, word meanings are for anyone). */
+  reading?: Session;
 };
 
 export type AppOptions = {
@@ -112,6 +115,28 @@ class RateLimit {
   }
 }
 
+/** A visitor's pages share one session; more open pages than a person uses are refused. */
+const MAX_CONTROL_SOCKETS = 8;
+/** A page that stops reading (a stalled tab, a dead link) is let go rather than queued for without end. */
+const MAX_BUFFERED = 1024 * 1024;
+/** Per page: far above any real page (recogniser results arrive a few times a second, each a few KB). */
+const CONTROL_MESSAGES_PER_S = 60;
+const CONTROL_BYTES_PER_MS = 64;
+const CONTROL_BYTES_BURST = 512 * 1024;
+
+/** IPv4 as is (also IPv4-mapped); IPv6 by its /64, which one household or phone controls entirely. */
+export function networkOf(ip: string): string {
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);
+  if (mapped) return mapped[1];
+  const addr = ip.split('%')[0].toLowerCase();
+  if (!isIPv6(addr)) return ip;
+  const [head, tail] = addr.split('::');
+  const a = head ? head.split(':') : [];
+  const b = tail ? tail.split(':') : [];
+  const groups = tail === undefined ? a : [...a, ...Array(Math.max(0, 8 - a.length - b.length)).fill('0'), ...b];
+  return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':')}::/64`;
+}
+
 /** One limit per key (visitor or network) instead of one for the whole server. */
 class KeyedRateLimit {
   private readonly limits = new Map<string, RateLimit>();
@@ -148,7 +173,11 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   const visitorKeyLimit = new KeyedRateLimit(10, 60_000);
   const networkSpeechLimit = new KeyedRateLimit(90, 60_000);
   // New anonymous identities per network: stops a script from flooding the server with sessions.
-  const identityLimit = new KeyedRateLimit(30, 60 * 60_000);
+  // A mosque's Wi-Fi or a carrier's shared address serves many phones (30 an hour turned the 31st away).
+  const identityLimit = new KeyedRateLimit(200, 60 * 60_000);
+  // Overlay connections per network (OBS reconnects are few; a flood of unauthenticated sockets is not).
+  const overlayLimit = new KeyedRateLimit(60, 60_000);
+  const controlSockets = new Map<string, number>();
   const checkoutLimit = new KeyedRateLimit(10, 10 * 60_000);
   const exchangeLimit = new RateLimit(20, 60_000);
 
@@ -196,9 +225,10 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     const id = visitor(req);
     return id ? hosted.hub.get(id) : null;
   };
+  /** The visitor's network (see networkOf): per-network limits and tickets are keyed by it. */
   const clientIp = (req: FastifyRequest) => {
     const fwd = hosted?.trustProxy ? String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() : '';
-    return fwd || req.ip || 'unknown';
+    return networkOf(fwd || req.ip || 'unknown');
   };
   const creditView = (id: string, ip: string): CreditView => {
     const c = hosted!.credits;
@@ -343,23 +373,29 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     speech.accept(socket, id, ip);
   });
 
+  // Reading: hosted visitors need no cookie (a network that reached its new-visitor limit can still
+  // read); the browser may keep a surah for an hour.
+  const readerFor = (req: FastifyRequest): Session | null => (hosted?.reading && !visitor(req) ? hosted.reading : sessionFor(req));
   app.get('/api/chapters', async (req, reply) => {
-    const s = sessionFor(req);
+    const s = readerFor(req);
     if (!s) return reply.code(401).send({ error: 'owner' });
+    reply.header('Cache-Control', 'private, max-age=3600');
     return s.chapters();
   });
 
   app.get('/api/verse/:key', async (req, reply) => {
-    const session = sessionFor(req);
+    const session = readerFor(req);
     if (!session) return reply.code(401).send({ error: 'owner' });
     const card = session.card((req.params as { key: string }).key);
+    if (card) reply.header('Cache-Control', 'private, max-age=3600');
     return card ?? reply.code(404).send({ error: 'not found' });
   });
 
   app.get('/api/surah/:n', async (req, reply) => {
-    const session = sessionFor(req);
+    const session = readerFor(req);
     if (!session) return reply.code(401).send({ error: 'owner' });
     const s = session.surah(Number((req.params as { n: string }).n));
+    if (s) reply.header('Cache-Control', 'private, max-age=3600');
     return s ?? reply.code(404).send({ error: 'not found' });
   });
 
@@ -381,28 +417,65 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     }
     const s = found;
     const visitorId = visitor(req);
-    if (visitorId) lastIp.set(visitorId, clientIp(req));
+    if (visitorId && (controlSockets.get(visitorId) ?? 0) >= MAX_CONTROL_SOCKETS) {
+      socket.close(4429, 'Too many open pages');
+      return;
+    }
+    if (visitorId) {
+      controlSockets.set(visitorId, (controlSockets.get(visitorId) ?? 0) + 1);
+      lastIp.set(visitorId, clientIp(req));
+    }
     const send = (m: ControlServerMessage) => {
-      if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(m));
+      if (socket.readyState !== socket.OPEN) return;
+      if (socket.bufferedAmount > MAX_BUFFERED) return socket.terminate();
+      socket.send(JSON.stringify(m));
     };
     const off = s.onControl(send);
     s.controlConnected();
     send({ type: 'snapshot', snapshot: s.snapshot() });
     if (visitorId) send({ type: 'credits', credits: creditView(visitorId, clientIp(req)) });
+    // Every message runs the tracker on one shared process: a page past these budgets is closed (it
+    // reconnects); requests that may ask for paid decisions are limited per page.
+    const messages = new RateLimit(CONTROL_MESSAGES_PER_S, 1000);
+    const commands = new RateLimit(4, 10_000);
+    let bytes = 0;
+    let bytesAt = Date.now();
     socket.on('message', (raw) => {
+      const data = raw.toString();
+      const now = Date.now();
+      bytes = Math.max(0, bytes - (now - bytesAt) * CONTROL_BYTES_PER_MS) + data.length;
+      bytesAt = now;
+      if (!messages.take(now) || bytes > CONTROL_BYTES_BURST) return socket.close(1008, 'Too many messages');
       let parsed;
       try {
-        parsed = ControlClientMessageSchema.safeParse(JSON.parse(raw.toString()));
+        parsed = ControlClientMessageSchema.safeParse(JSON.parse(data));
       } catch {
         return;
       }
       if (!parsed.success) return;
-      s.handle(parsed.data);
+      const m = parsed.data;
+      // The tracker mode is the owner's setting: it decides which decisions are paid for.
+      if (hosted && m.type === 'mode') return;
+      if (m.type === 'command' && !commands.take(now)) {
+        send({ type: 'command_result', requestId: m.requestId, result: { kind: 'no_match', message: 'That was a lot of requests at once. Please wait a moment and ask again.' } });
+        return;
+      }
+      try {
+        s.handle(m);
+      } catch (e) {
+        // One bad message never takes the server (and everyone's listening) down.
+        console.error('Control message failed:', e instanceof Error ? e.message : e);
+      }
       // Client capture messages control the display only. The audio relay owns settlement.
     });
     socket.on('close', () => {
       off();
       s.controlDisconnected();
+      if (visitorId) {
+        const n = (controlSockets.get(visitorId) ?? 1) - 1;
+        if (n > 0) controlSockets.set(visitorId, n);
+        else controlSockets.delete(visitorId);
+      }
       // The audio connection closes independently; never refund hours on an untrusted signal.
     });
   });
@@ -413,12 +486,18 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
       socket.close(4403, 'origin');
       return;
     }
+    if (hosted && !overlayLimit.take(clientIp(req))) {
+      socket.close(4429, 'Please try again shortly');
+      return;
+    }
     let s: Session = local;
     let off: (() => void) | null = null;
     let offRevoke: (() => void) | null = null;
     let role: 'overlay' | 'preview' = 'overlay';
     const send = (m: OverlayServerMessage) => {
-      if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(m));
+      if (socket.readyState !== socket.OPEN) return;
+      if (socket.bufferedAmount > MAX_BUFFERED) return socket.terminate();
+      socket.send(JSON.stringify(m));
     };
     const authTimer = setTimeout(() => socket.close(4401, 'auth timeout'), 5000);
     socket.on('message', (raw) => {
@@ -450,7 +529,13 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
           socket.close(4401, 'revoked');
         };
         s.revokeListeners.add(revoke);
-        offRevoke = () => s.revokeListeners.delete(revoke);
+        // The session was dropped: the overlay reconnects, and its saved link finds the visitor's new one.
+        const ended = () => socket.close(4410, 'session ended');
+        s.endListeners.add(ended);
+        offRevoke = () => {
+          s.revokeListeners.delete(revoke);
+          s.endListeners.delete(ended);
+        };
         // Full latest state immediately on (re)connect.
         send({ type: 'display', state: s.display });
       } else if (m.type === 'painted' && off && role === 'overlay') {

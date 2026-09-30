@@ -46,6 +46,8 @@ import { ArabicSurahRequests } from './commands/arabic-request';
 export const DISCONNECT_GRACE_MS = 5000;
 /** A highlight catching up passes each word between for this long (the highlight's own fade). */
 const SWEEP_MS = 90;
+/** Words heard in one stream beyond which its results are ignored (three hours is ~25,000). */
+const MAX_STREAM_WORDS = 60_000;
 
 export type SessionSetup = {
   soniox: boolean;
@@ -67,6 +69,9 @@ export type SessionOptions = {
   /** Self-hosted: the overlay link kept from the last run, and where a replaced one is saved. */
   viewToken?: string;
   onViewToken?: (token: string) => void;
+  /** Hosted: the visitor's saved look, and where a changed one is saved (overlay-links.ts). */
+  style?: unknown;
+  onStyle?: (style: DisplayStyle) => void;
   clock?: Clock;
   /** Explicit, bounded, local diagnostic capture of provider token events (no audio). */
   captureDir?: string | null;
@@ -147,6 +152,7 @@ export class Session {
   private captureStart = 0;
   private disconnectTimer: unknown = null;
   private pageTimer: unknown = null;
+  private pageTimerKey = '';
 
   private latestCommand: { id: string; ctrl: AbortController; keys: Set<string> } | null = null;
   private readonly sentAt = new Map<number, number>();
@@ -169,6 +175,8 @@ export class Session {
       if (this.capture.phase !== 'recording' || this.commandActive) return;
       void this.command(id, text, intent === 'show');
     }, message => this.say(message));
+    const saved = o.style ? DisplayStyleSchema.safeParse({ ...DEFAULT_STYLE, ...(o.style as object) }) : null;
+    if (saved?.success) this.style = saved.data;
     this.follower = new RecitationFollower(o.ix, o.corpus.id, this.sessionEpoch, o.decisionClient, o.mode, (e) => this.onFollower(e), this.clock);
     // When recitation stops matching (a jump to somewhere new, a pause to talk), the last ayah stays
     // up until the new place is found: a blank screen tells the audience nothing. The control page
@@ -296,11 +304,16 @@ export class Session {
   }
 
   private schedulePageTimer() {
-    if (this.pageTimer !== null) this.clock.clearTimeout(this.pageTimer);
-    this.pageTimer = null;
     const secs = this.style.translationPageSeconds;
     const pages = this.layout && this.layout.key === this.verseLabel(this.displayVerse) ? this.layout.englishPages : 1;
-    if (!secs || pages <= 1 || !this.display.visible) return;
+    const key = !secs || pages <= 1 || !this.display.visible ? '' : `${this.displayVerse}|${this.englishPage}|${pages}|${secs}`;
+    // Only a new ayah, page, page count or interval restarts the count: the highlight moves several
+    // times a second, and restarting on every change meant the translation never turned while reciting.
+    if (key === this.pageTimerKey && (!key || this.pageTimer !== null)) return;
+    if (this.pageTimer !== null) this.clock.clearTimeout(this.pageTimer);
+    this.pageTimer = null;
+    this.pageTimerKey = key;
+    if (!key) return;
     this.pageTimer = this.clock.setTimeout(() => {
       this.pageTimer = null;
       this.englishPage = (this.englishPage + 1) % pages;
@@ -383,7 +396,10 @@ export class Session {
         return this.queueSnapshot();
       case 'style': {
         const next = DisplayStyleSchema.safeParse({ ...this.style, ...msg.patch });
-        if (next.success) this.style = next.data;
+        if (next.success) {
+          this.style = next.data;
+          this.o.onStyle?.(this.style);
+        }
         return this.publish();
       }
       case 'page':
@@ -442,6 +458,8 @@ export class Session {
   }
 
   readonly revokeListeners = new Set<() => void>();
+  /** Called when the session is dropped: open overlays reconnect (their link finds the new session). */
+  readonly endListeners = new Set<() => void>();
 
   private say(text: string) {
     this.notice = text;
@@ -496,6 +514,8 @@ export class Session {
     if (this.capture.phase === 'stopped' || this.capture.phase === 'off' || this.capture.phase === 'dozing') return; // late results after Stop
     if (msg.seq <= this.lastSeq) return; // duplicate delivery
     this.lastSeq = msg.seq;
+    // Far beyond any stream (a provider stream lasts at most three hours): the page is misbehaving.
+    if (this.buffer.finals.length > MAX_STREAM_WORDS) return;
     this.writeCapture(msg.tokens, msg.audioMs);
     // The audio clock: the least-delayed report gives the closest offset (delivery only adds delay).
     if (msg.audioMs !== undefined) {
@@ -635,7 +655,8 @@ export class Session {
     if (now !== null) {
       const p = this.pace.predict(ev, now, this.lag.ms, this.quiet);
       target = p.pos;
-      if (p.nextAt !== null) dueIn = Math.max(1, Math.ceil(p.nextAt - now));
+      // A word due more than a few seconds away is no pace at all (new evidence reschedules).
+      if (p.nextAt !== null && p.nextAt - now <= 10_000) dueIn = Math.max(1, Math.ceil(p.nextAt - now));
     }
     const shown = !allowBack && this.shownPos !== null && this.o.ix.wordVerse[this.shownPos] === this.liveVerse ? this.shownPos : null;
     if (shown !== null && shown > target) target = shown;
@@ -664,7 +685,8 @@ export class Session {
     let mapping = this.wordMaps.get(verse);
     if (!mapping) { mapping = mapDisplayWords(v.searchText, v.arabicDisplay); this.wordMaps.set(verse, mapping); }
     const span = mapping[word];
-    this.cursor = span ? { ...span, provisional: this.buffer.hasProvisional } : null;
+    // Only what the screen shows: whether the recogniser's words are still provisional changes nothing there.
+    this.cursor = span ? { ...span } : null;
     this.progress = Math.min(1, (word + 1) / this.o.ix.verseLen[verse]);
     if (this.shownPos === null || this.o.ix.wordVerse[this.shownPos] !== verse) {
       this.shownAt.clear();
@@ -688,6 +710,14 @@ export class Session {
   private resetLive() {
     this.liveCursor.reset();
     this.stopPace();
+  }
+
+  /** No longer following (the page or its stream is gone): the ayah stays, no word claims to be recited. */
+  private dropHighlight() {
+    this.resetLive();
+    this.liveVerse = null;
+    this.cursor = null;
+    this.publish();
   }
 
   private onCapture(msg: Extract<ControlClientMessage, { type: 'capture' }>) {
@@ -730,6 +760,7 @@ export class Session {
     } else if (msg.event === 'error') {
       this.listeningCommands.cancel();
       this.follower.stop();
+      this.dropHighlight();
       this.startDisconnectGrace();
     }
     this.queueSnapshot();
@@ -787,6 +818,8 @@ export class Session {
     if (this.snapshotTimer !== null) this.clock.clearTimeout(this.snapshotTimer);
     this.snapshotTimer = null;
     this.stopPace();
+    for (const fn of this.endListeners) fn();
+    this.endListeners.clear();
     this.displayListeners.clear();
     this.controlListeners.clear();
     this.revokeListeners.clear();
@@ -803,6 +836,7 @@ export class Session {
     if (this.controlClients === 0 && ['starting', 'recording', 'reconnecting'].includes(this.capture.phase)) {
       this.capture = { ...this.capture, phase: 'disconnected', detail: 'Control page disconnected while listening.', since: this.clock.now() };
       this.follower.stop();
+      this.dropHighlight();
       this.startDisconnectGrace();
     }
   }
@@ -815,7 +849,7 @@ export class Session {
       this.showVerse(null);
       this.trackerVerse = null;
       this.follower.unlocate();
-      this.notice = 'Overlay cleared: listening stopped unexpectedly for 5 seconds. Pin the display to keep a verse up during outages.';
+      this.notice = 'The screen was cleared: listening stopped unexpectedly for 5 seconds. To keep the ayah up during outages, turn on “Keep the ayah up if the microphone disconnects”.';
       this.logEvent('disconnect_clear', null);
       this.publish();
     }, DISCONNECT_GRACE_MS);

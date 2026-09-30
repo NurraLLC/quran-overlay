@@ -26,6 +26,13 @@ const MIN_LOCAL = 6;
 const MIN_GLOBAL = 12;
 const LOCAL_BEFORE = 80;
 const LOCAL_AFTER = 400;
+/**
+ * A run is read at most this many words at a time, and a longer consonant pattern is not searched:
+ * a whole-Quran search costs ~pattern × 220,000 steps, so an unbounded run (a long transliterated
+ * passage, or a crafted message) could hold the server for seconds. Recited runs are far shorter.
+ */
+const MAX_RUN_WORDS = 8;
+const MAX_PATTERN = 64;
 
 type QWord = { verseIndex: number; skel: string; arabic: string };
 
@@ -89,7 +96,7 @@ export class LatinReader {
       // laka fathan mubina"): it is cut at English words and sentence ends, and each piece is read
       // on its own.
       let j = i;
-      while (j < words.length && LATIN.test(words[j].text) && !ARABIC.test(words[j].text) && !isEnglish(words[j].text)) {
+      while (j < words.length && j - i < MAX_RUN_WORDS && LATIN.test(words[j].text) && !ARABIC.test(words[j].text) && !isEnglish(words[j].text)) {
         j++;
         if (/[.?!]$/.test(words[j - 1].text.trim())) break;
       }
@@ -133,7 +140,7 @@ export class LatinReader {
       for (let c = 0; c < s.length; c++) from.push(k);
     });
     // Re-collapse doubles across word boundaries, as the corpus text is collapsed per word only.
-    if (pattern.length < MIN_LOCAL) return null;
+    if (pattern.length < MIN_LOCAL || pattern.length > MAX_PATTERN) return null;
 
     let region: [number, number] | null = null;
     if (near !== null && this.verseFirst[near] >= 0) {

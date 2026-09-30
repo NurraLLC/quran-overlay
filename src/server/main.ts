@@ -2,6 +2,8 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { CreditStore, DEFAULT_CREDITS } from './billing/credits';
 import { SessionHub } from './billing/hub';
+import { OverlayLinks } from './billing/overlay-links';
+import { randomBytes } from 'node:crypto';
 import { VisitorIdentity } from './billing/identity';
 import { parseDonations, StripeBilling } from './billing/stripe';
 import net from 'node:net';
@@ -60,7 +62,7 @@ function decisionSetup(): { client: DecisionClient | null; provider: JevGateway 
  * Hosted service: one anonymous session per visitor, drawing from the shared sponsored pool.
  * Configured listening durations are in hours; reading and translations are always free.
  */
-function hostedSetup(create: () => Session): HostedOptions {
+function hostedSetup(create: (saved: Pick<ConstructorParameters<typeof Session>[0], 'viewToken' | 'onViewToken' | 'style' | 'onStyle'>) => Session): HostedOptions {
   const hours = (name: string, fallback: number) => Math.round((Number(process.env[name]) || fallback) * 3600);
   const stateDir = process.env.QO_STATE_DIR || path.join(ROOT, 'data', 'state');
   mkdirSync(stateDir, { recursive: true });
@@ -75,8 +77,16 @@ function hostedSetup(create: () => Session): HostedOptions {
     poolDailySecondsPerVisitor: hours('QO_SPONSORED_HOURS_PER_VISITOR_DAY', 2),
     poolDailySecondsPerNetwork: hours('QO_SPONSORED_HOURS_PER_NETWORK_DAY', 4),
   });
+  // A streamer's overlay link and look survive idle time, restarts and deploys (OBS keeps working).
+  const links = new OverlayLinks(path.join(stateDir, 'overlay-links.db'));
+  const session = (visitor: string) => {
+    const saved = links.get(visitor);
+    const view = saved?.view ?? randomBytes(18).toString('base64url');
+    if (!saved) links.saveView(visitor, view);
+    return create({ viewToken: view, onViewToken: (v) => links.saveView(visitor, v), style: saved?.style ?? undefined, onStyle: (st) => links.saveStyle(visitor, st) });
+  };
   return {
-    hub: new SessionHub(create),
+    hub: new SessionHub(session, undefined, undefined, (view) => links.visitorOf(view)),
     credits,
     safety: new ListeningSafety(path.join(stateDir, 'listening-safety.db')),
     identity: VisitorIdentity.fromFile(path.join(stateDir, 'identity.key'), process.env.QO_SECRET),
@@ -151,8 +161,10 @@ async function main() {
     return localLinks(path.join(dir, 'local-links.json'));
   })();
   const session = hostedMode ? undefined : new Session({ ...sessionOptions(false), viewToken: links?.links.view, onViewToken: links?.saveView });
-  const hosted = hostedMode ? hostedSetup(() => new Session(sessionOptions(true))) : undefined;
+  const hosted = hostedMode ? hostedSetup((saved) => new Session({ ...sessionOptions(true), ...saved })) : undefined;
   if (hosted) {
+    // Reading without a visitor cookie shares one session that never listens.
+    hosted.reading = new Session(sessionOptions(true));
     const activity = recitationActivity(ix.words);
     hosted.isRecitation = (text) => {
       if (activity(text)) return true;
