@@ -27,6 +27,7 @@
     "fixtures:derived": "tsx scripts/make-derived-fixtures.ts",
     "replay:session": "tsx scripts/replay-session.ts",
     "replay:timing": "tsx scripts/follow-timing.ts",
+    "load": "tsx scripts/load-test.ts",
     "speedlab": "tsx scripts/speedlab/run.ts",
     "speedlab:audio": "tsx scripts/speedlab/make-audio.ts",
     "speedlab:hosted": "tsx scripts/speedlab/hosted.ts",
