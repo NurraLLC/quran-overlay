@@ -101,7 +101,7 @@ function groundTruth(words: Array<{ key: string; start: number; end: number }>, 
   return out;
 }
 
-type Stats = { sync: number; behind: number; ahead: number; none: number; behindWords: number; onset: number[]; back: number; words: number };
+type Stats = { sync: number; behind: number; ahead: number; none: number; unlit: number; behindWords: number; onset: number[]; back: number; skips: number; words: number };
 
 async function run(file: string): Promise<Stats & { offset: number }> {
   const clock = new VClock();
@@ -160,7 +160,7 @@ async function run(file: string): Promise<Stats & { offset: number }> {
   const heard = buf.finals.flatMap((w) => tokenize(w.text).filter((t) => !t.foreign).map((t) => ({ key: t.key, start: w.startMs ?? NaN, end: w.endMs ?? NaN })));
   const truth = groundTruth(heard.filter((w) => Number.isFinite(w.start)), verses);
 
-  const st: Stats = { sync: 0, behind: 0, ahead: 0, none: 0, behindWords: 0, onset: [], back: 0, words: truth.length };
+  const st: Stats = { sync: 0, behind: 0, ahead: 0, none: 0, unlit: 0, behindWords: 0, onset: [], back: 0, skips: 0, words: truth.length };
   const at = (t: number) => {
     let s: Shown | null = null;
     for (const x of shown) {
@@ -176,6 +176,7 @@ async function run(file: string): Promise<Stats & { offset: number }> {
     const until = nextStart - g.end <= 400 ? nextStart : g.end + 400;
     for (let t = g.start; t < until; t += 10) {
       const s = at(t);
+      if (s && s.pos === null && s.verse === ix.wordVerse[g.pos]) st.unlit++;
       if (!s || s.pos === null || ix.wordVerse[s.pos] !== ix.wordVerse[g.pos]) st.none++;
       else if (s.pos === g.pos) st.sync++;
       else if (s.pos < g.pos) {
@@ -209,6 +210,7 @@ async function run(file: string): Promise<Stats & { offset: number }> {
     const a = shown[i - 1].pos;
     const b = shown[i].pos;
     if (a !== null && b !== null && ix.wordVerse[a] === ix.wordVerse[b] && b < a && a - b <= 2) st.back++;
+    if (a !== null && b !== null && ix.wordVerse[a] === ix.wordVerse[b] && b - a >= 2) st.skips++;
   }
   return { ...st, offset };
 }
@@ -218,16 +220,18 @@ const q = (xs: number[], p: number) => {
   return s.length ? (s[Math.min(s.length - 1, Math.floor(s.length * p))] / 1000).toFixed(2) : '—';
 };
 const pc = (a: number, total: number) => `${total ? Math.round((a / total) * 100) : 0}%`;
-const total: Stats = { sync: 0, behind: 0, ahead: 0, none: 0, behindWords: 0, onset: [], back: 0, words: 0 };
+const total: Stats = { sync: 0, behind: 0, ahead: 0, none: 0, unlit: 0, behindWords: 0, onset: [], back: 0, skips: 0, words: 0 };
 for (const f of files) {
   const r = await run(f);
   total.sync += r.sync;
   total.behind += r.behind;
   total.ahead += r.ahead;
   total.none += r.none;
+  total.unlit += r.unlit;
   total.behindWords += r.behindWords;
   total.onset.push(...r.onset);
   total.back += r.back;
+  total.skips += r.skips;
   total.words += r.words;
   if (process.argv.includes('--each') || trace) {
     const all = r.sync + r.behind + r.ahead + r.none;
@@ -237,7 +241,7 @@ for (const f of files) {
 const all = total.sync + total.behind + total.ahead + total.none;
 console.log(
   `${files.length} captures, ${total.words} recited words (provider lag assumed ${PROVIDER_LAG} ms):\n` +
-    `  while a word is being recited, the highlight is on it ${pc(total.sync, all)}, behind ${pc(total.behind, all)} (by ${(total.behindWords / Math.max(1, total.behind)).toFixed(2)} words), ahead ${pc(total.ahead, all)}, on no word of that ayah ${pc(total.none, all)}\n` +
+    `  while a word is being recited, the highlight is on it ${pc(total.sync, all)}, behind ${pc(total.behind, all)} (by ${(total.behindWords / Math.max(1, total.behind)).toFixed(2)} words), ahead ${pc(total.ahead, all)}, on no word of that ayah ${pc(total.none, all)} (that ayah on screen, no highlight: ${pc(total.unlit, all)})\n` +
     `  word start -> highlighted: p10 ${q(total.onset, 0.1)} s, p50 ${q(total.onset, 0.5)} s, p90 ${q(total.onset, 0.9)} s (${total.onset.length} words; negative = early)\n` +
-    `  highlight stepped back 1-2 words: ${total.back}`,
+    `  highlight stepped back 1-2 words: ${total.back}; jumped forward over a word or more: ${total.skips}`,
 );

@@ -293,6 +293,8 @@ export type ControlSnapshot = {
 
 export type ControlServerMessage =
   | { type: 'snapshot'; snapshot: ControlSnapshot }
+  /** Each display change at once (snapshots are batched): the phone reader's highlight keeps pace. */
+  | { type: 'display'; state: DisplayState }
   | { type: 'command_pending'; requestId: string }
   | { type: 'command_result'; requestId: string; result: CommandResult }
   | { type: 'credits'; credits: CreditView };

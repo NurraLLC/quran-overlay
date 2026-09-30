@@ -142,6 +142,18 @@ describe('the session keeps the highlight in step', () => {
     expect(word(s)).toBeLessThanOrEqual(3);
   });
 
+  it('passes through the words between when it catches up, instead of jumping over them', async () => {
+    const { s, clock, hear } = reciting(false);
+    await hear(3);
+    expect(word(s)).toBe(2);
+    await hear(6);
+    expect(word(s)).toBe(3);
+    await clock.advance(90);
+    expect(word(s)).toBe(4);
+    await clock.advance(90);
+    expect(word(s)).toBe(5);
+  });
+
   it('without the page’s audio clock, follows the recogniser only (no timers)', async () => {
     const { s, clock, hear } = reciting(false);
     await hear(4);

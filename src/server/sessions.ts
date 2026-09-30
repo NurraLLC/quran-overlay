@@ -43,6 +43,8 @@ import { ListeningCommands } from './commands/listening';
 import { ArabicSurahRequests } from './commands/arabic-request';
 
 export const DISCONNECT_GRACE_MS = 5000;
+/** A highlight catching up passes each word between for this long (the highlight's own fade). */
+const SWEEP_MS = 90;
 
 export type SessionSetup = {
   soniox: boolean;
@@ -270,6 +272,7 @@ export class Session {
       this.sentAt.set(this.revision, this.clock.now());
       if (this.sentAt.size > 64) this.sentAt.delete(this.sentAt.keys().next().value!);
       for (const fn of this.displayListeners) fn(this.display);
+      this.emitControl({ type: 'display', state: this.display });
       this.schedulePageTimer();
       if (this.pendingSpeed) this.speed = { revision: this.revision, captureEpoch: this.capture.captureEpoch, ...this.pendingSpeed };
     }
@@ -618,21 +621,29 @@ export class Session {
     const ev = this.evidence;
     if (!ev || this.liveVerse === null) return;
     let target = ev.pos;
+    let dueIn: number | null = null;
     const now = this.audioNow();
     if (now !== null) {
       const p = this.pace.predict(ev, now, this.lag.ms, this.quiet);
       target = p.pos;
-      if (p.nextAt !== null) {
-        this.paceTimer = this.clock.setTimeout(() => {
-          this.paceTimer = null;
-          if (this.held || this.commandActive || this.englishTail || this.capture.phase !== 'recording' || this.liveVerse !== this.displayVerse) return;
-          this.followPace(false);
-          this.publish();
-        }, Math.max(1, Math.ceil(p.nextAt - now)));
-      }
+      if (p.nextAt !== null) dueIn = Math.max(1, Math.ceil(p.nextAt - now));
     }
-    if (!allowBack && this.shownPos !== null && this.o.ix.wordVerse[this.shownPos] === this.liveVerse && this.shownPos > target) target = this.shownPos;
+    const shown = !allowBack && this.shownPos !== null && this.o.ix.wordVerse[this.shownPos] === this.liveVerse ? this.shownPos : null;
+    if (shown !== null && shown > target) target = shown;
+    // Catching up by more than a word passes through the words between instead of jumping over them.
+    if (shown !== null && target > shown + 1) {
+      target = shown + 1;
+      dueIn = SWEEP_MS;
+    }
     this.setCursor(target);
+    if (dueIn !== null) {
+      this.paceTimer = this.clock.setTimeout(() => {
+        this.paceTimer = null;
+        if (this.held || this.commandActive || this.englishTail || this.capture.phase !== 'recording' || this.liveVerse !== this.displayVerse) return;
+        this.followPace(false);
+        this.publish();
+      }, dueIn);
+    }
   }
 
   private setCursor(pos: number) {
