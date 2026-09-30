@@ -400,7 +400,12 @@ export class HostedSpeech {
               const now = Date.now();
               if (now - connectedAt >= hold.maxSeconds * 1000) return end('Temporary API key session duration limit exceeded.', 'temp_api_key_session_expired');
               // Live on stream: talking with the audience between recitations never stops listening
-              // (and once the stream ends, the usual idle rule counts from then).
+              // (and once the stream ends, the usual idle rule counts from then). A stream that
+              // started before its overlay reconnected (after a restart) becomes live when it does.
+              if (!exempt && this.o.live?.(id) && this.unlimited(id, ip)) {
+                exempt = true;
+                this.o.credits.markStream(hold.id);
+              }
               if (exempt && this.o.live?.(id)) {
                 lastRecitation = now;
                 heardRecitation = true;

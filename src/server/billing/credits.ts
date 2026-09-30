@@ -282,6 +282,11 @@ export class CreditStore {
     return { id, maxSeconds };
   }
 
+  /** An open hold's stream went live (its overlay connected after it started): no daily share applies to it. */
+  markStream(holdId: string) {
+    this.db.prepare('UPDATE holds SET stream = 1 WHERE id = ? AND settled_at IS NULL').run(holdId);
+  }
+
   /** A hold whose key could not be minted is dropped without charge. */
   release(holdId: string) {
     this.db.prepare('DELETE FROM holds WHERE id = ? AND settled_at IS NULL').run(holdId);

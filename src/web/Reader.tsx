@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView } from '../shared/contracts';
-import { LIVE_RECONNECTING, SonioxCapture, type CaptureStatus } from './audio/soniox-session';
+import { RECONNECTING, SonioxCapture, type CaptureStatus } from './audio/soniox-session';
 import { access, applyDisplay, applySnapshot, connect, listeningLine, type Access, u } from './net';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { arabicNumber } from './VerseDisplay';
@@ -367,7 +367,7 @@ export function Reader() {
     ? capture.state === 'error'
       ? capture.detail
       : (capture.detail ?? 'Tap the microphone and recite, or ask in English.')
-    : capture.detail && (capture.state !== 'reconnecting' || capture.detail === LIVE_RECONNECTING)
+    : capture.detail && !(capture.state === 'reconnecting' && capture.detail === RECONNECTING)
       ? capture.detail // e.g. "Listening paused while the screen was off. Recite to continue."
     : capture.state === 'dozing'
       ? 'Listening… take your time. Nothing is sent while you’re quiet.'

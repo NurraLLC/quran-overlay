@@ -124,7 +124,11 @@ const LINE_ASK_TIMEOUT_MS = 20_000;
 const YOUR_TURN = 'It’s your turn. Recite when you’re ready.';
 /** Live on stream, the connection lost (the network, the server restarting): retried at these delays, then every 15 s. */
 const LIVE_RETRY_MS = [2_000, 5_000, 10_000];
+/** Still live this long after the overlay goes: OBS reconnects after a restart later than this page may. */
+const LIVE_GRACE_MS = 60_000;
 export const LIVE_RECONNECTING = 'The connection was lost. Reconnecting by itself…';
+/** The listening library's own brief reconnect (a phone reader does not show it). */
+export const RECONNECTING = 'Reconnecting to Soniox…';
 
 /** A lost or failed connection, as opposed to a refusal, a microphone problem or a bad request. */
 function lostConnection(e: unknown) {
@@ -245,10 +249,12 @@ export class SonioxCapture {
   private lineAnswer: number | null | undefined = undefined;
   /** Told a place is free while an ask was under way: ask again right after its answer. */
   private turnPending = false;
-  /** Live on stream (an overlay shows this session): listening never stops for lack of recitation. */
-  private live = false;
+  /** Live on stream (an overlay shows this session) until then: listening never stops for lack of recitation. */
+  private liveUntil = 0;
   /** The key request got no answer, or the server's error page: a lost connection. */
   private unreachable = false;
+  /** The key was refused because the sponsored hours ran out (for everyone). */
+  private poolEmpty = false;
   private liveRetries = 0;
   private liveRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private askedAt = 0;
@@ -327,6 +333,7 @@ export class SonioxCapture {
             throw new Error(this.noCredits);
           }
           if (body.error === 'NO_CREDITS') {
+            this.poolEmpty = body.limitedBy === 'pool';
             const renews = body.renewsAt ? new Date(body.renewsAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', timeZone: 'UTC' }) : 'next month';
             this.noCredits =
               body.limitedBy === 'pool'
@@ -609,7 +616,7 @@ export class SonioxCapture {
         this.setStatus({ state: 'recording', detail: this.notice });
         if (!this.commandOnly) this.capture(this.epoch, 'recording');
       } else if (new_state === 'reconnecting') {
-        this.setStatus({ state: 'reconnecting', detail: 'Reconnecting to Soniox…' });
+        this.setStatus({ state: 'reconnecting', detail: RECONNECTING });
         if (!this.commandOnly) this.capture(this.epoch, 'reconnecting');
       }
     });
@@ -630,6 +637,17 @@ export class SonioxCapture {
       // Out of listening time: stop cleanly (the page keeps its place) and say why.
       // The relay's own refusals (listening full, or unavailable) are a clean stop with its words.
       if (!this.noCredits && (refusal === 'listening_busy' || refusal === 'listening_unavailable')) this.noCredits = e instanceof Error ? e.message : BUSY;
+      // Live on stream: nothing that can pass by itself stops the broadcast's listening (the
+      // connection or the server back, hours added, the overlay reconnected after a restart). It is
+      // tried again shortly, saying why only when it is not the connection.
+      const unreachable = this.unreachable;
+      this.unreachable = false;
+      const passing = this.noCredits || unreachable || lostConnection(e) || refusal === 'listening_cooldown' || refusal === 'listening_paused';
+      if (this.live && !this.commandOnly && passing) {
+        const why = this.poolEmpty || refusal === 'listening_unavailable' ? this.noCredits : null;
+        this.noCredits = null;
+        return this.reconnectLive(why);
+      }
       if (this.noCredits) {
         const detail = this.noCredits;
         this.noCredits = null;
@@ -645,11 +663,6 @@ export class SonioxCapture {
         void this.restart();
         return;
       }
-      // Live on stream: a lost connection is retried until it is back; the broadcast's listening
-      // does not stop (a network drop, a server restart).
-      const unreachable = this.unreachable;
-      this.unreachable = false;
-      if (this.live && !this.commandOnly && (unreachable || lostConnection(e))) return this.reconnectLive();
       const detail = describeError(e);
       this.teardown();
       this.setStatus({ state: 'error', detail });
@@ -697,16 +710,21 @@ export class SonioxCapture {
 
   /** Whether the session is live on stream (from the server's snapshots). */
   setLive(on: boolean) {
-    this.live = on;
+    if (on) this.liveUntil = Infinity;
+    else if (this.liveUntil === Infinity) this.liveUntil = performance.now() + LIVE_GRACE_MS;
   }
 
-  /** Live on stream and the connection lost: listening stays on and a new stream is tried shortly. */
-  private reconnectLive() {
+  private get live() {
+    return performance.now() < this.liveUntil;
+  }
+
+  /** Live on stream and no stream for now: listening stays on and a new one is tried shortly. */
+  private reconnectLive(why: string | null = null) {
     this.endStream();
     this.dozing = false;
     const delay = LIVE_RETRY_MS[this.liveRetries] ?? 15_000;
     this.liveRetries++;
-    this.setStatus({ state: 'reconnecting', detail: LIVE_RECONNECTING });
+    this.setStatus({ state: 'reconnecting', detail: why ? `${why} Trying again by itself…` : LIVE_RECONNECTING });
     this.capture(this.epoch, 'reconnecting');
     if (this.liveRetryTimer) clearTimeout(this.liveRetryTimer);
     this.liveRetryTimer = setTimeout(() => {
@@ -787,6 +805,7 @@ export class SonioxCapture {
     if (this.line) this.leaveLine(); // the recogniser answered: the place is ours
     this.lastProcMs = r.total_audio_proc_ms;
     this.liveRetries = 0; // the recogniser answers: connected again
+    this.poolEmpty = false;
     this.lastResultAt = performance.now();
     const tokens: WireToken[] = r.tokens.map((t) => ({
       text: t.text,

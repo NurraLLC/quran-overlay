@@ -1,7 +1,8 @@
 // Live on stream in a real browser, through the hosted server and its audio relay (the recogniser is
 // a local stand-in; the microphone is a tone, never generated recitation): opening the overlay link
 // makes the page live, its listening shows no time limit, and when the server restarts (a deploy),
-// listening comes back by itself once it is up, instead of stopping the broadcast.
+// listening comes back by itself once it is up, instead of stopping the broadcast: even when the page
+// is back before OBS is, and the day's usual share on this network is already used.
 import { expect, test } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -56,8 +57,11 @@ test('live on stream: no time limit, and listening comes back by itself after a 
     const t = setInterval(() => (s.readyState === s.OPEN ? s.send(JSON.stringify({ tokens: [], final_audio_proc_ms: ms, total_audio_proc_ms: (ms += 500) })) : clearInterval(t)), 500);
   }));
   const { corpus, ix } = fullCorpus();
-  const credits = new CreditStore(':memory:', { freeSecondsPerMonth: 0, ipDailyFreeSeconds: 0, globalDailyFreeSeconds: 0, holdMaxSeconds: 1200, holdMinSeconds: 20, poolDailySecondsPerVisitor: 7200 });
+  const credits = new CreditStore(':memory:', { freeSecondsPerMonth: 0, ipDailyFreeSeconds: 0, globalDailyFreeSeconds: 0, holdMaxSeconds: 1200, holdMinSeconds: 20, poolDailySecondsPerVisitor: 7200, poolDailySecondsPerNetwork: 1200 });
   credits.grantPool(100 * 3600, 'fixture-funding');
+  // Someone else on this network has used today's network share: only a live stream may listen now.
+  credits.reserve('fixture', '127.0.0.1', Date.now() - 1_300_000);
+  credits.settle('fixture', Date.now() - 100_000);
   const resolver = new CommandResolver(corpus, null, null);
   const hub = new SessionHub(() => new Session({ corpus, ix, resolver, decisionClient: null, mode: 'deterministic', setup: { soniox: true, jev: { provider: null, configured: false, detail: '' }, semantic: () => '' }, overlayUrl: (v) => `${base}/overlay#view=${v}` }));
   // The server, started again on the same port after a restart (its sessions and ledger are kept, as on disk).
@@ -80,8 +84,9 @@ test('live on stream: no time limit, and listening comes back by itself after a 
     const hint = page.locator('.voice-card .hint').first();
     await expect(hint).toContainText('listening stops by itself after a while without recitation');
     // The reading screen (like OBS) opens the overlay link: the page is live.
-    const screen = await context.newPage();
-    await screen.goto((await page.getByRole('link', { name: 'Open reading screen' }).getAttribute('href'))!);
+    const overlayLink = (await page.getByRole('link', { name: 'Open reading screen' }).getAttribute('href'))!;
+    let screen = await context.newPage();
+    await screen.goto(overlayLink);
     await expect(page.getByText('Live on stream · no time limit')).toBeVisible();
     await expect(hint).toContainText('While you’re live on stream, listening stays on through breaks and talk with your audience, with no time limit.');
     await page.screenshot({ path: 'test-results/live-stream-control.png' });
@@ -92,13 +97,19 @@ test('live on stream: no time limit, and listening comes back by itself after a 
     await expect(hint).toContainText('Recite and the screen follows');
 
     // The server restarts (a deploy): every connection drops, and nothing answers for a while,
-    // longer than the listening library's own three retries.
+    // longer than the listening library's own three retries. OBS is slower to come back than the page.
+    await screen.close();
     await app.close();
     await expect(hint).toHaveText('The connection was lost. Reconnecting by itself…', { timeout: 30_000 });
     await expect(page.getByRole('button', { name: 'Stop listening' })).toBeVisible();
     await page.screenshot({ path: 'test-results/live-stream-reconnecting.png' });
     const before = streams;
     app = await start();
+    await expect(page.getByText('OBS/readers connected: 0')).toBeVisible({ timeout: 15_000 }); // the page is back, OBS not yet
+    await page.waitForTimeout(6_000); // a retry or two, refused as not live (the network's share is used)
+    await expect(hint).toHaveText('The connection was lost. Reconnecting by itself…');
+    screen = await context.newPage();
+    await screen.goto(overlayLink); // OBS is back
     await expect(hint).toContainText('Recite and the screen follows', { timeout: 30_000 });
     expect(streams).toBeGreaterThan(before);
     await expect(page.getByText('Lost the connection')).toHaveCount(0);
