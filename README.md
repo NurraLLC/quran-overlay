@@ -155,6 +155,7 @@ Local server: transcript assembly → tracker (full-corpus retrieval + bounded a
 | `npm run speedlab -- --name duha` | End-to-end latency through the real pipeline: a TTS recitation WAV as Edge's microphone → Soniox → screen (see `scripts/speedlab/`). |
 | `npm run speedlab:hosted` | Hosted mode end to end with a one-minute allowance: following, the provider cut, clean stop, one charge. |
 | `npm run replay:session -- [captures or scenarios]` | Replay captures/scenarios through the real session in virtual time: latency, wrong displays, flip-backs. |
+| `npm run secrets:hook` | Once per clone: every commit is first checked for keys (the actual values in your `.env` and `deploy/production.env`, and well-known key formats) and for env files themselves; the repository is public. `npm run secrets:check` checks the whole history. |
 | `npm run replay:timing -- [captures]` | Word by word: while each word is recited, is the highlight on it, behind or ahead, and how soon after the word begins it lights up (`--each`, `--trace`). |
 | `npm run corpus:import -- --manifest corpus/sources.json` | Verify source hashes, build and validate the processed corpus and copy the font. Writes nothing if any check fails. |
 | `npm run corpus:validate` | Re-check the processed corpus (25 checks: 114 surahs, Hafs verse map, exact key sets, basmala rules incl. 1:1, 9:1 and 27:30, disjoint-letter openings, markup, UTF-8, hashes, font coverage). |
