@@ -128,8 +128,25 @@ function deletions(w: string): Set<string> {
 
 export type WordMatch = { id: number; sim: number };
 
-/** Vocabulary candidates for one transcript word: exact, then edit-distance-1/2 neighbours. */
-export function lookupWord(ix: CorpusIndex, key: string, limit = 6): WordMatch[] {
+const lookups = new WeakMap<CorpusIndex, Map<string, readonly WordMatch[]>>();
+
+/**
+ * Vocabulary candidates for one transcript word: exact, then edit-distance-1/2 neighbours. The same
+ * heard words are looked up again on every update of a hypothesis, so results are kept (read-only).
+ */
+export function lookupWord(ix: CorpusIndex, key: string, limit = 6): readonly WordMatch[] {
+  let memo = lookups.get(ix);
+  if (!memo) lookups.set(ix, (memo = new Map()));
+  const k = `${limit}|${key}`;
+  let hit = memo.get(k);
+  if (!hit) {
+    if (memo.size > 50_000) memo.clear();
+    memo.set(k, (hit = findWord(ix, key, limit)));
+  }
+  return hit;
+}
+
+function findWord(ix: CorpusIndex, key: string, limit: number): WordMatch[] {
   const exact = ix.vocab.get(key);
   const out: WordMatch[] = exact !== undefined ? [{ id: exact, sim: 1 }] : [];
   if (key.length < 3) return out;

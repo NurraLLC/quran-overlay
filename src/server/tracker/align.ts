@@ -60,15 +60,30 @@ export const ALIGN = {
   backMax: 20,
 };
 
-const simCache = new Map<string, number>();
+/**
+ * Similarity of a heard word to a corpus word: the tracker's hot path (half of a reciter's CPU was
+ * spent here). Nothing counts a similarity below 0.6 (pairScore, joinSim treat them all alike), and
+ * an edit distance is at least the length difference, so pairs whose lengths alone rule that out
+ * are 0 without computing. The cache is two-level to avoid building a key string per cell.
+ */
+const simCache = new Map<string, Map<string, number>>();
+let simEntries = 0;
 function sim(a: string, b: string): number {
   if (a === b) return 1;
-  const k = a < b ? `${a}|${b}` : `${b}|${a}`;
-  let s = simCache.get(k);
+  if (5 * Math.abs(a.length - b.length) > 2 * Math.max(a.length, b.length)) return 0;
+  let row = simCache.get(a);
+  if (!row) {
+    if (simEntries > 200_000) {
+      simCache.clear();
+      simEntries = 0;
+    }
+    simCache.set(a, (row = new Map()));
+  }
+  let s = row.get(b);
   if (s === undefined) {
     s = similarity(a, b);
-    if (simCache.size > 200_000) simCache.clear();
-    simCache.set(k, s);
+    row.set(b, s);
+    simEntries++;
   }
   return s;
 }
