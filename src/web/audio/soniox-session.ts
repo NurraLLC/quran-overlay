@@ -7,7 +7,7 @@ import { SonioxClient, type AudioSource, type AudioSourceHandlers, type Realtime
 import type { ControlClientMessage } from '../../shared/contracts';
 import type { WireToken } from '../../shared/transcript';
 import { TokenRouter, type CommandCapture } from './command-lane';
-import { MicError, MicStreamSource, PAUSE_QUIET_MS, SharedMic, VOICE_ONSET_MS } from './mic';
+import { MicError, PAUSE_QUIET_MS, PCM_FORMAT, SharedMic, VOICE_ONSET_MS } from './mic';
 import { u } from '../net';
 import {listeningConsent} from './consent';
 
@@ -16,19 +16,27 @@ const PROACTIVE_RESTART_MS = 175 * 60 * 1000;
 const FINALIZE_WAIT_MS = 2500;
 
 export type CaptureStatus = { state: 'off' | 'starting' | 'recording' | 'reconnecting' | 'dozing' | 'error'; detail: string | null };
+type CaptureEvent = Extract<ControlClientMessage, { type: 'capture' }>['event'];
+
+/** A phone or tablet: its screen turns off, it suspends hidden pages, and it has no "computer" or other programs to close. */
+function onPhone() {
+  if (typeof navigator === 'undefined') return false;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent));
+}
+const unavailable = () => (onPhone() ? 'This browser can’t use the microphone here. Open this page in Safari or Chrome.' : 'This browser cannot capture audio here. Use a current Chrome or Edge on this computer.');
 
 function describeError(e: unknown): string {
   if (e instanceof MicError) {
     if (e.kind === 'permission') return 'Microphone permission was denied. Allow the microphone for this page in the browser’s site settings, then start again.';
     if (e.kind === 'device') return 'The selected microphone was not found. It may have been unplugged; pick another microphone.';
-    if (e.kind === 'busy') return 'The microphone is in use by another program or cannot be read. Close the other program or pick another microphone.';
-    return 'This browser cannot capture audio here. Use a current Chrome or Edge on this computer.';
+    if (e.kind === 'busy') return onPhone() ? 'Another app is using the microphone. Close it, then start again.' : 'The microphone is in use by another program or cannot be read. Close the other program or pick another microphone.';
+    return unavailable();
   }
   const name = (e as { name?: string })?.name ?? '';
   const code = (e as { code?: string })?.code ?? '';
   if (name === 'AudioPermissionError' || code === 'permission_denied') return 'Microphone permission was denied. Allow the microphone for this page in the browser’s site settings, then start again.';
   if (name === 'AudioDeviceError' || code === 'device_not_found') return 'The selected microphone was not found. It may have been unplugged; pick another microphone.';
-  if (name === 'AudioUnavailableError') return 'This browser cannot capture audio here. Use a current Chrome or Edge on this computer.';
+  if (name === 'AudioUnavailableError') return unavailable();
   if (code === 'auth_error') return 'Soniox rejected the temporary key. Check SONIOX_API_KEY permissions.';
   if (code === 'quota_exceeded') return 'Soniox quota or rate limit reached.';
   if (code === 'network_error' || code === 'connection_error') return 'Lost the connection to Soniox.';
@@ -38,9 +46,10 @@ function describeError(e: unknown): string {
 
 /**
  * Lab-only recognition tuning from the page URL (`?stt={"timeslice":20,...}`), used by the speed
- * lab to A/B provider settings on identical audio. Only these known keys are read.
+ * lab to A/B provider settings on identical audio. Only these known keys are read. `pcm: true`
+ * sends 16 kHz PCM even where WebM/Opus recording works: the path Safari before 18.4 takes.
  */
-type SttTuning = { hints?: string[]; timeslice?: number; max_endpoint_delay_ms?: number; endpoint_sensitivity?: number; endpoint_latency_adjustment_level?: number; language_hints_strict?: boolean };
+type SttTuning = { hints?: string[]; timeslice?: number; max_endpoint_delay_ms?: number; endpoint_sensitivity?: number; endpoint_latency_adjustment_level?: number; language_hints_strict?: boolean; pcm?: boolean };
 function sttTuning(): SttTuning {
   try {
     const raw = JSON.parse(new URLSearchParams(location.search).get('stt') ?? '{}') as Record<string, unknown>;
@@ -52,6 +61,7 @@ function sttTuning(): SttTuning {
       endpoint_sensitivity: num('endpoint_sensitivity', -1, 1),
       endpoint_latency_adjustment_level: num('endpoint_latency_adjustment_level', 0, 3),
       language_hints_strict: typeof raw.language_hints_strict === 'boolean' ? raw.language_hints_strict : undefined,
+      pcm: raw.pcm === true || undefined,
     };
   } catch {
     return {};
@@ -63,11 +73,12 @@ const TIMESLICE_MS = TUNING.timeslice ?? 60;
 /**
  * Pass-through microphone source that records when audio starts flowing. Soniox token times are
  * relative to the first audio of the stream, so this is the zero point for the live speed meter.
- * restart() (SDK reconnect) starts a new stream and a new zero point.
+ * restart() (SDK reconnect) starts a new stream and a new zero point. Both sources (WebM recorder,
+ * audio-thread PCM) deliver chunks of TIMESLICE_MS, so the first chunk marks the zero the same way.
  */
 class TimedSource implements AudioSource {
   firstChunkAt: number | null = null;
-  constructor(private readonly inner: MicStreamSource) {}
+  constructor(private readonly inner: AudioSource) {}
   async start(handlers: AudioSourceHandlers) {
     await this.inner.start({
       ...handlers,
@@ -81,20 +92,35 @@ class TimedSource implements AudioSource {
     this.inner.stop();
   }
   pause() {
-    this.inner.pause();
+    this.inner.pause?.();
   }
   resume() {
-    this.inner.resume();
+    this.inner.resume?.();
   }
   restart() {
     this.firstChunkAt = null;
-    this.inner.restart();
+    this.inner.restart?.();
   }
   /** performance.now() of provider audio time 0 (first chunk carries TIMESLICE_MS of audio). */
   get audioOrigin(): number | null {
     return this.firstChunkAt === null ? null : this.firstChunkAt - TIMESLICE_MS;
   }
 }
+
+/** Said while listening goes on after a phone suspended it (screen off, another app, a call). */
+const BACK_ON_SCREEN = 'Listening paused while the screen was off. Recite to continue.';
+/** iOS can keep the audio thread suspended until the next touch; nothing is heard until then. */
+const TAP_TO_CONTINUE = 'Listening paused while the screen was off. Tap anywhere to continue.';
+const TAP_TO_LISTEN = 'Tap anywhere to start listening.';
+const STOPPED_OFF_SCREEN = 'Listening stopped while the screen was off. Start again when you are ready.';
+/** How long a notice stays (it also clears once recitation is heard again). */
+const NOTICE_MS = 8_000;
+/**
+ * Away this long, a phone has usually suspended the page and its sockets: a provider stream that
+ * has not answered since may be dead without saying so, and is restarted.
+ */
+const STALE_AFTER_MS = 5_000;
+const LIVE_STATES = new Set(['starting', 'connecting', 'recording', 'paused', 'reconnecting']);
 
 /**
  * Listening stops by itself after this long without Arabic recitation (silence, noise or only
@@ -168,6 +194,18 @@ export class SonioxCapture {
   readonly router = new TokenRouter();
   private finalizeWaiter: ((timedOut: boolean) => void) | null = null;
   status: CaptureStatus = { state: 'off', detail: null };
+  /** The latest capture event for the server, resent by announce(). */
+  private lastCapture: { captureEpoch: number; event: CaptureEvent; detail?: string } | null = null;
+  private wakeLock: WakeLockSentinel | null = null;
+  private wakeLockPending = false;
+  /** Since when the phone has kept this page from listening (off screen, audio thread suspended). */
+  private awaySince: number | null = null;
+  private recovering = false;
+  /** Removes the listener waiting for a touch to resume the audio thread. */
+  private tapWaiter: (() => void) | null = null;
+  /** A short explanation shown while listening goes on (e.g. after the screen was off). */
+  private notice: string | null = null;
+  private noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly send: (m: ControlClientMessage) => void,
@@ -187,6 +225,21 @@ export class SonioxCapture {
   private setStatus(s: CaptureStatus) {
     this.status = s;
     this.onStatus(s);
+  }
+
+  /** Tells the server about this page's stream, and remembers it for announce(). */
+  private capture(captureEpoch: number, event: CaptureEvent, detail?: string) {
+    this.lastCapture = { captureEpoch, event, ...(detail ? { detail: detail.slice(0, 240) } : {}) };
+    this.send({ type: 'capture', ...this.lastCapture });
+  }
+
+  /**
+   * Resends the latest capture state. Call it when the control socket reconnects: the server took
+   * the drop for the page leaving (it clears the display after a few seconds), and it ignores the
+   * transcripts of a stream whose start it never heard (sent while the socket was down).
+   */
+  announce() {
+    if (this.lastCapture) this.send({ type: 'capture', ...this.lastCapture });
   }
 
   private nextEpoch() {
@@ -245,42 +298,184 @@ export class SonioxCapture {
     this.stopping = false;
     this.dozing = false;
     const epoch = this.nextEpoch();
-    if (!this.commandOnly) this.send({ type: 'capture', captureEpoch: epoch, event: 'starting' });
+    if (!this.commandOnly) {
+      this.capture(epoch, 'starting');
+      // Straight after the tap and consent: the reciter then holds the phone without touching it.
+      void this.keepScreenOn();
+      document.addEventListener('visibilitychange', this.onVisibility);
+    }
     this.setStatus({ state: 'starting', detail: null });
     let mic: SharedMic;
     try {
-      mic = await SharedMic.open(
-        {
-          ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          channelCount: 1,
-        },
-        DOZE_AFTER_MS,
-        (e) => this.onVoice(e),
-        (speaking) => this.onPause(speaking),
-      );
+      mic = await this.openMic();
     } catch (e) {
-      this.active = false;
       const detail = describeError(e);
+      this.teardown();
       this.setStatus({ state: 'error', detail });
-      if (!this.commandOnly) this.send({ type: 'capture', captureEpoch: epoch, event: 'error', detail });
+      if (!this.commandOnly) this.capture(epoch, 'error', detail);
       return;
     }
     if (!this.active) return mic.close(); // stopped while the permission prompt was open
     this.mic = mic;
     this.openStream(epoch);
     if (!this.commandOnly) {
+      // An audio thread that starts suspended would send no PCM and never hear the voice return.
+      if (mic.suspended) void this.recover();
       if (!this.lastArabicAt) this.lastArabicAt = performance.now();
       this.idleTimer = setInterval(() => {
+        if (this.recovering) return;
+        // Back on screen but not yet recovered (the event can come after overdue timers): recover
+        // first, since the time away is not the reciter's silence.
+        if (this.awaySince !== null && !this.tapWaiter && document.visibilityState === 'visible') return void this.recover();
         const limit = this.dozing ? DOZE_IDLE_STOP_MS : IDLE_STOP_MS;
         if (performance.now() - this.lastArabicAt < limit) return;
+        const offScreen = this.awaySince !== null;
         this.stop();
         const minutes = Math.round(limit / 60_000);
-        this.setStatus({ state: 'off', detail: `Stopped listening after ${minutes} ${minutes === 1 ? 'minute' : 'minutes'} without recitation. Start again when you are ready.` });
+        this.setStatus({ state: 'off', detail: offScreen ? STOPPED_OFF_SCREEN : `Stopped listening after ${minutes} ${minutes === 1 ? 'minute' : 'minutes'} without recitation. Start again when you are ready.` });
       }, 2000);
     }
+  }
+
+  private openMic() {
+    return SharedMic.open(
+      {
+        ...(this.deviceId ? { deviceId: { exact: this.deviceId } } : {}),
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: 1,
+      },
+      DOZE_AFTER_MS,
+      (e) => this.onVoice(e),
+      (speaking) => this.onPause(speaking),
+      () => this.onMicChange(),
+    );
+  }
+
+  // ---------- screen off, backgrounding ----------
+
+  /** Keeps the screen on while listening: the reciter holds the phone without touching it for minutes. */
+  private async keepScreenOn() {
+    if (this.wakeLock || this.wakeLockPending || !this.listening || document.visibilityState !== 'visible' || !navigator.wakeLock) return;
+    this.wakeLockPending = true;
+    try {
+      const lock = await navigator.wakeLock.request('screen');
+      if (!this.listening) return void lock.release().catch(() => undefined);
+      this.wakeLock = lock;
+      // Released by the browser when the page is hidden; taken again when it is back.
+      lock.addEventListener('release', () => {
+        if (this.wakeLock === lock) this.wakeLock = null;
+      });
+    } catch {
+      /* refused (battery saver, policy, iOS home-screen apps before 18.4): the screen may lock; recover() handles the return */
+    } finally {
+      this.wakeLockPending = false;
+    }
+  }
+
+  private letScreenSleep() {
+    const lock = this.wakeLock;
+    this.wakeLock = null;
+    void lock?.release().catch(() => undefined);
+  }
+
+  private onVisibility = () => {
+    if (!this.listening) return;
+    if (document.visibilityState === 'hidden') {
+      // A phone suspends hidden pages; a desktop background tab (a streamer's control page) keeps listening.
+      if (onPhone()) this.awaySince ??= performance.now();
+      return;
+    }
+    void this.keepScreenOn();
+    void this.recover();
+  };
+
+  /** The system ended the microphone, or suspended or resumed the audio thread. */
+  private onMicChange() {
+    const mic = this.mic;
+    if (!this.listening || !mic) return;
+    if (!mic.live || mic.suspended) this.awaySince ??= performance.now();
+    if (document.visibilityState === 'visible') void this.recover();
+  }
+
+  /**
+   * Back on screen, or the audio thread came back. A phone may have ended the microphone, suspended
+   * the audio thread or dropped the provider connection while the screen was off, and the time away
+   * was not a silence to hold against the reciter. What did not survive is restarted on the
+   * existing paths, and the person is told why.
+   */
+  private async recover() {
+    if (!this.listening || !this.mic || this.recovering || document.visibilityState !== 'visible') return;
+    this.recovering = true;
+    try {
+      const away = this.awaySince === null ? 0 : performance.now() - this.awaySince;
+      // Only a suspension is forgiven: a desktop tab that was merely hidden kept listening (and its idle clock).
+      if (this.awaySince !== null) this.lastArabicAt = Math.max(this.lastArabicAt, performance.now());
+      if (!this.mic.live) {
+        const mic = await this.openMic();
+        if (!this.listening) return mic.close();
+        this.mic.close();
+        this.mic = mic;
+        this.awaySince = null;
+        if (!this.dozing) void this.restart();
+        return this.tell(BACK_ON_SCREEN);
+      }
+      if (!(await this.mic.resume())) {
+        this.waitForTap();
+        return this.tell(this.awaySince !== null ? TAP_TO_CONTINUE : TAP_TO_LISTEN, true);
+      }
+      if (!this.listening) return;
+      this.awaySince = null;
+      if (this.notice === TAP_TO_CONTINUE || this.notice === TAP_TO_LISTEN) this.clearNotice();
+      if (this.dozing) return; // nothing was streaming; the voice detector hears the voice return
+      const rec = this.recording;
+      const answered = this.lastResultAt > 0 && performance.now() - this.lastResultAt < 2_000;
+      if (rec && LIVE_STATES.has(rec.state) && (away < STALE_AFTER_MS || answered)) return;
+      void this.restart();
+      this.tell(BACK_ON_SCREEN);
+    } catch (e) {
+      const detail = describeError(e);
+      const epoch = this.epoch;
+      this.teardown();
+      this.setStatus({ state: 'error', detail });
+      this.capture(epoch, 'error', detail);
+    } finally {
+      this.recovering = false;
+    }
+  }
+
+  /** Resumes the audio thread on the next touch (on iOS a touch lets a page start audio again). */
+  private waitForTap() {
+    if (this.tapWaiter) return;
+    const onTap = () => {
+      this.tapWaiter?.();
+      void this.mic?.resume(); // inside the touch, where iOS allows it
+      void this.recover();
+    };
+    document.addEventListener('pointerup', onTap, true);
+    document.addEventListener('keydown', onTap, true);
+    this.tapWaiter = () => {
+      document.removeEventListener('pointerup', onTap, true);
+      document.removeEventListener('keydown', onTap, true);
+      this.tapWaiter = null;
+    };
+  }
+
+  /** Shows `text` while listening goes on; a sticky notice stays until what it asks for is done. */
+  private tell(text: string, sticky = false) {
+    this.notice = text;
+    if (this.noticeTimer) clearTimeout(this.noticeTimer);
+    this.noticeTimer = sticky ? null : setTimeout(() => this.clearNotice(), NOTICE_MS);
+    if (this.active) this.setStatus({ ...this.status, detail: text });
+  }
+
+  private clearNotice() {
+    if (this.noticeTimer) clearTimeout(this.noticeTimer);
+    this.noticeTimer = null;
+    const text = this.notice;
+    this.notice = null;
+    if (this.active && text && this.status.detail === text) this.setStatus({ ...this.status, detail: null });
   }
 
   /** A provider stream on the open microphone (its own key and container header). */
@@ -290,10 +485,13 @@ export class SonioxCapture {
     this.startedAt = performance.now();
     this.lastResultAt = 0;
     this.lastProcMs = 0;
-    const source = new TimedSource(new MicStreamSource(mic, TIMESLICE_MS));
+    const { source: audio, pcm } = mic.streamSource(TIMESLICE_MS, TUNING.pcm);
+    const source = new TimedSource(audio);
     this.timed = source;
     const rec = this.client().realtime.record({
       model: 'stt-rt-v5',
+      // WebM/Opus is recognised by its header; raw PCM (Safari before 18.4) has to be described.
+      ...(pcm ? PCM_FORMAT : {}),
       // Arabic only: with English also hinted, plainly read (unmelodic) recitation is often written
       // in Latin letters. English requests are still transcribed as English (measured in the lab).
       language_hints: TUNING.hints ?? ['ar'],
@@ -324,22 +522,22 @@ export class SonioxCapture {
       // Provider coordinates reset on reconnect: bind a new epoch so old offsets never apply.
       if (this.recording !== rec || this.commandOnly) return;
       const e = this.nextEpoch();
-      this.send({ type: 'capture', captureEpoch: e, event: 'recording' });
+      this.capture(e, 'recording');
       this.lastResultAt = 0;
       this.startedAt = performance.now();
     });
     rec.on('state_change', ({ new_state }) => {
       if (this.recording !== rec || this.stopping) return;
       if (new_state === 'recording') {
-        this.setStatus({ state: 'recording', detail: null });
-        if (!this.commandOnly) this.send({ type: 'capture', captureEpoch: this.epoch, event: 'recording' });
+        this.setStatus({ state: 'recording', detail: this.notice });
+        if (!this.commandOnly) this.capture(this.epoch, 'recording');
       } else if (new_state === 'reconnecting') {
         this.setStatus({ state: 'reconnecting', detail: 'Reconnecting to Soniox…' });
-        if (!this.commandOnly) this.send({ type: 'capture', captureEpoch: this.epoch, event: 'reconnecting' });
+        if (!this.commandOnly) this.capture(this.epoch, 'reconnecting');
       }
     });
-    rec.on('source_muted', () => !this.commandOnly && this.send({ type: 'capture', captureEpoch: this.epoch, event: 'muted' }));
-    rec.on('source_unmuted', () => !this.commandOnly && this.send({ type: 'capture', captureEpoch: this.epoch, event: 'unmuted' }));
+    rec.on('source_muted', () => !this.commandOnly && this.capture(this.epoch, 'muted'));
+    rec.on('source_unmuted', () => !this.commandOnly && this.capture(this.epoch, 'unmuted'));
     rec.on('error', (e) => {
       if (this.recording !== rec || this.stopping) return;
       // Out of listening time: stop cleanly (the page keeps its place) and say why.
@@ -361,7 +559,7 @@ export class SonioxCapture {
       const detail = describeError(e);
       this.teardown();
       this.setStatus({ state: 'error', detail });
-      if (!this.commandOnly) this.send({ type: 'capture', captureEpoch: this.epoch, event: 'error', detail });
+      if (!this.commandOnly) this.capture(this.epoch, 'error', detail);
       this.finalizeWaiter?.(true);
     });
     if (!this.commandOnly) this.restartTimer = setTimeout(() => void this.restart(), PROACTIVE_RESTART_MS);
@@ -393,8 +591,8 @@ export class SonioxCapture {
     const epoch = this.epoch;
     this.dozing = true;
     this.endStream();
-    this.setStatus({ state: 'dozing', detail: null });
-    this.send({ type: 'capture', captureEpoch: epoch, event: 'dozing' });
+    this.setStatus({ state: 'dozing', detail: this.notice });
+    this.capture(epoch, 'dozing');
   }
 
   /** The voice is back: a new stream, sent the audio from this moment on (buffered while it connects). */
@@ -402,8 +600,8 @@ export class SonioxCapture {
     if (!this.dozing || !this.mic) return;
     this.dozing = false;
     const epoch = this.nextEpoch();
-    this.send({ type: 'capture', captureEpoch: epoch, event: 'starting' });
-    this.setStatus({ state: 'starting', detail: null });
+    this.capture(epoch, 'starting');
+    this.setStatus({ state: 'starting', detail: this.notice });
     this.openStream(epoch);
   }
 
@@ -418,7 +616,10 @@ export class SonioxCapture {
       endMs: t.end_ms,
       confidence: t.confidence,
     }));
-    if (tokens.some((t) => ARABIC.test(t.text))) this.lastArabicAt = performance.now();
+    if (tokens.some((t) => ARABIC.test(t.text))) {
+      this.lastArabicAt = performance.now();
+      if (this.notice === BACK_ON_SCREEN) this.clearNotice(); // recitation is followed again
+    }
     if (!this.commandOnly) this.watchLanguage(tokens);
     const { recitation, finalized } = this.router.route(tokens);
     if (this.router.active) this.onHearing(this.router.hearing());
@@ -494,6 +695,13 @@ export class SonioxCapture {
     this.mic = null;
     this.active = false;
     this.dozing = false;
+    this.awaySince = null;
+    this.tapWaiter?.();
+    if (this.noticeTimer) clearTimeout(this.noticeTimer);
+    this.noticeTimer = null;
+    this.notice = null;
+    this.letScreenSleep();
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility);
   }
 
   /** Stop listening: close the microphone and the connection immediately; ignore anything after. */
@@ -508,7 +716,7 @@ export class SonioxCapture {
     this.lastArabicAt = 0;
     if (!this.resetting) this.latinResets = 0;
     this.setStatus({ state: 'off', detail: null });
-    if (!wasCommandOnly) this.send({ type: 'capture', captureEpoch: epoch, event: 'stopped' });
+    if (!wasCommandOnly) this.capture(epoch, 'stopped');
   }
 
   private async restart() {
@@ -518,10 +726,10 @@ export class SonioxCapture {
     const old = this.epoch;
     this.endStream();
     this.dozing = false;
-    if (!this.commandOnly) this.send({ type: 'capture', captureEpoch: old, event: 'stopped' });
+    if (!this.commandOnly) this.capture(old, 'stopped');
     const epoch = this.nextEpoch();
-    if (!this.commandOnly) this.send({ type: 'capture', captureEpoch: epoch, event: 'starting' });
-    this.setStatus({ state: 'starting', detail: null });
+    if (!this.commandOnly) this.capture(epoch, 'starting');
+    this.setStatus({ state: 'starting', detail: this.notice });
     this.openStream(epoch);
   }
 

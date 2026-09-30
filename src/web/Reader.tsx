@@ -18,6 +18,8 @@ type Auth = 'checking' | 'owner' | 'unauthorized' | 'unavailable';
 
 /** Binds the ayah-end ornament to the last word so a line never starts with it. */
 const NBSP = String.fromCharCode(0xa0);
+/** Room under the recited word for its meaning label (it hangs about 22 px below the word). */
+const MEANING_ROOM = 28;
 
 /** Per-device memory: the last place and language, and today's recited ayahs. Never required. */
 type Saved = { key?: string; name?: string; lang?: 'both' | 'arabic' | 'english'; day?: string; recited?: string[] };
@@ -137,6 +139,8 @@ export function Reader() {
         if (new URLSearchParams(location.search).has('donated') || new URLSearchParams(location.search).has('canceled')) history.replaceState(null, '', location.pathname);
         setAuth('owner');
         sock.current = connect(u('/ws/control'), {
+          // A reconnect while listening: the server must hear again that this page's stream is live.
+          onOpen: () => capRef.current?.announce(),
           onStatus: (st, code) => {
             setConnection(st);
             if (code === 4401) setAuth('unauthorized');
@@ -245,15 +249,42 @@ export function Reader() {
     prevKey.current = cur?.key ?? null;
   }, [cur?.key]);
 
+  // The sticky header and the dock, measured: they change with the title's wrapping, the phone's
+  // status bar and home indicator, the result sheet and the typing field. The recited word counts
+  // as in view only between them (with room under it for its meaning), and scrolling to it
+  // (scroll-padding in app.css) centres it in that space.
+  const bars = useRef({ top: 96, bottom: 150 });
+  const hasSnap = !!snap;
+  useEffect(() => {
+    const top = document.querySelector<HTMLElement>('.r-top');
+    const dock = document.querySelector<HTMLElement>('.r-dock');
+    if (!top || !dock || typeof ResizeObserver === 'undefined') return;
+    const root = document.documentElement;
+    const measure = () => {
+      const t = top.getBoundingClientRect().height;
+      const b = dock.getBoundingClientRect().height;
+      bars.current = { top: t + 8, bottom: b + MEANING_ROOM };
+      root.style.setProperty('--r-top-h', `${Math.round(t)}px`);
+      root.style.setProperty('--r-dock-h', `${Math.round(b)}px`);
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(top);
+    ro.observe(dock);
+    measure();
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty('--r-top-h');
+      root.style.removeProperty('--r-dock-h');
+    };
+  }, [hasSnap]);
+
   // Keep the recited word (or the new ayah) in view, unless the reader scrolled away on purpose.
   useEffect(() => {
     if (!follow || !cur) return;
     const el = document.querySelector<HTMLElement>('.r-word.active') ?? document.getElementById(`a-${cur.key}`);
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const top = 96;
-    const bottom = window.innerHeight - 150;
-    if (r.top < top || r.bottom > bottom) el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    if (r.top < bars.current.top || r.bottom > window.innerHeight - bars.current.bottom) el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }, [cur?.key, d?.cursor?.from, surah?.number, follow]);
 
   // Scrolling by hand pauses following only once the recited ayah is out of view (a nudge, or
@@ -265,7 +296,7 @@ export function Reader() {
       const el = document.querySelector<HTMLElement>('.r-word.active') ?? (curKey.current ? document.getElementById(`a-${curKey.current}`) : null);
       if (!el) return;
       const r = el.getBoundingClientRect();
-      setFollow(r.bottom > 96 && r.top < window.innerHeight - 150);
+      setFollow(r.bottom > bars.current.top && r.top < window.innerHeight - bars.current.bottom);
     };
     const byHand = () => {
       lastScroll.current = performance.now();
@@ -330,6 +361,8 @@ export function Reader() {
     ? capture.state === 'error'
       ? capture.detail
       : (capture.detail ?? 'Tap the microphone and recite, or ask in English.')
+    : capture.detail && capture.state !== 'reconnecting'
+      ? capture.detail // e.g. "Listening paused while the screen was off. Recite to continue."
     : capture.state === 'dozing'
       ? 'Listening… take your time. Nothing is sent while you’re quiet.'
       : snap.held

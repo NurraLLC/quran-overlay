@@ -16,7 +16,16 @@ type Options = {
   idleLimitMs?: number;
 };
 type Ticket = { value: string; expires: number; ip: string };
+/**
+ * Bytes a browser may send ahead, and the refill below (128 KB/s): WebM/Opus is ~4 KB/s and the
+ * reader's PCM (Safari before 18.4 records only MP4, which the real-time API doesn't list) 32 KB/s,
+ * with room for the audio buffered while a stream connects.
+ */
 const MAX_BUFFER = 512 * 1024;
+/** The one raw format a reader sends: 16 kHz mono 16-bit PCM. Anything else must be a container the provider detects. */
+const PCM = { audio_format: 'pcm_s16le', sample_rate: 16_000, num_channels: 1 } as const;
+/** Provider control messages a reader needs: finalize (spoken requests) and keepalive (the SDK's, while the microphone is muted). */
+const CONTROL = new Set(['finalize', 'keepalive']);
 
 /** Hosted-only audio relay. No recording, no client-controlled provider options or credentials. */
 export class HostedSpeech {
@@ -98,7 +107,7 @@ export class HostedSpeech {
       if (!initializing) {
         initializing = true;
         if (binary || data.length > 16_384) return end('Invalid listening request.');
-        let config: { api_key?: unknown; audio_format?: unknown };
+        let config: { api_key?: unknown; audio_format?: unknown; sample_rate?: unknown; num_channels?: unknown };
         try { config = JSON.parse(data.toString()); } catch { return end('Invalid listening request.'); }
         const ticket = this.tickets.get(id);
         if (!config || !ticket || config.api_key !== ticket.value || ticket.ip !== ip || ticket.expires < now) return end('Please start listening again.');
@@ -107,7 +116,10 @@ export class HostedSpeech {
         const safety = this.o.safety.status(id, ip, now);
         if (safety.retryAfter) return end('Listening is taking a short break. Please try again in five minutes.', 'listening_cooldown');
         previousIdle = safety.idleMs;
-        if (config.audio_format && config.audio_format !== 'auto') return end('This audio format is not supported.');
+        // Exactly two audio forms: a detected container, or the reader's PCM described in full.
+        const pcm = config.audio_format === PCM.audio_format;
+        const detected = (config.audio_format === undefined || config.audio_format === 'auto') && config.sample_rate === undefined && config.num_channels === undefined;
+        if (pcm ? config.sample_rate !== PCM.sample_rate || config.num_channels !== PCM.num_channels : !detected) return end('This audio format is not supported.');
         const hold = this.o.credits.reserve(id, ip, now);
         if ('error' in hold) return end('Shared listening hours are unavailable. Reading and translations are still free.');
         holdId = hold.id;
@@ -125,7 +137,7 @@ export class HostedSpeech {
             if (finished) return upstream?.terminate();
             connectedAt = Date.now();
             // Never forward arbitrary client options: model, context and output costs are bounded here.
-            upstream!.send(JSON.stringify({ api_key: key.api_key, model: 'stt-rt-v5', audio_format: 'auto', language_hints: ['ar'], enable_endpoint_detection: true,
+            upstream!.send(JSON.stringify({ api_key: key.api_key, model: 'stt-rt-v5', ...(pcm ? PCM : { audio_format: 'auto' }), language_hints: ['ar'], enable_endpoint_detection: true,
               context: { general: [{ key: 'domain', value: 'Quran recitation in Arabic (Hafs)' }, { key: 'also', value: 'occasional short English navigation requests' }] } }));
             for (const chunk of queue) { if (!finished) forward(chunk); }
             queue = []; queuedBytes = 0;
@@ -159,12 +171,14 @@ export class HostedSpeech {
         return;
       }
       if (!binary) {
-        // Finalize is useful for spoken navigation; all other config/control messages are refused.
+        // Finalize and keepalive pass on as fixed frames (a phone call mutes the microphone and the
+        // SDK keeps the stream with keepalives); all other config/control messages are refused.
         if (!data.length) return end();
         if (data.length > 100) return end('Invalid listening request.');
-        try { if (JSON.parse(data.toString()).type !== 'finalize') return end('Invalid listening request.'); }
-        catch { return end('Invalid listening request.'); }
-        if (upstream?.readyState === WebSocket.OPEN) forward(Buffer.from('{"type":"finalize"}'), false);
+        let type: unknown;
+        try { type = JSON.parse(data.toString()).type; } catch { return end('Invalid listening request.'); }
+        if (typeof type !== 'string' || !CONTROL.has(type)) return end('Invalid listening request.');
+        if (upstream?.readyState === WebSocket.OPEN) forward(Buffer.from(JSON.stringify({ type })), false);
         return;
       }
       if (upstream?.readyState === WebSocket.OPEN) forward(data);

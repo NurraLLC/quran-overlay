@@ -124,6 +124,8 @@ export function Control() {
           .then(setChapters)
           .catch(() => undefined);
         sock.current = connect(u('/ws/control'), {
+          // A reconnect is taken by the server for the page leaving: say again that it is listening.
+          onOpen: () => captureRef.current?.announce(),
           onStatus: (st, code) => {
             setConn(st);
             if (code === 4401) setAuth('unauthorized');
