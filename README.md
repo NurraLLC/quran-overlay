@@ -125,7 +125,7 @@ Without keys, everything except listening works: manual and keyboard navigation,
 
 ## OBS
 
-Sources → + → Browser, paste the link from **Copy OBS overlay link**, set width 1920 and height 1080. Leave "Shutdown source when not visible" off so scene switches don't reconnect it (both settings recover: every (re)connect receives the full current state). The overlay link can only display verses; **Replace overlay link** revokes it. The overlay plays no audio. Keep the microphone in the Chrome/Edge control page, not in OBS.
+Sources → + → Browser, paste the link from **Copy OBS overlay link**, set width 1920 and height 1080. Leave "Shutdown source when not visible" off so scene switches don't reconnect it (both settings recover: every (re)connect receives the full current state). The overlay link can only display ayahs; **Replace overlay link** revokes it. On the hosted site your link and your chosen look are kept for your browser, so OBS keeps working across restarts and days away. The overlay plays no audio. Keep the microphone in the Chrome/Edge control page, not in OBS.
 
 ## How it works
 

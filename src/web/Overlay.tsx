@@ -36,6 +36,15 @@ export function Overlay() {
     }
     sock.current = connect(u('/ws/overlay'), {
       onOpen: (send) => send({ type: 'hello', view, role: 'overlay' }),
+      // 4410: the session behind this link ended (a restart, or it went idle), but the link is still
+      // good. Its ayah is not left frozen on stream; the same link reconnects to whatever comes next.
+      onStatus: (status, code) => {
+        if (status !== 'closed' || code !== 4410) return;
+        epoch.current = null;
+        lastRevision.current = -1;
+        setState(null);
+        setDenied(false);
+      },
       shouldRetry: (code) => code !== 4401,
       onMessage: (data) => {
         const m = data as OverlayServerMessage;
@@ -48,6 +57,7 @@ export function Overlay() {
         if (s.sessionEpoch === epoch.current && s.revision <= lastRevision.current) return;
         epoch.current = s.sessionEpoch;
         lastRevision.current = s.revision;
+        setDenied(false); // a link that delivers a display is a working link
         setState(s);
       },
     });
@@ -61,14 +71,15 @@ export function Overlay() {
     requestAnimationFrame(() => setTimeout(() => sock.current?.send({ type: 'painted', revision: rev }), 0));
   }, [state, fontsReady]);
 
-  if (denied) {
-    return (
-      <div className="overlay-denied">
-        This overlay link is missing or was replaced. Copy the current overlay link from the control page.
-      </div>
-    );
-  }
-  if (!state) return null;
+  // A refused link is the broadcaster's to fix, never the audience's to read: the stage stays empty
+  // and transparent, and the reason goes to the console (OBS: Interact, or the browser's devtools).
+  useEffect(() => {
+    if (!denied) return;
+    console.warn('Quran Overlay: this overlay link is missing or was replaced. Copy the current link from the control page (Stream output → Copy OBS overlay link).');
+    document.title = 'Overlay link not valid · Quran Overlay';
+  }, [denied]);
+
+  if (denied || !state) return null;
   const shown = bg === 'solid' ? { ...state, style: { ...state.style, background: 'solid' as const } } : state;
   return (
     <StageFrame className="overlay-frame">

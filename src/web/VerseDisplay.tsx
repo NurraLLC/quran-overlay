@@ -8,22 +8,39 @@ import type { DisplayState } from '../shared/contracts';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { NurraWordmark } from './Nurra';
 
+type Rgb = [number, number, number];
+const WHITE: Rgb = [255, 255, 255];
+/** What the recited word sits on: the shaded panel over mid-tone footage (on transparent, its own backing). */
+const PANEL: Rgb = [22, 33, 38];
+const mixRgb = (c: Rgb, t: Rgb, w: number) => c.map((x, i) => Math.round(x + (t[i] - x) * w)) as Rgb;
+const luminance = (c: Rgb) => {
+  const [r, g, b] = c.map((x) => (x / 255 <= 0.03928 ? x / 255 / 12.92 : ((x / 255 + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const contrast = (a: Rgb, b: Rgb) => (Math.max(luminance(a), luminance(b)) + 0.05) / (Math.min(luminance(a), luminance(b)) + 0.05);
+/** The colour lightened toward white just enough to stand `min`:1 against the panel. */
+const lift = (c: Rgb, min: number): Rgb => {
+  for (let w = 0; w < 1; w += 0.05) if (contrast(mixRgb(c, WHITE, w), PANEL) >= min) return mixRgb(c, WHITE, w);
+  return WHITE;
+};
+const rgba = (c: Rgb, a = 1) => `rgba(${c.join(', ')}, ${a})`;
+
 /**
- * The stream's highlight colour as CSS variables for the stage: the colour itself, a brighter tint
- * for the recited word and meanings, a soft wash and a line. Gold (the default) keeps the
- * stylesheet's own values untouched.
+ * The stream's highlight colour as CSS variables for the stage: the colour (the recited word's
+ * underline, the progress line), a brighter tint for the recited word and its meaning, and a soft
+ * wash. A dark custom colour would vanish on the panel, so the mark is kept at 3:1 and the text at
+ * 4.5:1 against it. Only the highlight follows the colour: surah banner, ayah ornaments, reference
+ * and hairlines are the page's frame and stay gold. Gold (the default) keeps the stylesheet's values.
  */
 function accentVars(hex: string | undefined): Record<string, string> {
   if (!hex || hex.toLowerCase() === '#cfaa62') return {};
   const n = parseInt(hex.slice(1), 16);
-  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-  const mix = (c: number, t: number, w: number) => Math.round(c + (t - c) * w);
+  const rgb: Rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const mark = lift(rgb, 3);
   return {
-    '--gold': hex,
-    '--gold-dim': `rgb(${mix(r, 10, 0.3)}, ${mix(g, 20, 0.3)}, ${mix(b, 24, 0.3)})`,
-    '--accent-bright': `rgb(${mix(r, 255, 0.5)}, ${mix(g, 255, 0.5)}, ${mix(b, 255, 0.5)})`,
-    '--accent-soft': `rgba(${r}, ${g}, ${b}, 0.16)`,
-    '--accent-line': `rgba(${r}, ${g}, ${b}, 0.6)`,
+    '--accent': rgba(mark),
+    '--accent-bright': rgba(lift(mixRgb(rgb, WHITE, 0.5), 4.5)),
+    '--accent-soft': rgba(mark, 0.16),
   };
 }
 
@@ -46,14 +63,18 @@ type Lines = string[][];
 
 let measureRoot: HTMLDivElement | null = null;
 
-function measureLines(words: string[], font: string, px: number, lineHeight: number, width: number, rtl: boolean): Lines {
+function root(): HTMLDivElement {
   if (!measureRoot) {
     measureRoot = document.createElement('div');
     measureRoot.setAttribute('aria-hidden', 'true');
     Object.assign(measureRoot.style, { position: 'absolute', left: '-40000px', top: '0', visibility: 'hidden', whiteSpace: 'normal', pointerEvents: 'none' });
     document.body.appendChild(measureRoot);
   }
-  const r = measureRoot;
+  return measureRoot;
+}
+
+function measureLines(words: string[], font: string, px: number, lineHeight: number, width: number, rtl: boolean): Lines {
+  const r = root();
   r.style.width = `${width}px`;
   r.style.fontFamily = font;
   r.style.fontSize = `${px}px`;
@@ -93,6 +114,44 @@ const NBSP = String.fromCharCode(0xa0);
 const AR_LH = 1.95;
 const EN_LH = 1.42;
 
+let arabicBox = 0;
+/** An Arabic word's own box (the font's ascent + descent) per px of size: the meaning hangs below it. */
+function arabicBoxRatio(): number {
+  if (!arabicBox) {
+    const s = document.createElement('span');
+    Object.assign(s.style, { fontFamily: ARABIC_FONT, fontSize: '100px', lineHeight: String(AR_LH) });
+    s.textContent = 'بسم';
+    const r = root();
+    r.textContent = '';
+    r.appendChild(s);
+    arabicBox = s.getBoundingClientRect().height / 100 || 1.7;
+  }
+  return arabicBox;
+}
+
+/**
+ * Space between Arabic lines for the recited word's meaning (a pill hung under the word, sized as
+ * in .gloss): enough that it clears the words of the line below instead of covering their tops.
+ */
+function meaningBand(a: number): number {
+  const g = Math.max(26, 0.3 * a);
+  return Math.max(0, Math.ceil(arabicBoxRatio() * a + g * (0.06 + 1.15 + 0.24) + 4 - AR_LH * a));
+}
+
+/** Measured fits by their inputs: a passage is re-planned at each of its ayahs with the same answer. */
+const fits = new Map<string, unknown>();
+function remember<T>(key: string, run: () => T): T {
+  if (fits.has(key)) return fits.get(key) as T;
+  const out = run();
+  if (fits.size >= 64) fits.delete(fits.keys().next().value!);
+  fits.set(key, out);
+  return out;
+}
+
+/** The next-ayah preview's own height (padding, the "Next surah" row, one line) when its room is kept. */
+const NEXT_LABEL_H = 27;
+const nextRoomH = (px: number, lineHeight: number) => 20 + NEXT_LABEL_H + Math.ceil(px * lineHeight);
+
 type Plan = {
   layout: 'fullframe' | 'lowerthird';
   promoted: boolean;
@@ -103,6 +162,13 @@ type Plan = {
   arabicPageWordStarts: number[];
   /** The dimmed next-ayah line: its first measured line, and whether the ayah continues past it. */
   next: { px: number; words: string[]; cut: boolean; lang: 'ar' | 'en' } | null;
+  /** A passage keeps the preview's room from its first ayah (the preview arrives with its last), so
+   *  nothing moves when it arrives: that room's height. null = the preview takes its natural height. */
+  nextRoom: number | null;
+  /** A passage's translation box keeps the height of its longest translation (each ayah shows its own). */
+  englishMinH: number | null;
+  /** Space between Arabic lines for the recited word's meaning (0 when no meaning is shown). */
+  band: number;
   /** Short-ayah passage: for each Arabic word, which grouped ayah it belongs to, its index in that
    *  ayah, and (on an ayah's last word) the end ornament bound to it. null = the current ayah alone. */
   wordMeta: Array<{ ayah: number; index: number; mark?: string }> | null;
@@ -149,38 +215,50 @@ function planFor(state: DisplayState, useGroup = true): Plan | null {
       });
     });
   }
-  const enWords = state.style.language === 'both' ? v.english.split(/\s+/).filter(Boolean) : [];
+  // A passage is sized once for all of its ayahs (its longest translation), so moving through it never
+  // changes the text's size or line breaks; each ayah's own translation is shown under it.
+  const enSets = state.style.language === 'both' ? (group ?? [v]).map((g) => g.english.split(/\s+/).filter(Boolean)) : [];
+  const current = group ? Math.max(0, group.findIndex((g) => g.key === v.key)) : 0;
+  const following = state.style.language === 'both' && (state.style.readingMode ?? 'follow') === 'follow';
+  const band = (a: number) => (following ? meaningBand(a) : 0);
+  const arH = (lines: number, a: number) => lines * a * AR_LH + Math.max(0, lines - 1) * band(a);
 
   const banner = opensSurah(state, !!group) && !(state.style.layout === 'lowerthird' && state.style.readingMode !== 'word') && state.style.readingMode !== 'word';
   const FULLB: Geometry = banner ? { ...FULL, height: FULL.height - BANNER_H } : FULL;
-  const tryFit = (g: Geometry, arMax: number, arMin: number, enMax: number, enMin: number) => {
-    for (let a = arMax; a >= arMin; a -= 2) {
-      const e = Math.max(enMin, Math.min(enMax, Math.round(a * 0.5)));
-      const al = measureLines(arWords, ARABIC_FONT, a, AR_LH, g.width, true);
-      const el = enWords.length ? measureLines(enWords, ENGLISH_FONT, e, EN_LH, g.width, false) : [];
-      const h = al.length * a * AR_LH + (el.length ? g.gap + el.length * e * EN_LH : 0) + g.refH;
-      if (h <= g.height) return { a, e, al, el };
-    }
-    return null;
-  };
+  type Fit = { a: number; e: number; al: Lines; els: Lines[]; enLines: number };
+  const tryFit = (g: Geometry, arMax: number, arMin: number, enMax: number, enMin: number) =>
+    remember(`ar|${g.width}x${g.height}/${g.gap}/${g.refH}|${arMax}-${arMin}|${enMax}-${enMin}|${following}|${arWords.join(' ')}|${enSets.map((ws) => ws.join(' ')).join('\n')}`, (): Fit | null => {
+      for (let a = arMax; a >= arMin; a -= 2) {
+        const e = Math.max(enMin, Math.min(enMax, Math.round(a * 0.5)));
+        const al = measureLines(arWords, ARABIC_FONT, a, AR_LH, g.width, true);
+        const els = enSets.map((ws) => measureLines(ws, ENGLISH_FONT, e, EN_LH, g.width, false));
+        const enLines = Math.max(0, ...els.map((l) => l.length));
+        if (arH(al.length, a) + (enLines ? g.gap + enLines * e * EN_LH : 0) + g.refH <= g.height) return { a, e, al, els, enLines };
+      }
+      return null;
+    });
+  const nextPx = (a: number) => Math.max(40, Math.min(54, Math.round(a * 0.52)));
   const nextLine = (a: number): Plan['next'] => {
     const n = state.next;
     if (!n) return null;
-    const px = Math.max(40, Math.min(54, Math.round(a * 0.52)));
+    const px = nextPx(a);
     // The end-of-ayah ornament closes the preview when the whole ayah fits on the line.
     const words = [...toQpcHafsEncoding(n.arabic).split(/\s+/).filter(Boolean), arabicNumber(n.ayah)];
     const lines = measureLines(words, ARABIC_FONT, px, AR_LH, NEXT_W, true);
     return { px, words: lines[0] ?? [], cut: lines.length > 1, lang: 'ar' };
   };
-  const single = (fit: { a: number; e: number; al: Lines; el: Lines }, layout: Plan['layout'], promoted: boolean, next: Plan['next'] = null): Plan => ({
+  const single = (fit: Fit, layout: Plan['layout'], promoted: boolean, next: Plan['next'] = null, room = false): Plan => ({
     layout,
     promoted,
     arabicPx: fit.a,
     englishPx: fit.e,
     arabicPages: [fit.al],
-    englishPages: [fit.el],
+    englishPages: [fit.els[current] ?? []],
     arabicPageWordStarts: [0],
     next,
+    nextRoom: room ? nextRoomH(nextPx(fit.a), AR_LH) : null,
+    englishMinH: group && fit.enLines ? Math.ceil(fit.enLines * fit.e * EN_LH) : null,
+    band: band(fit.a),
     wordMeta,
     enMeta: null,
     passage: !!wordMeta,
@@ -193,10 +271,12 @@ function planFor(state: DisplayState, useGroup = true): Plan | null {
     if (fit) return single(fit, 'lowerthird', false);
   }
   const promoted = state.style.layout === 'lowerthird';
-  // The preview only takes space the current ayah can spare at a comfortable size.
-  if (state.next && state.style.readingMode !== 'word') {
+  // The preview only takes space the current ayah can spare at a comfortable size. A passage keeps
+  // that room from its first ayah, though the server sends the preview only with its last.
+  const room = !!group && state.style.showNext !== false;
+  if ((state.next || room) && state.style.readingMode !== 'word') {
     const withNext = tryFit({ ...FULLB, height: FULLB.height - NEXT_H }, Math.round(108 * scale), Math.round(64 * scale), 44, 31);
-    if (withNext) return single(withNext, 'fullframe', promoted, nextLine(withNext.a));
+    if (withNext) return single(withNext, 'fullframe', promoted, nextLine(withNext.a), room);
   }
   // A passage of short ayahs is only worth it at a comfortable size; otherwise show the ayah alone.
   const fit = tryFit(FULLB, Math.round(108 * scale), Math.round((group ? 64 : 54) * scale), 44, 31);
@@ -206,12 +286,15 @@ function planFor(state: DisplayState, useGroup = true): Plan | null {
   // Deliberate paging: fixed comfortable sizes; Arabic and translation page independently.
   const a = Math.round(58 * scale);
   const e = 32;
+  const b = band(a);
   const al = measureLines(arWords, ARABIC_FONT, a, AR_LH, FULL.width, true);
-  const el = enWords.length ? measureLines(enWords, ENGLISH_FONT, e, EN_LH, FULL.width, false) : [];
+  const el = enSets.length ? measureLines(enSets[0], ENGLISH_FONT, e, EN_LH, FULL.width, false) : [];
   const body = FULL.height - FULL.refH - (el.length ? FULL.gap : 0);
   const arShare = el.length ? 0.54 : 1;
+  // Lines per Arabic page as without meanings (page turns follow the recitation; fewer lines would
+  // turn them more often); the room kept for the meaning comes out of the translation's share.
   const arLinesPerPage = Math.max(1, Math.floor((body * arShare) / (a * AR_LH)));
-  const enLinesPerPage = Math.max(1, Math.floor((body - Math.min(al.length, arLinesPerPage) * a * AR_LH) / (e * EN_LH)));
+  const enLinesPerPage = Math.max(1, Math.floor((body - arH(Math.min(al.length, arLinesPerPage), a)) / (e * EN_LH)));
   const arabicPages = chunk(al, arLinesPerPage);
   const starts: number[] = [];
   let count = 0;
@@ -228,6 +311,9 @@ function planFor(state: DisplayState, useGroup = true): Plan | null {
     englishPages: el.length ? chunk(el, enLinesPerPage) : [[]],
     arabicPageWordStarts: starts,
     next: null,
+    nextRoom: null,
+    englishMinH: null,
+    band: b,
     wordMeta: null,
     enMeta: null,
     passage: false,
@@ -259,21 +345,23 @@ function planEnglish(state: DisplayState, useGroup: boolean): Plan {
   const lower = state.style.layout === 'lowerthird';
   const banner = !lower && opensSurah(state, !!group);
   const bannerH = banner ? BANNER_H : 0;
-  const fit = (g: Geometry, height: number, max: number, min: number) => {
-    for (let e = max; e >= min; e -= 2) {
-      const lines = measureLines(measureWords, ENGLISH_FONT, e, EN_LH, g.width, false);
-      if (lines.length * e * EN_LH + g.refH <= height) return { e, lines };
-    }
-    return null;
-  };
+  const fit = (g: Geometry, height: number, max: number, min: number) =>
+    remember(`en|${g.width}/${g.refH}|${height}|${max}-${min}|${measureWords.join(' ')}`, () => {
+      for (let e = max; e >= min; e -= 2) {
+        const lines = measureLines(measureWords, ENGLISH_FONT, e, EN_LH, g.width, false);
+        if (lines.length * e * EN_LH + g.refH <= height) return { e, lines };
+      }
+      return null;
+    });
+  const nextPx = (e: number) => Math.max(28, Math.min(40, Math.round(e * 0.6)));
   const nextLine = (e: number): Plan['next'] => {
     const n = state.next;
     if (!n) return null;
-    const px = Math.max(28, Math.min(40, Math.round(e * 0.6)));
+    const px = nextPx(e);
     const lines = measureLines(n.english.split(/\s+/).filter(Boolean), ENGLISH_FONT, px, EN_LH, NEXT_W, false);
     return { px, words: lines[0] ?? [], cut: lines.length > 1, lang: 'en' };
   };
-  const plan = (layout: Plan['layout'], e: number, pages: Lines[], next: Plan['next']): Plan => ({
+  const plan = (layout: Plan['layout'], e: number, pages: Lines[], next: Plan['next'], room = false): Plan => ({
     layout,
     promoted: lower && layout === 'fullframe',
     arabicPx: 0,
@@ -282,6 +370,9 @@ function planEnglish(state: DisplayState, useGroup: boolean): Plan {
     englishPages: pages,
     arabicPageWordStarts: [0],
     next,
+    nextRoom: room ? nextRoomH(nextPx(e), EN_LH) : null,
+    englishMinH: null,
+    band: 0,
     wordMeta: null,
     enMeta,
     passage: !!group,
@@ -292,9 +383,11 @@ function planEnglish(state: DisplayState, useGroup: boolean): Plan {
     if (f) return plan('lowerthird', f.e, [f.lines], null);
   }
   if (lower && group) return planEnglish(state, false);
-  if (state.next) {
+  // As in Arabic, a passage keeps the preview's room from its first ayah.
+  const room = !!group && state.style.showNext !== false;
+  if (state.next || room) {
     const f = fit(FULL, FULL.height - NEXT_H - bannerH, EN_ONLY_MAX, group ? 48 : 44);
-    if (f) return plan('fullframe', f.e, [f.lines], nextLine(f.e));
+    if (f) return plan('fullframe', f.e, [f.lines], nextLine(f.e), room);
   }
   const f = fit(FULL, FULL.height - bannerH, EN_ONLY_MAX, group ? 48 : EN_ONLY_MIN);
   if (f) return plan('fullframe', f.e, [f.lines], null);
@@ -338,20 +431,24 @@ export function VerseDisplay({
   useLayoutEffect(() => {
     if (v && state.cursor) lastFocus.current = { key: v.key, text: toQpcHafsEncoding(v.arabic).split(/\s+/).filter(Boolean).slice(state.cursor.from, state.cursor.to + 1).join(' ') };
   }, [v?.key, state.cursor?.from, state.cursor?.to]);
-  const planKey = v ? `${v.key}|${state.group?.map((g) => g.key).join(',')}|${state.next?.key}|${state.style.layout}|${state.style.readingMode}|${state.style.arabicScale}|${state.style.language}` : '';
+  const planKey = v ? `${v.key}|${state.group?.map((g) => g.key).join(',')}|${state.next?.key}|${state.style.layout}|${state.style.readingMode}|${state.style.arabicScale}|${state.style.language}|${state.style.showNext}` : '';
   // Layout is computed synchronously from measured line boxes before paint.
   const plan = useMemo(() => (fontsReady && v ? planFor(state) : null), [planKey, fontsReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reading forward: when the new ayah is the one that was previewed, it rises out of the preview
-  // line into place (a teleprompter scroll); any other change (jump, search) simply cuts.
+  // line into place (a teleprompter scroll); any other change (jump, search) simply cuts. Only a
+  // preview that was actually drawn counts: the lower third, or a screen with no room for one, cuts.
   // A passage of short ayahs stays in place while the highlight moves through it: the article is
   // keyed by the passage, and only a new passage (or single ayah) arrives.
   const firstKey = plan?.passage && state.group ? state.group[0].key : (v?.key ?? null);
   const articleKey = plan?.passage && state.group ? `group:${firstKey}` : firstKey;
+  const shownNext = plan?.next && state.next ? state.next.key : null;
   const flow = useRef<{ key: string | null; nextKey: string | null; arrived: boolean }>({ key: null, nextKey: null, arrived: false });
-  if (articleKey !== flow.current.key) flow.current = { key: articleKey, nextKey: state.next?.key ?? null, arrived: !!firstKey && firstKey === flow.current.nextKey };
-  else if (state.next) flow.current.nextKey = state.next.key;
+  if (articleKey !== flow.current.key) flow.current = { key: articleKey, nextKey: shownNext, arrived: !!firstKey && firstKey === flow.current.nextKey };
+  else flow.current.nextKey = shownNext;
 
+  // Reported when the measured layout changes (not with every highlight step); the control page
+  // resends until the server holds it.
   const lastReported = useRef('');
   useLayoutEffect(() => {
     if (!plan || !v || !onLayout) return;
@@ -363,11 +460,26 @@ export function VerseDisplay({
       arabicPx: plan.arabicPx,
       englishPx: plan.englishPx,
     };
-    const k = JSON.stringify(info) + state.revision;
+    const k = JSON.stringify(info);
     if (k !== lastReported.current) {
       lastReported.current = k;
       onLayout(info);
     }
+  });
+
+  // The meaning is centred under its word but never leaves the panel: under a word at the end of a
+  // line, a long meaning is moved inward. Layout offsets ignore the stage's scale and the arrival
+  // animation; measured after layout, applied before paint.
+  const stageRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const g = stageRef.current?.querySelector<HTMLElement>('.gloss');
+    const panel = g?.closest<HTMLElement>('.panel');
+    if (!g || !panel) return;
+    let x = g.offsetLeft - g.offsetWidth / 2;
+    for (let el = g.offsetParent as HTMLElement | null; el && el !== panel; el = el.offsetParent as HTMLElement | null) x += el.offsetLeft;
+    const pad = 12;
+    const shift = Math.max(0, pad - x) - Math.max(0, x + g.offsetWidth - (panel.offsetWidth - pad));
+    g.style.setProperty('--gloss-shift', `${Math.round(shift)}px`);
   });
 
   if (!fontsReady) return <div className="stage" data-bg={state.style.background} data-empty="true" />;
@@ -402,9 +514,12 @@ export function VerseDisplay({
   const anticipating = !!state.cursor && state.cursor.to >= displayWords.length - 1;
   // Meaning of the word being recited (word-by-word data), in Arabic + English only.
   const gloss = lang === 'both' && state.cursor && v?.glosses ? v.glosses.slice(state.cursor.from, state.cursor.to + 1).filter(Boolean).join(' ') || null : null;
-  const focusText = state.cursor ? displayWords.slice(state.cursor.from, state.cursor.to + 1).join(' ') : lastFocus.current?.key === v?.key ? lastFocus.current?.text : null;
+  // Word focus between words keeps the last recited word; before an ayah's first word is placed it
+  // shows that first word, dimmed (never a status line: the audience reads this screen).
+  const heldText = lastFocus.current?.key === v?.key ? lastFocus.current?.text : null;
+  const focusText = state.cursor ? displayWords.slice(state.cursor.from, state.cursor.to + 1).join(' ') : (heldText ?? displayWords[0] ?? '');
   return (
-    <div className="stage" data-bg={state.style.background} data-layout={layout} data-reading={mode} data-lang={lang} data-preview={preview || undefined} style={accentVars(state.style.accent) as React.CSSProperties}>
+    <div ref={stageRef} className="stage" data-bg={state.style.background} data-layout={layout} data-reading={mode} data-lang={lang} data-preview={preview || undefined} style={accentVars(state.style.accent) as React.CSSProperties}>
       {/* Small, quiet credit while an ayah is up (the broadcaster can turn it off). */}
       {visible && state.style.credit !== false && (
         <div className="stage-credit" aria-label="Quran Overlay by Nurra">
@@ -414,8 +529,10 @@ export function VerseDisplay({
           </span>
         </div>
       )}
+      {/* Hidden from stream keeps the ayah mounted under a transparent panel, so unhiding shows it
+          where it was instead of replaying its arrival. */}
       <div className={`panel ${visible ? 'panel-on' : 'panel-off'}`} aria-hidden={!visible}>
-        {visible && plan && v && (
+        {plan && v && (
           <article className={`verse${flow.current.arrived ? ' arrive' : ''}${plan.passage ? ' passage' : ''}`} key={articleKey ?? v.key} aria-label={`${v.surahName} ${v.key}`}>
             {plan.banner && (
               <header className="surah-banner" aria-label={`Surah ${v.surahName}`}>
@@ -425,11 +542,12 @@ export function VerseDisplay({
                 <span className="sb-en">{v.surahName}</span>
               </header>
             )}
-            {lang !== 'english' && <div className={`arabic ${mode === 'word' ? 'word-focus' : ''}`} lang="ar" dir="rtl" style={{ fontSize: mode === 'word' ? 128 * state.style.arabicScale : plan.arabicPx }}>
+            {lang !== 'english' && <div className={`arabic ${mode === 'word' ? 'word-focus' : ''}`} lang="ar" dir="rtl" style={{ fontSize: mode === 'word' ? 128 * state.style.arabicScale : plan.arabicPx, '--meaning-band': plan.band ? `${plan.band}px` : undefined } as React.CSSProperties}>
               {mode === 'word' ? (
-                <div className="focus-word" data-active={!!state.cursor}>
-                  {focusText || <span className="focus-wait" lang="en" dir="ltr">Ready to follow</span>}
-                  {gloss && <div className="focus-gloss" lang="en" dir="ltr">{gloss}</div>}
+                <div className="focus-word" data-active={!!state.cursor} data-waiting={(!state.cursor && !heldText) || undefined}>
+                  {focusText}
+                  {/* The meaning's line is always there with both languages, so the stack never jumps. */}
+                  {lang === 'both' && <div className="focus-gloss" lang="en" dir="ltr" aria-hidden={!gloss || undefined}>{gloss ?? NBSP}</div>}
                 </div>
               ) : plan.arabicPages[arabicPage].map((line, i) => (
                 <div className="line" key={i}>
@@ -463,7 +581,7 @@ export function VerseDisplay({
               )}
             </div>}
             {lang !== 'arabic' && plan.englishPages[englishPage].length > 0 && (
-              <div className={`english${lang === 'english' ? ' english-only' : ''}`} lang="en" style={{ fontSize: plan.englishPx }}>
+              <div className={`english${lang === 'english' ? ' english-only' : ''}`} lang="en" style={{ fontSize: plan.englishPx, minHeight: plan.englishMinH ?? undefined }}>
                 {mode === 'word' && <div className="translation-label">Ayah translation</div>}
                 {plan.englishPages[englishPage].map((line, i) => {
                   if (!plan.enMeta) return <div className="line" key={i}>{line.join(' ')}</div>;
@@ -513,12 +631,14 @@ export function VerseDisplay({
                 {lang !== 'arabic' && <span className="ref-credit">{v.translationName}{lang === 'both' && v.glosses && v.glossCredit ? ` · ${v.glossCredit}` : ''}</span>}
               </footer>
             )}
+            {plan.nextRoom !== null && !(plan.next && state.next) && <div className="next-room" style={{ height: plan.nextRoom }} aria-hidden />}
             {plan.next && state.next && (
               <aside
                 className="next-ayah"
                 aria-label={`Next: ${state.next.key}`}
                 // The reciter has reached the last word: what comes next brightens, without moving.
                 data-anticipate={anticipating || undefined}
+                style={plan.nextRoom !== null ? { height: plan.nextRoom } : undefined}
               >
                 {state.next.surahName && <div className="next-label">Next surah · {state.next.surahName}</div>}
                 <div className={`next-line${plan.next.lang === 'en' ? ' next-en' : ''}${plan.next.cut ? ' next-cut' : ''}`} lang={plan.next.lang} dir={plan.next.lang === 'en' ? 'ltr' : 'rtl'} style={{ fontSize: plan.next.px }}>

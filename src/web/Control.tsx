@@ -67,6 +67,10 @@ export function Control() {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [result, setResult] = useState<{ id: string; r: CommandResult } | null>(null);
   const [copied, setCopied] = useState(false);
+  /** The clipboard refused the overlay link (no permission, or not a secure page): it is shown to copy by hand. */
+  const [copyFailed, setCopyFailed] = useState(false);
+  /** Where this page is served from: the owner's own machine, or the public site. Words differ. */
+  const [mode, setMode] = useState<'local' | 'hosted' | null>(null);
   /** Listening time left (hosted service only). */
   const [credits, setCredits] = useState<CreditView | null>(null);
   const fontsReady = useFontsReady();
@@ -111,6 +115,7 @@ export function Control() {
     access()
       .then((s) => {
         if (cancelled) return;
+        setMode(s.mode);
         if (!s.owner) return setAuth('unauthorized');
         if (s.credits) setCredits(s.credits);
         setAuth('owner');
@@ -165,13 +170,19 @@ export function Control() {
     if (capture.state === 'recording') refreshDevices();
   }, [capture.state, refreshDevices]);
 
-  const onLayout = useCallback(
-    (info: LayoutInfo) => {
-      if (!snap) return;
-      send({ type: 'layout', revision: snap.display.revision, key: info.key, englishPages: info.englishPages, arabicPages: info.arabicPages, promotedToFullFrame: info.promotedToFullFrame });
-    },
-    [snap, send],
-  );
+  // The preview measures an ayah's pages and promotion once (not at every highlight step). The server
+  // keeps a measurement only for the revision it was taken at, so it is resent, at most once per
+  // revision, until the server holds it for the ayah on screen.
+  const [measured, setMeasured] = useState<LayoutInfo | null>(null);
+  const layoutSentAt = useRef(-1);
+  useEffect(() => {
+    if (!snap || !measured || measured.key !== snap.display.verse?.key) return;
+    const held = snap.layout;
+    if (held && held.key === measured.key && held.englishPages === measured.englishPages && held.arabicPages === measured.arabicPages && held.promotedToFullFrame === measured.promotedToFullFrame) return;
+    if (layoutSentAt.current === snap.display.revision) return;
+    layoutSentAt.current = snap.display.revision;
+    send({ type: 'layout', revision: snap.display.revision, key: measured.key, englishPages: measured.englishPages, arabicPages: measured.arabicPages, promotedToFullFrame: measured.promotedToFullFrame });
+  }, [snap, measured, send]);
 
   const runCommand = useCallback(
     (text: string, source: 'typed' | 'voice') => {
@@ -203,14 +214,29 @@ export function Control() {
   if (auth === 'unauthorized') {
     return (
       <main className="gate">
-        <h1>Open the private control link</h1>
-        <p>This page controls what your stream shows, so it only opens from the link printed in the terminal where you ran <code>npm start</code>.</p>
+        {mode === 'local' ? (
+          <>
+            <h1>Open the private control link</h1>
+            <p>This page controls what your stream shows, so it only opens from the link printed in the terminal where you ran <code>npm start</code>.</p>
+          </>
+        ) : mode === 'hosted' ? (
+          <>
+            <h1>This control page couldn’t open</h1>
+            <p>It controls what your stream shows, so it needs this site’s cookie to know the page is yours. Allow cookies for this site, then reload.</p>
+          </>
+        ) : (
+          <>
+            <h1>The server can’t be reached</h1>
+            <p>Check your connection, then reload this page.</p>
+          </>
+        )}
         <p>The OBS overlay link is different and cannot control anything.</p>
       </main>
     );
   }
   if (!snap) {
-    return <main className="gate"><p>{auth === 'checking' ? 'Opening…' : conn === 'closed' ? 'The overlay server is not reachable. Is it still running?' : 'Connecting…'}</p></main>;
+    const down = mode === 'local' ? 'The overlay server is not reachable. Is it still running?' : 'The server can’t be reached right now. This page keeps trying.';
+    return <main className="gate"><p>{auth === 'checking' ? 'Opening…' : conn === 'closed' ? down : 'Connecting…'}</p></main>;
   }
 
   const st = statusLine(snap);
@@ -229,7 +255,7 @@ export function Control() {
             <div className="status-detail">{st.detail}</div>
           </div>
         </div>
-        <div className="conn">{conn === 'open' ? `OBS/readers connected: ${snap.overlay.clients}` : 'Reconnecting to the local server…'}</div>
+        <div className="conn">{conn === 'open' ? `OBS/readers connected: ${snap.overlay.clients}` : `Reconnecting to the ${mode === 'local' ? 'local ' : ''}server…`}</div>
       </header>
 
       <main className="grid">
@@ -237,7 +263,7 @@ export function Control() {
           <div className="monitor-head">
             <span className={`onair ${d.visible ? 'live' : ''}`}>{d.visible ? 'On screen' : snap.blanked ? 'Hidden from stream' : 'Nothing on screen'}</span>
             {snap.blanked && d.verse && <span className="muted">{d.verse.key} returns when you unhide</span>}
-            {lay?.promotedToFullFrame && <span className="warn">Too long for the lower third — shown full frame</span>}
+            {lay?.promotedToFullFrame && (d.style.readingMode === 'word' ? <span className="muted">Word focus is always shown full frame</span> : <span className="warn">Too long for the lower third — shown full frame</span>)}
             <SpeedMeter view={speedView} listening={cap.listening} />
           </div>
           <div className="view-controls">
@@ -249,7 +275,7 @@ export function Control() {
             </div>
           </div>
           <StageFrame className="preview">
-            <VerseDisplay state={d} fontsReady={fontsReady} onLayout={onLayout} preview />
+            <VerseDisplay state={d} fontsReady={fontsReady} onLayout={setMeasured} preview />
           </StageFrame>
 
           <div className="transport">
@@ -361,11 +387,20 @@ export function Control() {
             snap={snap}
             send={send}
             copied={copied}
+            copyFailed={copyFailed}
             onCopy={() => {
-              void navigator.clipboard.writeText(snap.overlay.url).then(() => {
+              const failed = () => setCopyFailed(true);
+              const done = () => {
+                setCopyFailed(false);
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1800);
-              });
+              };
+              // The clipboard needs a secure page and the browser's permission; either can be missing.
+              try {
+                navigator.clipboard.writeText(snap.overlay.url).then(done, failed);
+              } catch {
+                failed();
+              }
             }}
           />
         </aside>
@@ -533,7 +568,7 @@ function ResultCard({ card, confirmed, onShow }: { card: SearchCard; confirmed: 
   );
 }
 
-function OutputCard({ snap, send, copied, onCopy }: { snap: ControlSnapshot; send: (m: ControlClientMessage) => boolean; copied: boolean; onCopy: () => void }) {
+function OutputCard({ snap, send, copied, copyFailed, onCopy }: { snap: ControlSnapshot; send: (m: ControlClientMessage) => boolean; copied: boolean; copyFailed: boolean; onCopy: () => void }) {
   const s = snap.display.style;
   const seg = <T extends string>(label: string, value: T, options: Array<[T, string]>, onPick: (v: T) => void) => (
     <div className="seg" role="radiogroup" aria-label={label}>
@@ -550,7 +585,13 @@ function OutputCard({ snap, send, copied, onCopy }: { snap: ControlSnapshot; sen
         <button className="primary" onClick={onCopy}>{copied ? 'Copied' : 'Copy OBS overlay link'}</button>
         <a href={snap.overlay.url.replace('#view=', '#bg=solid&view=')} target="_blank" rel="noreferrer">Open reading screen</a>
       </div>
-      <p className="hint">In OBS: Sources → + → Browser, paste the link, set 1920 × 1080. Leave “Shutdown source when not visible” off. The link can only show verses.</p>
+      {copyFailed && (
+        <div className="copy-fallback">
+          <p className="warn">The link couldn’t be copied automatically. Here it is: select it and copy it.</p>
+          <input readOnly value={snap.overlay.url} aria-label="OBS overlay link" autoFocus onFocus={(e) => e.currentTarget.select()} />
+        </div>
+      )}
+      <p className="hint">In OBS: Sources → + → Browser, paste the link, set 1920 × 1080. Leave “Shutdown source when not visible” off. The link can only show ayahs.</p>
       {seg('Layout', s.layout, [['fullframe', 'Full frame'], ['lowerthird', 'Lower third']], (v) => send({ type: 'style', patch: { layout: v } }))}
       {seg('Background', s.background, [['transparent', 'Transparent'], ['scrim', 'Shaded panel'], ['solid', 'Solid']], (v) => send({ type: 'style', patch: { background: v } }))}
       <div className="seg accent-row" role="radiogroup" aria-label="Colour">
