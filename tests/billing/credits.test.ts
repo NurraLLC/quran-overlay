@@ -184,3 +184,26 @@ describe('free for everyone from the shared pool', () => {
     expect(s).toMatchObject({ given: 10_000, used: 300, left: 9_700, costs: 0 });
   });
 });
+
+describe('live on stream', () => {
+  it('draws on the pool past the daily shares, for a whole day of streaming, and records it all', () => {
+    make({ freeSecondsPerMonth: 0, ipDailyFreeSeconds: 0, globalDailyFreeSeconds: 0, holdMaxSeconds: 1200, poolDailySecondsPerVisitor: 7200, poolDailySecondsPerNetwork: 14_400 });
+    store.grantPool(30 * 3600, 'launch', null, null, T0);
+    // 24 hours of streaming in 20-minute keys, each used in full.
+    let t = T0;
+    for (let i = 0; i < 72; i++) {
+      const hold = store.reserve('streamer', 'home', t, true);
+      if ('error' in hold) throw new Error(`key ${i} refused`);
+      expect(hold.maxSeconds).toBe(1200);
+      t += 1200 * S;
+      store.settle('streamer', t);
+    }
+    expect(store.poolStats().used).toBe(24 * 3600);
+    expect(store.poolSeconds()).toBe(6 * 3600);
+    // Off stream the same day the usual share applies (and it is used up), for them and their network.
+    expect(store.balance('streamer', 'home', t)).toMatchObject({ available: 0, limitedBy: 'share' });
+    expect(store.balance('family', 'home', t)).toMatchObject({ available: 0, limitedBy: 'share' });
+    // The pool itself still bounds it.
+    expect(store.balance('streamer', 'home', t, true).available).toBe(6 * 3600);
+  });
+});

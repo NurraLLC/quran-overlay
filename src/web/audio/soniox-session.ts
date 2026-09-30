@@ -122,6 +122,17 @@ const STOPPED_OFF_SCREEN = 'Listening stopped while the screen was off. Start ag
 const LINE_ASK_MS = 12_000;
 const LINE_ASK_TIMEOUT_MS = 20_000;
 const YOUR_TURN = 'It’s your turn. Recite when you’re ready.';
+/** Live on stream, the connection lost (the network, the server restarting): retried at these delays, then every 15 s. */
+const LIVE_RETRY_MS = [2_000, 5_000, 10_000];
+export const LIVE_RECONNECTING = 'The connection was lost. Reconnecting by itself…';
+
+/** A lost or failed connection, as opposed to a refusal, a microphone problem or a bad request. */
+function lostConnection(e: unknown) {
+  const { name, code, message, raw } = (e ?? {}) as { name?: string; code?: string; message?: string; raw?: { error_type?: unknown } };
+  if (name === 'ConnectionError' || name === 'NetworkError' || code === 'connection_error' || code === 'network_error') return true;
+  // The relay could not reach the recogniser, or the connection was too slow for it.
+  return raw?.error_type === 'listening_paused' && /could not connect|too slow|start listening again/i.test(message ?? '');
+}
 
 function ordinal(n: number) {
   const tens = n % 100;
@@ -234,6 +245,12 @@ export class SonioxCapture {
   private lineAnswer: number | null | undefined = undefined;
   /** Told a place is free while an ask was under way: ask again right after its answer. */
   private turnPending = false;
+  /** Live on stream (an overlay shows this session): listening never stops for lack of recitation. */
+  private live = false;
+  /** The key request got no answer, or the server's error page: a lost connection. */
+  private unreachable = false;
+  private liveRetries = 0;
+  private liveRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private askedAt = 0;
 
   constructor(
@@ -280,8 +297,15 @@ export class SonioxCapture {
   private client() {
     return new SonioxClient({
       config: async () => {
-        const res = await fetch(u('/api/soniox/temporary-key'), { method: 'POST', credentials: 'same-origin' });
+        let res: Response;
+        try {
+          res = await fetch(u('/api/soniox/temporary-key'), { method: 'POST', credentials: 'same-origin' });
+        } catch (e) {
+          this.unreachable = true;
+          throw e;
+        }
         if (!res.ok) {
+          if (res.status >= 500) this.unreachable = true; // the server restarting, or a proxy's error page
           const body = (await res.json().catch(() => ({}))) as { error?: string; limitedBy?: string | null; renewsAt?: number; retryAfter?: number; position?: number };
           // Every place to listen is taken: wait in line. (A spoken request, or a line too long to
           // join, is asked to try again later.)
@@ -372,6 +396,9 @@ export class SonioxCapture {
         // first, since the time away is not the reciter's silence.
         if (this.awaySince !== null && !this.tapWaiter && document.visibilityState === 'visible') return void this.recover();
         if (this.line) return; // not listened to yet: the idle clock starts with the stream
+        // Live on stream: breaks and talk with the audience never stop listening (silence costs
+        // nothing: the stream dozes). Once the stream ends, the idle clock starts from then.
+        if (this.live) return void (this.lastArabicAt = performance.now());
         const limit = this.dozing ? DOZE_IDLE_STOP_MS : IDLE_STOP_MS;
         if (performance.now() - this.lastArabicAt < limit) return;
         const offScreen = this.awaySince !== null;
@@ -618,6 +645,11 @@ export class SonioxCapture {
         void this.restart();
         return;
       }
+      // Live on stream: a lost connection is retried until it is back; the broadcast's listening
+      // does not stop (a network drop, a server restart).
+      const unreachable = this.unreachable;
+      this.unreachable = false;
+      if (this.live && !this.commandOnly && (unreachable || lostConnection(e))) return this.reconnectLive();
       const detail = describeError(e);
       this.teardown();
       this.setStatus({ state: 'error', detail });
@@ -661,6 +693,29 @@ export class SonioxCapture {
     this.nextEpoch(); // a stream of its own, announced to the server once it is open
     this.openStream(this.epoch);
     this.lineTimer = setTimeout(() => this.askAgain(), LINE_ASK_TIMEOUT_MS);
+  }
+
+  /** Whether the session is live on stream (from the server's snapshots). */
+  setLive(on: boolean) {
+    this.live = on;
+  }
+
+  /** Live on stream and the connection lost: listening stays on and a new stream is tried shortly. */
+  private reconnectLive() {
+    this.endStream();
+    this.dozing = false;
+    const delay = LIVE_RETRY_MS[this.liveRetries] ?? 15_000;
+    this.liveRetries++;
+    this.setStatus({ state: 'reconnecting', detail: LIVE_RECONNECTING });
+    this.capture(this.epoch, 'reconnecting');
+    if (this.liveRetryTimer) clearTimeout(this.liveRetryTimer);
+    this.liveRetryTimer = setTimeout(() => {
+      this.liveRetryTimer = null;
+      if (!this.listening || !this.mic || this.recording || this.line) return;
+      const epoch = this.nextEpoch();
+      this.capture(epoch, 'starting');
+      this.openStream(epoch);
+    }, delay);
   }
 
   /** The server says a place is free for this page, which is waiting in line. */
@@ -731,6 +786,7 @@ export class SonioxCapture {
     if (this.stopping || epoch !== this.epoch) return; // late results after Stop never resume the overlay
     if (this.line) this.leaveLine(); // the recogniser answered: the place is ours
     this.lastProcMs = r.total_audio_proc_ms;
+    this.liveRetries = 0; // the recogniser answers: connected again
     this.lastResultAt = performance.now();
     const tokens: WireToken[] = r.tokens.map((t) => ({
       text: t.text,
@@ -812,6 +868,10 @@ export class SonioxCapture {
 
   private teardown() {
     this.endStream();
+    if (this.liveRetryTimer) clearTimeout(this.liveRetryTimer);
+    this.liveRetryTimer = null;
+    this.liveRetries = 0;
+    this.unreachable = false;
     if (this.idleTimer) clearInterval(this.idleTimer);
     this.idleTimer = null;
     this.mic?.close();

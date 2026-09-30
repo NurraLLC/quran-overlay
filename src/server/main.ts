@@ -203,7 +203,7 @@ async function main() {
     const h = (sec: number) => `${+(sec / 3600).toFixed(2)} h`;
     console.log('\nHosted mode: anonymous reader sessions; listening is funded by shared sponsored hours.');
     console.log(`Sponsored listening: ${h(hosted.credits.poolSeconds())} in the pool, up to ${h(c.poolDailySecondsPerVisitor ?? 3600)} per visitor per day; donations ${hosted.billing ? 'on' : 'off'}.`);
-    console.log(`Up to ${hosted.maxListeners ?? DEFAULT_MAX_STREAMS} people reciting at once (QO_MAX_LISTENERS). Keep it within your Soniox concurrency limit (10 unless raised in the Soniox Console); beyond it people are asked to try again in a minute.`);
+    console.log(`Up to ${hosted.maxListeners ?? DEFAULT_MAX_STREAMS} people reciting at once (QO_MAX_LISTENERS). Keep it within your Soniox concurrency limit (10 unless raised in the Soniox Console); beyond it people wait in line. Live streams (an overlay link open in OBS) have no daily limit.`);
     console.log(`Open: ${process.env.QO_PUBLIC_ORIGIN || publicOrigin}${base}/\n`);
   } else console.log(`\nOpen the control page (keep this link private):\n  ${publicOrigin}${base}/control#owner=${ownerToken}\n`);
 }

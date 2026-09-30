@@ -12,6 +12,8 @@
 // service per day (the owner's spending ceiling). Purchased time is not subject to those caps.
 // Sponsored time is one shared pool that donations fill ("sponsor listening for others"); anyone
 // whose own time has run out draws from it, up to a daily amount each, so no one can drain it.
+// A live stream (an overlay shows the reciter's session, e.g. a 24-hour charity stream in OBS)
+// draws on the pool with no daily amount: `stream` holds.
 
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
@@ -82,7 +84,7 @@ const nextMonth = (ms: number) => {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
 };
 
-type HoldRow = { id: string; user_id: string; ip: string; minted_at: number; max_seconds: number };
+type HoldRow = { id: string; user_id: string; ip: string; minted_at: number; max_seconds: number; stream: number };
 
 export class CreditStore {
   private readonly db: DatabaseSync;
@@ -115,6 +117,7 @@ export class CreditStore {
     // Ledgers from before sponsored time gain the column (existing rows drew nothing from the pool).
     const cols = this.db.prepare('PRAGMA table_info(holds)').all() as Array<{ name: string }>;
     if (!cols.some((c) => c.name === 'pool_seconds')) this.db.exec('ALTER TABLE holds ADD COLUMN pool_seconds INTEGER');
+    if (!cols.some((c) => c.name === 'stream')) this.db.exec('ALTER TABLE holds ADD COLUMN stream INTEGER NOT NULL DEFAULT 0');
   }
 
   private get poolPerVisitorDay() {
@@ -181,7 +184,7 @@ export class CreditStore {
     }
   }
 
-  private sponsoredFor(userId: string, ip: string, day: string, includeReservations = false): { seconds: number; by: 'pool' | 'share' | null } {
+  private sponsoredFor(userId: string, ip: string, day: string, includeReservations = false, stream = false): { seconds: number; by: 'pool' | 'share' | null } {
     // Before admitting another stream, protect other visitors' outstanding keys. Reserving
     // their full maximum is conservative when they also have personal credits, but prevents
     // the same shared second (or network share) from being promised to several people.
@@ -191,7 +194,7 @@ export class CreditStore {
     const left = Math.max(0, this.poolSeconds() - reserved);
     const usedToday = this.num('SELECT SUM(pool_seconds) AS n FROM holds WHERE user_id = ? AND day = ?', userId, day);
     const ipToday = this.num('SELECT SUM(pool_seconds) AS n FROM holds WHERE ip = ? AND day = ?', ip, day);
-    const share = Math.min(this.poolPerVisitorDay - usedToday, (this.cfg.poolDailySecondsPerNetwork ?? Infinity) - ipToday - networkReserved);
+    const share = stream ? Infinity : Math.min(this.poolPerVisitorDay - usedToday, (this.cfg.poolDailySecondsPerNetwork ?? Infinity) - ipToday - networkReserved);
     const seconds = Math.max(0, Math.min(left, share));
     return { seconds, by: seconds > 0 ? null : left <= 0 ? 'pool' : 'share' };
   }
@@ -227,10 +230,11 @@ export class CreditStore {
   }
 
   private openHolds(userId: string): HoldRow[] {
-    return this.db.prepare('SELECT id, user_id, ip, minted_at, max_seconds FROM holds WHERE user_id = ? AND settled_at IS NULL ORDER BY minted_at').all(userId) as HoldRow[];
+    return this.db.prepare('SELECT id, user_id, ip, minted_at, max_seconds, stream FROM holds WHERE user_id = ? AND settled_at IS NULL ORDER BY minted_at').all(userId) as HoldRow[];
   }
 
-  balance(userId: string, ip: string, now = Date.now()): Balance {
+  /** What `userId` may use now; `stream`: live on stream, so no daily share of the pool applies. */
+  balance(userId: string, ip: string, now = Date.now(), stream = false): Balance {
     this.ensureUser(userId, now);
     this.settleExpired(userId, now);
     const month = monthOf(now);
@@ -247,7 +251,7 @@ export class CreditStore {
     const byService = Math.max(0, this.cfg.globalDailyFreeSeconds - usedDay - openOthers);
     const free = Math.min(byMonth, byIp, byService);
     const paid = this.num('SELECT paid_seconds AS n FROM users WHERE id = ?', userId);
-    const pool = this.sponsoredFor(userId, ip, day, true);
+    const pool = this.sponsoredFor(userId, ip, day, true, stream);
     const sponsored = pool.seconds;
     // Why nothing is available (reported only then): with a free allowance configured, its cap; else the pool.
     const freeBy = byMonth === 0 ? 'month' : byIp === 0 ? 'network' : 'service';
@@ -269,12 +273,12 @@ export class CreditStore {
   }
 
   /** Reserve time for one provider stream, or say why not. */
-  reserve(userId: string, ip: string, now = Date.now()): Hold | { error: 'no_credits'; balance: Balance } {
-    const b = this.balance(userId, ip, now);
+  reserve(userId: string, ip: string, now = Date.now(), stream = false): Hold | { error: 'no_credits'; balance: Balance } {
+    const b = this.balance(userId, ip, now, stream);
     const maxSeconds = Math.min(this.cfg.holdMaxSeconds, Math.floor(b.available));
     if (maxSeconds < this.cfg.holdMinSeconds) return { error: 'no_credits', balance: b };
     const id = randomBytes(12).toString('base64url');
-    this.db.prepare('INSERT INTO holds (id, user_id, ip, minted_at, max_seconds) VALUES (?, ?, ?, ?, ?)').run(id, userId, ip, now, maxSeconds);
+    this.db.prepare('INSERT INTO holds (id, user_id, ip, minted_at, max_seconds, stream) VALUES (?, ?, ?, ?, ?, ?)').run(id, userId, ip, now, maxSeconds, stream ? 1 : 0);
     return { id, maxSeconds };
   }
 
@@ -341,7 +345,7 @@ export class CreditStore {
     const paidHave = this.num('SELECT paid_seconds AS n FROM users WHERE id = ?', userId);
     const paid = Math.min(paidOwed, paidHave);
     // Then sponsored time (never below zero: a rare overlap of visitors drawing at once is absorbed).
-    const pooled = Math.min(paidOwed - paid, this.sponsoredFor(userId, ip, day).seconds);
+    const pooled = Math.min(paidOwed - paid, this.sponsoredFor(userId, ip, day, false, holds.some((h) => h.stream)).seconds);
     this.db.exec('BEGIN');
     try {
       const upd = this.db.prepare('UPDATE holds SET settled_at = ?, free_seconds = ?, paid_seconds = ?, pool_seconds = ?, day = ?, month = ? WHERE id = ?');

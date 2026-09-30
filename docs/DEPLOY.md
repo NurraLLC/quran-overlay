@@ -6,7 +6,7 @@ The same code runs two ways:
 |---|---|---|
 | Who uses it | You, on your own computer | Anyone who opens the site |
 | Access | Private owner link printed at start | Anonymous visitor cookie, no sign-up |
-| Listening | Unlimited (your own Soniox key) | Free for everyone from a pool of sponsored hours that donations fill (2 h a day each) |
+| Listening | Unlimited (your own Soniox key) | Free for everyone from a pool of sponsored hours that donations fill (2 h a day each; no daily limit while live on stream) |
 | Home page | Control page | Phone-friendly reader |
 
 Reading, search and the Quran text are free in both. Only live listening costs anything, because speech recognition is billed for as long as a stream is open.
@@ -130,6 +130,17 @@ npm run pool:add -- 50 masjid-gift
 ```
 
 In Docker: `docker compose -f deploy/compose.yml --env-file deploy/production.env exec app npx tsx scripts/sponsor-pool.ts 50 masjid-gift`.
+
+### Live streams
+
+A visitor whose overlay link is open (in OBS, or as a reading screen) is **live on stream**, and a broadcast is not cut short: a 24-hour charity stream runs the whole day. While live:
+
+- **No daily limit.** The visitor and network daily shares do not apply; the time still comes from the pool (so it is recorded), and an empty pool still pauses listening for everyone. A 24-hour stream uses at most 24 of the pool's hours (about $2.90 of recognition), usually less: silences are not sent.
+- **No idle stop.** Breaks and talk with the audience never stop listening (silence costs nothing; talk is recognised, so billed).
+- **The place is kept.** When listening is full, a live stream keeps its place through breaks of up to 30 minutes while its listening is on, and goes to the front of the line otherwise.
+- **Connections come back.** A lost connection (the network, a server restart or deploy) is retried by the page every few seconds until it is back, instead of stopping.
+
+At most three live streams per network have these rules at once (a household, a masjid); more have the usual limits. The page shows "Live on stream · no time limit". Before a long stream, check the pool and the Soniox balance (turn on its auto top-up), and avoid deploying during it: listening reconnects by itself, but a restart interrupts following for the seconds it takes. Donations for another organization go through that organization's own link, separate from this pool (see *Payments*).
 
 ## Payments (optional)
 

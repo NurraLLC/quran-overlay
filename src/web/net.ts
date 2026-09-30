@@ -130,9 +130,11 @@ export async function access(): Promise<Access> {
 }
 
 /** The one-line listening status: free and shared, or the personal allowance when one is configured. */
-export function listeningLine(c: import('../shared/contracts').CreditView): string {
+/** The listening time line; `live`: the session is live on stream (no daily limit applies). */
+export function listeningLine(c: import('../shared/contracts').CreditView, live = false): string {
   if (c.freePerMonth > 0) return c.available > 0 ? `${formatListening(c.available)} of listening left` : 'No listening time left';
   if (c.limitedBy === 'pool') return 'Shared listening hours are unavailable · reading stays free';
+  if (live) return 'Live on stream · no time limit';
   if (c.limitedBy === 'share') return 'You’ve used today’s hours · back tomorrow';
   return `Free · ${Math.round(c.pool / 3600).toLocaleString()} hours sponsored`;
 }

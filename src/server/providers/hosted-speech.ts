@@ -14,9 +14,10 @@ type Options = {
   /** Server-owned injection points for local provider tests only. */
   endpoint?: string;
   idleLimitMs?: number;
-  /** The waiting line's HOLD_MS and OFFER_MS, shortened in tests. */
+  /** The waiting line's HOLD_MS, OFFER_MS and LIVE_BREAK_MS, shortened in tests. */
   holdMs?: number;
   offerMs?: number;
+  liveBreakMs?: number;
   /** People reciting at once (each costs tracker CPU); more wait for a free place. */
   maxStreams?: number;
   /** The server is overloaded right now: no new listening until it recovers. */
@@ -25,6 +26,13 @@ type Options = {
   onTurn?: (id: string) => void;
   /** This visitor has a page open (a waiting page whose timers the browser slows is still there). */
   present?: (id: string) => boolean;
+  /**
+   * Live on stream: an overlay shows this visitor's session (OBS, a reading screen). A broadcast is
+   * not cut short: no daily limit or idle stop, first in line, and its place kept through breaks of
+   * up to LIVE_BREAK_MS while listening is on (`listeningOn`).
+   */
+  live?: (id: string) => boolean;
+  listeningOn?: (id: string) => boolean;
 };
 type Ticket = { value: string; expires: number; ip: string };
 /** Someone waiting to listen: last heard from, offered a place (when), and back after reciting. */
@@ -61,6 +69,13 @@ const HOLD_MS = 20_000;
 const BACK_MS = 3 * 60_000;
 const PROVIDER_FULL_MS = 60_000;
 const MAX_LINE = 5000;
+/**
+ * Live streams without limits per network at once (a household, a masjid); more have the usual
+ * limits. A live stream keeps its place through a break of up to LIVE_BREAK_MS (a meal, a prayer);
+ * after a longer one it is first in line when it comes back.
+ */
+const MAX_LIVE_PER_NETWORK = 3;
+const LIVE_BREAK_MS = 30 * 60_000;
 /** A ticket is used at once (the page connects with it); unused, it keeps a place this long. */
 const TICKET_MS = 30_000;
 
@@ -68,11 +83,13 @@ const TICKET_MS = 30_000;
 export class HostedSpeech {
   private tickets = new Map<string, Ticket>();
   private active = new Map<string, () => void>();
+  /** The network of each open stream. */
+  private streamIps = new Map<string, string>();
   private connections = new Set<() => void>();
   private pending = 0;
   private line: Waiting[] = [];
-  /** Places kept for streams that just closed (visitor → until). */
-  private held = new Map<string, number>();
+  /** Places kept for streams that just closed: since when, and whether it was a live stream without limits. */
+  private held = new Map<string, { at: number; live: boolean }>();
   /** Reciters who go to the front of the line until then (their stream closed, or was refused). */
   private back = new Map<string, number>();
   private providerFull: { cap: number; until: number } | null = null;
@@ -98,7 +115,21 @@ export class HostedSpeech {
   /** Drops unused tickets and lapsed kept places. */
   private tidy(now: number) {
     for (const [key, ticket] of this.tickets) if (ticket.expires < now) this.tickets.delete(key);
-    for (const [key, until] of this.held) if (until <= now || this.active.has(key)) this.held.delete(key);
+    for (const [key, kept] of this.held) if (this.active.has(key) || this.lapsed(key, kept, now)) this.held.delete(key);
+  }
+
+  /** A kept place lapses after HOLD_MS; a live stream's, while its listening is on, after LIVE_BREAK_MS. */
+  private lapsed(id: string, kept: { at: number; live: boolean }, now: number) {
+    const onAir = kept.live && this.o.live?.(id) && this.o.listeningOn?.(id);
+    return now - kept.at >= (onAir ? this.o.liveBreakMs ?? LIVE_BREAK_MS : this.o.holdMs ?? HOLD_MS);
+  }
+
+  /** Live on stream, without limits: at most MAX_LIVE_PER_NETWORK of them per network at once. */
+  private unlimited(id: string, ip: string) {
+    if (!this.o.live?.(id)) return false;
+    let others = 0;
+    for (const [key, at] of this.streamIps) if (key !== id && at === ip && this.o.live(key)) others++;
+    return others < MAX_LIVE_PER_NETWORK;
   }
 
   /** Places in use: streams, unused tickets and kept places, apart from `id`'s own. */
@@ -217,11 +248,14 @@ export class HostedSpeech {
   issue(id: string, ip: string) {
     const now = Date.now();
     this.tidy(now);
+    const unlimited = this.unlimited(id, ip);
     const safety = this.o.safety.status(id, ip, now);
-    if (safety.retryAfter) return { error: 'LISTENING_COOLDOWN', retryAfter: safety.retryAfter };
+    if (safety.retryAfter && !unlimited) return { error: 'LISTENING_COOLDOWN', retryAfter: safety.retryAfter };
     if (!this.o.apiKey) return { error: 'NOT_CONFIGURED' };
     if (this.tickets.size >= 5000 && !this.tickets.has(id)) return { error: 'SERVICE_BUSY' };
-    const balance = this.o.credits.balance(id, ip, now);
+    // A live stream serves everyone watching it: it goes to the front of the line.
+    if (this.o.live?.(id)) this.back.set(id, now + BACK_MS);
+    const balance = this.o.credits.balance(id, ip, now, unlimited);
     if (balance.available < this.o.credits.cfg.holdMinSeconds) return { error: 'NO_CREDITS', limitedBy: balance.limitedBy, renewsAt: balance.renewsAt };
     // Every place taken: wait in line. A stream open, a ticket not yet used or a place kept is the
     // visitor's own; otherwise a free place goes to whoever is first.
@@ -261,6 +295,8 @@ export class HostedSpeech {
     let budgetAt = Date.now();
     const idleLimit = this.o.idleLimitMs ?? IDLE_LIMIT_MS;
     let previousIdle = this.o.safety.status(id, ip).idleMs;
+    /** Live on stream without limits (decided when the stream starts). */
+    let exempt = false;
     const end = (message?: string, kind = 'listening_paused') => {
       if (finished) return;
       finished = true;
@@ -277,14 +313,16 @@ export class HostedSpeech {
       }
       if (this.active.get(id) === end) {
         this.active.delete(id);
+        this.streamIps.delete(id);
         // A long pause (the page closes its stream) or a restart: the next stream finds its place kept.
         if (connectedAt && kind !== 'listening_cooldown' && !this.tickets.has(id)) {
           const now = Date.now();
-          const holdMs = this.o.holdMs ?? HOLD_MS;
-          this.held.set(id, now + holdMs);
+          const live = exempt && !!this.o.live?.(id);
+          this.held.set(id, { at: now, live });
           this.back.set(id, now + BACK_MS);
           // Not back by then: the place goes to whoever is first in line.
-          setTimeout(() => this.offerSoon(), holdMs + 1).unref?.();
+          setTimeout(() => this.offerSoon(), (this.o.holdMs ?? HOLD_MS) + 1).unref?.();
+          if (live) setTimeout(() => this.offerSoon(), (this.o.liveBreakMs ?? LIVE_BREAK_MS) + 1).unref?.();
         }
         this.offerSoon();
       }
@@ -325,17 +363,20 @@ export class HostedSpeech {
           return end(BUSY, 'listening_busy');
         }
         this.held.delete(id);
+        const unlimited = this.unlimited(id, ip);
         const safety = this.o.safety.status(id, ip, now);
-        if (safety.retryAfter) return end('Listening is taking a short break. Please try again in five minutes.', 'listening_cooldown');
+        if (safety.retryAfter && !unlimited) return end('Listening is taking a short break. Please try again in five minutes.', 'listening_cooldown');
         previousIdle = safety.idleMs;
         // Exactly two audio forms: a detected container, or the reader's PCM described in full.
         const pcm = config.audio_format === PCM.audio_format;
         const detected = (config.audio_format === undefined || config.audio_format === 'auto') && config.sample_rate === undefined && config.num_channels === undefined;
         if (pcm ? config.sample_rate !== PCM.sample_rate || config.num_channels !== PCM.num_channels : !detected) return end('This audio format is not supported.');
-        const hold = this.o.credits.reserve(id, ip, now);
+        const hold = this.o.credits.reserve(id, ip, now, unlimited);
         if ('error' in hold) return end('Shared listening hours are unavailable. Reading and translations are still free.');
         holdId = hold.id;
+        exempt = unlimited;
         this.active.set(id, end);
+        this.streamIps.set(id, ip);
         validated = true;
         this.pending--;
         clearTimeout(handshake);
@@ -358,6 +399,13 @@ export class HostedSpeech {
             timer = setInterval(() => {
               const now = Date.now();
               if (now - connectedAt >= hold.maxSeconds * 1000) return end('Temporary API key session duration limit exceeded.', 'temp_api_key_session_expired');
+              // Live on stream: talking with the audience between recitations never stops listening
+              // (and once the stream ends, the usual idle rule counts from then).
+              if (exempt && this.o.live?.(id)) {
+                lastRecitation = now;
+                heardRecitation = true;
+                return;
+              }
               if ((heardRecitation ? 0 : previousIdle) + now - (lastRecitation || connectedAt) >= idleLimit) end('We couldn’t recognise recitation for a while. Listening is paused; please try again in five minutes.', 'listening_cooldown');
             }, 250);
           });

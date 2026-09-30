@@ -805,6 +805,24 @@ export class Session {
     return this.controlClients;
   }
 
+  /**
+   * Live on stream: an overlay (OBS, or a reading screen) shows this session. Listening then has no
+   * daily limit and no idle stop, and keeps its place through breaks (hosted-speech.ts).
+   */
+  get live() {
+    return this.overlayClients > 0;
+  }
+
+  /** Listening is on: a stream open, or none for the moment (a long pause, or waiting in line). */
+  get listeningOn() {
+    return ['starting', 'recording', 'reconnecting', 'dozing', 'waiting'].includes(this.capture.phase);
+  }
+
+  /** An overlay connected or left: the pages learn at once whether the session is live. */
+  overlayChanged() {
+    this.queueSnapshot();
+  }
+
   /** A microphone stream is (or may be) running for this session. */
   get listening() {
     return ['starting', 'recording', 'reconnecting'].includes(this.capture.phase);

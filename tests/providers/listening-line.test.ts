@@ -15,7 +15,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let cleanup: (() => Promise<void>) | undefined;
 afterEach(async () => cleanup?.());
 
-async function harness(o: { maxStreams: number; holdMs?: number; offerMs?: number }) {
+async function harness(o: { maxStreams: number; holdMs?: number; offerMs?: number; liveBreakMs?: number; idleLimitMs?: number; live?: (id: string) => boolean; listeningOn?: (id: string) => boolean }) {
   const provider = new WebSocketServer({ port: 0, host: '127.0.0.1' });
   const front = new WebSocketServer({ port: 0, host: '127.0.0.1' });
   await Promise.all([new Promise<void>((r) => provider.on('listening', r)), new Promise<void>((r) => front.on('listening', r))]);
@@ -32,7 +32,7 @@ async function harness(o: { maxStreams: number; holdMs?: number; offerMs?: numbe
   const safety = new ListeningSafety(':memory:');
   const turns: string[] = [];
   let busy = false;
-  const relay = new HostedSpeech({ credits, safety, apiKey: 'server-private-key', maxStreams: o.maxStreams, holdMs: o.holdMs ?? 50, offerMs: o.offerMs,
+  const relay = new HostedSpeech({ credits, safety, apiKey: 'server-private-key', maxStreams: o.maxStreams, holdMs: o.holdMs ?? 50, offerMs: o.offerMs, liveBreakMs: o.liveBreakMs, idleLimitMs: o.idleLimitMs, live: o.live, listeningOn: o.listeningOn,
     fetchImpl: (async () => new Response(JSON.stringify({ api_key: 'temp', expires_at: new Date(Date.now() + 60_000).toISOString() }), { status: 201 })) as typeof fetch,
     endpoint: `ws://127.0.0.1:${(provider.address() as { port: number }).port}`,
     isRecitation: () => true, onSettled: () => undefined, onTurn: (id) => turns.push(id), busy: () => busy,
@@ -147,5 +147,76 @@ describe('the waiting line', () => {
     expect(h.ask('a').position).toBe(1);
     h.setBusy(false);
     expect(h.ask('a').api_key).toBeTruthy();
+  });
+});
+
+describe('live on stream', () => {
+  // The recogniser stand-in sends no results, so nothing is ever heard as recitation.
+  async function live(o: { maxStreams: number; idleLimitMs?: number; liveBreakMs?: number }) {
+    const liveIds = new Set<string>();
+    const listening = new Set<string>();
+    const h = await harness({ maxStreams: o.maxStreams, live: (id) => liveIds.has(id), listeningOn: (id) => listening.has(id), idleLimitMs: o.idleLimitMs, liveBreakMs: o.liveBreakMs });
+    return { ...h, liveIds, listening };
+  }
+
+  it('never stops for lack of recitation while live', async () => {
+    const h = await live({ maxStreams: 2, idleLimitMs: 300 });
+    h.liveIds.add('streamer');
+    const s = await h.recite('streamer'); // talking with the audience: no recitation heard
+    const plain = await h.recite('reciter');
+    await plain.closed; // the usual idle rule still applies to others
+    expect(plain.frames.at(-1)).toMatchObject({ error_type: 'listening_cooldown' });
+    await wait(500);
+    expect(h.relay.streaming('streamer')).toBe(true);
+    expect(s.frames.find((f) => f.error_type)).toBeUndefined();
+  });
+
+  it('keeps its place through a break while listening is on, and goes first in line', async () => {
+    const h = await live({ maxStreams: 1, liveBreakMs: 1500 });
+    h.liveIds.add('streamer');
+    h.listening.add('streamer');
+    const s = await h.recite('streamer');
+    expect(h.ask('b').position).toBe(1);
+    s.ws.close(); // a long break: the stream dozes
+    await until(() => !h.relay.streaming('streamer'));
+    await wait(300); // far past the usual kept place (50 ms here)
+    expect(h.turns).toEqual([]);
+    expect(h.ask('b').position).toBe(1);
+    await h.recite('streamer'); // back from the break: straight in
+    // Stopped listening: the place goes on.
+    h.relay['active'].get('streamer')!();
+    h.listening.delete('streamer');
+    await until(() => h.turns.includes('b'));
+    // Live and waiting: first in line, ahead of people already waiting.
+    await h.recite('b');
+    expect(h.ask('c').position).toBe(1);
+    h.liveIds.add('second-stream');
+    expect(h.ask('second-stream').position).toBe(1);
+    expect(h.ask('c').position).toBe(2);
+  });
+
+  it('gives up the place after a very long break, and is first in line when back', async () => {
+    const h = await live({ maxStreams: 1, liveBreakMs: 200 });
+    h.liveIds.add('streamer');
+    h.listening.add('streamer');
+    const s = await h.recite('streamer');
+    expect(h.ask('b').position).toBe(1);
+    expect(h.ask('c').position).toBe(2);
+    s.ws.close();
+    await until(() => h.turns.includes('b')); // the break outlasted the kept place
+    await h.recite('b');
+    expect(h.ask('streamer').position).toBe(1); // ahead of c, who was already waiting
+    expect(h.ask('c').position).toBe(2);
+  });
+
+  it('lifts the limits for at most three live streams per network at once', async () => {
+    const h = await live({ maxStreams: 10, idleLimitMs: 300 });
+    for (const id of ['s1', 's2', 's3', 's4']) h.liveIds.add(id);
+    const streams = [];
+    for (const id of ['s1', 's2', 's3', 's4']) streams.push(await h.recite(id));
+    await streams[3].closed; // the fourth on one network has the usual idle rule
+    expect(streams[3].frames.at(-1)).toMatchObject({ error_type: 'listening_cooldown' });
+    await wait(300);
+    for (const id of ['s1', 's2', 's3']) expect(h.relay.streaming(id)).toBe(true);
   });
 });

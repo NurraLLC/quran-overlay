@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView } from '../shared/contracts';
-import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
+import { LIVE_RECONNECTING, SonioxCapture, type CaptureStatus } from './audio/soniox-session';
 import { access, applyDisplay, applySnapshot, connect, listeningLine, type Access, u } from './net';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { arabicNumber } from './VerseDisplay';
@@ -150,7 +150,10 @@ export function Reader() {
           onMessage: (data) => {
             const m = data as ControlServerMessage;
             // Display changes arrive on their own, at once; batched snapshots carry the rest.
-            if (m.type === 'snapshot') setSnap((prev) => applySnapshot(prev, m.snapshot));
+            if (m.type === 'snapshot') {
+              setSnap((prev) => applySnapshot(prev, m.snapshot));
+              capRef.current?.setLive(m.snapshot.overlay.clients > 0);
+            }
             else if (m.type === 'display') setSnap((prev) => applyDisplay(prev, m.state));
             else if (m.type === 'credits') setCredits(m.credits);
             else if (m.type === 'listen_turn') capRef.current?.onTurn(); // waiting in line: a place is free
@@ -364,7 +367,7 @@ export function Reader() {
     ? capture.state === 'error'
       ? capture.detail
       : (capture.detail ?? 'Tap the microphone and recite, or ask in English.')
-    : capture.detail && capture.state !== 'reconnecting'
+    : capture.detail && (capture.state !== 'reconnecting' || capture.detail === LIVE_RECONNECTING)
       ? capture.detail // e.g. "Listening paused while the screen was off. Recite to continue."
     : capture.state === 'dozing'
       ? 'Listening… take your time. Nothing is sent while you’re quiet.'
@@ -552,7 +555,7 @@ export function Reader() {
             </button>
             {credits ? (
               <button className="r-menu-item" onClick={() => { setMenuOpen(false); setTimeOpen('time'); }}>
-                Listening<span>{listeningLine(credits)}</span>
+                Listening<span>{listeningLine(credits, snap.overlay.clients > 0)}</span>
               </button>
             ) : (
               <p className="r-menu-item r-menu-static">Listening time<span>Unlimited: this reader runs on your own computer, with your own key</span></p>
@@ -662,7 +665,7 @@ export function Reader() {
             <span>{status}</span>
             {credits && (
               <button className={`r-credits${credits.available < 600 ? ' low' : ''}`} onClick={() => setTimeOpen('time')}>
-                {listeningLine(credits)}
+                {listeningLine(credits, snap.overlay.clients > 0)}
               </button>
             )}
             {snap.held && (

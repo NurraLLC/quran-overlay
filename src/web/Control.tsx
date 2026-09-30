@@ -139,6 +139,7 @@ export function Control() {
             else if (m.type === 'listen_turn') captureRef.current?.onTurn(); // waiting in line: a place is free
             else if (m.type === 'snapshot') {
               setSnap((prev) => applySnapshot(prev, m.snapshot));
+              captureRef.current?.setLive(m.snapshot.overlay.clients > 0);
               measureSpeed(m.snapshot.speed);
             } else if (m.type === 'display') setSnap((prev) => applyDisplay(prev, m.state));
             else if (m.type === 'command_pending') {
@@ -468,24 +469,27 @@ function VoiceCard(p: {
       {p.listening && (
         <div className="live-status" aria-live="polite">
           <span className="live-dot" aria-hidden />
-          <span className={following ? undefined : 'muted'}>{following ?? (p.capture.state === 'waiting' ? 'In line to listen…' : 'Listening…')}</span>
+          <span className={following ? undefined : 'muted'}>{following ?? (p.capture.state === 'waiting' ? 'In line to listen…' : p.capture.state === 'reconnecting' ? 'Reconnecting…' : 'Listening…')}</span>
         </div>
       )}
       <p className="hint">
         {starting
-          ? 'Connecting the microphone…'
+          ? (p.capture.state === 'reconnecting' && p.capture.detail) || 'Connecting the microphone…'
           : p.capture.state === 'error' || p.capture.state === 'waiting'
             ? p.capture.detail
             : p.capture.state === 'dozing'
               ? 'Waiting for you to recite. After a long pause the microphone stays on here but nothing is sent (listening is billed while a stream is open); recite and it continues at once.'
               : p.listening
               ? 'Recite and the screen follows. Or just say it in English: “go to Surah Maryam, ayah three”, “show the ayah about the orphan”, or describe one to find it here privately. Other English talk never changes the screen.'
-              : (p.capture.detail ?? 'One microphone for both: recite to follow, or speak an English request. Audio goes to Soniox only while you speak: long pauses send nothing, and listening stops by itself after a while without recitation.')}
+              : (p.capture.detail ??
+                (p.snap.overlay.clients > 0
+                  ? 'One microphone for both: recite to follow, or speak an English request. Audio goes to Soniox only while you speak: long pauses send nothing. While you’re live on stream, listening stays on through breaks and talk with your audience, with no time limit.'
+                  : 'One microphone for both: recite to follow, or speak an English request. Audio goes to Soniox only while you speak: long pauses send nothing, and listening stops by itself after a while without recitation.'))}
       </p>
 
       {p.credits && (
         <p className={`credits-line${p.credits.available < 600 ? ' low' : ''}`}>
-          {listeningLine(p.credits)}
+          {listeningLine(p.credits, p.snap.overlay.clients > 0)}
         </p>
       )}
       <form

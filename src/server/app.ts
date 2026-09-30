@@ -273,7 +273,9 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     isRecitation: hosted.isRecitation ?? (() => false), onSettled: pushCredits, endpoint: o.speechEndpoint, idleLimitMs: o.speechIdleMs, holdMs: o.speechHoldMs,
     maxStreams: hosted.maxListeners, busy: () => overloaded,
     // The waiting line: a free place is announced on the visitor's pages, and a page still open keeps its place.
-    onTurn: (id) => hosted.hub.peek(id)?.notify({ type: 'listen_turn' }), present: (id) => controlSockets.has(id) }) : null;
+    onTurn: (id) => hosted.hub.peek(id)?.notify({ type: 'listen_turn' }), present: (id) => controlSockets.has(id),
+    // Live on stream (the visitor's overlay is open in OBS or on a reading screen): no daily limit or idle stop.
+    live: (id) => hosted.hub.peek(id)?.live ?? false, listeningOn: (id) => hosted.hub.peek(id)?.listeningOn ?? false }) : null;
   app.addHook('preClose', async () => speech?.close());
   app.addHook('onClose', async () => safety?.close());
   const requireOwner = (req: FastifyRequest, reply: FastifyReply) => {
@@ -560,7 +562,10 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
         }
         s = target;
         role = m.role;
-        if (role === 'overlay') s.overlayClients++;
+        if (role === 'overlay') {
+          s.overlayClients++;
+          s.overlayChanged();
+        }
         off = s.onDisplay((state) => send({ type: 'display', state }));
         const revoke = () => {
           if (role !== 'overlay') return;
@@ -585,7 +590,10 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
       clearTimeout(authTimer);
       if (off) {
         off();
-        if (role === 'overlay') s.overlayClients = Math.max(0, s.overlayClients - 1);
+        if (role === 'overlay') {
+          s.overlayClients = Math.max(0, s.overlayClients - 1);
+          s.overlayChanged();
+        }
       }
       offRevoke?.();
     });
