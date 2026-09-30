@@ -7,6 +7,9 @@ import { buildApp, normalizeBase, stripBase } from '../../src/server/app';
 import { CommandResolver } from '../../src/server/commands/reducer';
 import { Session } from '../../src/server/sessions';
 import { fullCorpus } from '../helpers';
+import { CreditStore } from '../../src/server/billing/credits';
+import { SessionHub } from '../../src/server/billing/hub';
+import { VisitorIdentity } from '../../src/server/billing/identity';
 
 describe('base path helpers', () => {
   it('normalizes and strips', () => {
@@ -64,3 +67,31 @@ describe.skipIf(!existsSync('dist/web/index.html'))('serving under /quran-reader
     expect(await status('evil.example')).toBe(421);
   });
 });
+
+describe('the visitor cookie under a base path', () => {
+  it('is scoped to the app, so the rest of the site never receives it', async () => {
+    const { corpus, ix } = fullCorpus();
+    const resolver = new CommandResolver(corpus, null, null);
+    const credits = new CreditStore(':memory:');
+    const hub = new SessionHub(() => new Session({ corpus, ix, resolver, decisionClient: null, mode: 'deterministic', setup: { soniox: false, jev: { provider: null, configured: false, detail: '' }, semantic: () => '' }, overlayUrl: (v) => v }));
+    const port = 46700 + Math.floor(Math.random() * 300);
+    const { app } = await buildApp({ basePath: '/quran-reader', port, hosted: { hub, credits, identity: new VisitorIdentity(Buffer.alloc(48, 3)) } });
+    await app.listen({ host: '127.0.0.1', port });
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/quran-reader/api/me`, { headers: { origin: `http://127.0.0.1:${port}` } });
+      expect(r.headers.get('set-cookie')).toMatch(/qo_visitor=[^;]+;.*Path=\/quran-reader;/);
+      // A returning visitor whose cookie was issued site-wide keeps the same identity under the
+      // app's path, and the site-wide copy is expired.
+      const cookie = r.headers.get('set-cookie')!.split(';')[0];
+      const again = await fetch(`http://127.0.0.1:${port}/quran-reader/api/me`, { headers: { origin: `http://127.0.0.1:${port}`, cookie } });
+      const set = again.headers.getSetCookie();
+      expect(set.find((c) => c.includes('Path=/quran-reader'))).toMatch(new RegExp(`^${cookie.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')};`));
+      expect(set.find((c) => /Path=\/;/.test(c))).toMatch(/^qo_visitor=;.*Max-Age=0/);
+    } finally {
+      await app.close();
+      await new Promise((res) => setTimeout(res, 100));
+      credits.close();
+    }
+  });
+});
+

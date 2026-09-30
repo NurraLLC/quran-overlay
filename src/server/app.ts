@@ -161,6 +161,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   const ownerToken = o.ownerToken ?? randomBytes(24).toString('base64url');
   const ownerCookie = randomBytes(24).toString('base64url');
   const host = o.host ?? '127.0.0.1';
+  const base = normalizeBase(o.basePath);
   const allowedHosts = new Set([`127.0.0.1:${o.port}`, `localhost:${o.port}`, `[::1]:${o.port}`]);
   const allowedOrigins = new Set([...allowedHosts].map((h) => `http://${h}`));
   for (const d of [...(o.devOrigins ?? []), ...(o.hosted?.publicOrigin ? [o.hosted.publicOrigin] : [])]) {
@@ -170,7 +171,8 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   for (const h of o.extraHosts ?? []) if (h.trim()) allowedHosts.add(h.trim().toLowerCase());
   const hosted = o.hosted ?? null;
   const secureCookie = !!hosted?.publicOrigin?.startsWith('https:');
-  const visitorCookie = (value: string) => `${VISITOR_COOKIE}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000${secureCookie ? '; Secure' : ''}`;
+  // Scoped to the app's own path: under nurra.org/quran-reader it is never sent to the rest of the site.
+  const visitorCookie = (value: string) => `${VISITOR_COOKIE}=${value}; HttpOnly; SameSite=Lax; Path=${base || '/'}; Max-Age=31536000${secureCookie ? '; Secure' : ''}`;
   // Local: one owner. Hosted: per visitor, so one busy minute for others never refuses anyone's mic.
   const keyLimit = new RateLimit(10, 60_000);
   const visitorKeyLimit = new KeyedRateLimit(10, 60_000);
@@ -185,7 +187,6 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   const exchangeLimit = new RateLimit(20, 60_000);
 
   // Request logging stays off: URLs could carry capabilities in misconfigured clients.
-  const base = normalizeBase(o.basePath);
   const app = Fastify({
     logger: false,
     bodyLimit: 16_384,
@@ -295,6 +296,11 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
       const v = hosted.identity.issue();
       id = v.id;
       reply.header('Set-Cookie', visitorCookie(v.cookie));
+    } else if (base) {
+      // Cookies issued before the path was scoped went to all of the parent site (Path=/). The same
+      // identity moves under the app's path and the site-wide copy is expired, so a returning
+      // visitor keeps their place and listening share while the rest of the site stops receiving it.
+      reply.header('Set-Cookie', [visitorCookie(readCookie(req, VISITOR_COOKIE)!), `${VISITOR_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secureCookie ? '; Secure' : ''}`]);
     }
     lastIp.set(id, clientIp(req));
     return {
@@ -359,7 +365,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     if (!exchangeLimit.take()) return reply.code(429).send({ error: 'rate' });
     const token = (req.body as { token?: unknown } | undefined)?.token;
     if (typeof token !== 'string' || !safeEqual(token, ownerToken)) return reply.code(401).send({ error: 'invalid owner link' });
-    reply.header('Set-Cookie', `${COOKIE}=${ownerCookie}; HttpOnly; SameSite=Strict; Path=/`);
+    reply.header('Set-Cookie', `${COOKIE}=${ownerCookie}; HttpOnly; SameSite=Strict; Path=${base || '/'}`);
     return { ok: true };
   });
 

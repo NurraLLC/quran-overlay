@@ -7,6 +7,11 @@ export default {
     const url = new URL(request.url);
     url.hostname = env.ORIGIN;
     const headers = new Headers(request.headers);
+    // Only the app's own cookies go to its server; nurra.org's other cookies (e.g. a signed-in
+    // session on the main site) stay with the main site.
+    const own = (request.headers.get('Cookie') ?? '').split(';').map((c) => c.trim()).filter((c) => /^qo_[a-z_]+=/.test(c));
+    if (own.length) headers.set('Cookie', own.join('; '));
+    else headers.delete('Cookie');
     // The visitor's real address, set here so a visitor cannot choose it (per-network daily limits).
     headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') ?? '');
     return fetch(new Request(url, { method: request.method, headers, body: request.body, redirect: 'manual' }));
