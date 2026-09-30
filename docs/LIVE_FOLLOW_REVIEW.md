@@ -69,3 +69,11 @@ The live display now keeps pace (`src/server/tracker/pace.ts`, `Session.followPa
 After, on the same nine sessions: on the word 61%, behind 13%, ahead 9%, a different ayah or no highlight 17% (mostly the first word of each new ayah); a word lights up p50 0.09 s, p90 0.66 s after it begins. The audio start in these captures is estimated (earliest delivery minus 0.6 s), so absolute timings are estimates; the before/after comparison is exact. Recorded sessions contain no voice-detector events, so waiting during breaths is covered by tests, not yet by a live measurement. New captures record the page's audio clock and voice events, so the next owner session can be replayed exactly.
 
 The page no longer shows what the recogniser heard: its spelling is not the Quran's, and the highlighted word is the proof that listening works. The server stopped sending it.
+
+Follow-up the same day:
+
+- Catching up by more than a word (a late report after a pause mark, a faster reciter) passes through the words between, 90 ms each, instead of jumping over them: forward jumps on the nine sessions 27 → 2, timing unchanged.
+- The remaining 17% of recitation time off the recited word is entirely the start of each new ayah (never an ayah on screen without a highlight). It is bounded by the recogniser reporting the new ayah's first letters ~0.75 s after they are spoken: a prototype that accepted two letters when the previous ayah had been heard to its end gained 1% and was not kept, since it could show a wrong ayah. Moving sooner would mean guessing the next ayah.
+- The 16 flip-backs in the owner captures are all one Ar-Rahman session in which the reciter went back from 55:45 to 55:24; the screen followed correctly.
+- Pages received a full control snapshot (~6 KB, with the display and static setup) for every recogniser result: ~42 KB/s on a phone while reciting. Display changes now go out at once in their own messages and later snapshots omit the display and unchanged setup: 7.7 KB/s measured on the local reader during simulated recitation.
+- The control page's speed meter timed words from when the recogniser reported them, so it would have called an on-time highlight 0.7 s late. The server now times each word from when it began to when it was first highlighted.
