@@ -14,12 +14,21 @@ type Options = {
   /** Server-owned injection points for local provider tests only. */
   endpoint?: string;
   idleLimitMs?: number;
+  /** The waiting line's HOLD_MS and OFFER_MS, shortened in tests. */
+  holdMs?: number;
+  offerMs?: number;
   /** People reciting at once (each costs tracker CPU); more wait for a free place. */
   maxStreams?: number;
   /** The server is overloaded right now: no new listening until it recovers. */
   busy?: () => boolean;
+  /** A place is free for this visitor, who is waiting in line: their page asks for it now. */
+  onTurn?: (id: string) => void;
+  /** This visitor has a page open (a waiting page whose timers the browser slows is still there). */
+  present?: (id: string) => boolean;
 };
 type Ticket = { value: string; expires: number; ip: string };
+/** Someone waiting to listen: last heard from, offered a place (when), and back after reciting. */
+type Waiting = { id: string; seen: number; offered: number | null; back: boolean };
 /**
  * Bytes a browser may send ahead, and the refill below (128 KB/s): WebM/Opus is ~4 KB/s and the
  * reader's PCM (Safari before 18.4 records only MP4, which the real-time API doesn't list) 32 KB/s,
@@ -37,6 +46,23 @@ export const DEFAULT_MAX_STREAMS = 60;
 const BUSY = 'Many people are reciting right now, so listening is full for the moment. Please try again in a minute. Reading, word meanings and translations work as usual.';
 const UNAVAILABLE = 'Listening is unavailable right now. Reading, word meanings and translations work as usual.';
 let balanceWarned = 0;
+/**
+ * The waiting line, when every place is taken: first come, first served. A waiting page asks again
+ * every 12 s, and at once when told a place is free for it; a place not taken in OFFER_MS goes to
+ * the next person (the first keeps their place in line). Someone not heard from in LINE_GONE_MS,
+ * with no page open, has left. A stream that closes keeps its place for HOLD_MS (the new stream
+ * after a long pause or a restart finds it); after that, for BACK_MS, its reciter goes to the front
+ * of the line: they were already reciting. When the recogniser refuses a stream (its limits are
+ * shared with other products), only the places it allowed are used for PROVIDER_FULL_MS.
+ */
+const OFFER_MS = 15_000;
+const LINE_GONE_MS = 40_000;
+const HOLD_MS = 20_000;
+const BACK_MS = 3 * 60_000;
+const PROVIDER_FULL_MS = 60_000;
+const MAX_LINE = 5000;
+/** A ticket is used at once (the page connects with it); unused, it keeps a place this long. */
+const TICKET_MS = 30_000;
 
 /** Hosted-only audio relay. No recording, no client-controlled provider options or credentials. */
 export class HostedSpeech {
@@ -44,10 +70,138 @@ export class HostedSpeech {
   private active = new Map<string, () => void>();
   private connections = new Set<() => void>();
   private pending = 0;
+  private line: Waiting[] = [];
+  /** Places kept for streams that just closed (visitor → until). */
+  private held = new Map<string, number>();
+  /** Reciters who go to the front of the line until then (their stream closed, or was refused). */
+  private back = new Map<string, number>();
+  private providerFull: { cap: number; until: number } | null = null;
+  private lineTimer: ReturnType<typeof setInterval> | null = null;
+  private offerTimer: ReturnType<typeof setTimeout> | null = null;
   constructor(private o: Options) {}
 
   private get maxStreams() {
     return this.o.maxStreams ?? DEFAULT_MAX_STREAMS;
+  }
+
+  /** People waiting in line to listen. */
+  get waiting() {
+    return this.line.length;
+  }
+
+  /** Places that may be used now: ours, or fewer while the recogniser says it is full. */
+  private capacity(now: number) {
+    if (this.providerFull && this.providerFull.until <= now) this.providerFull = null;
+    return this.providerFull ? Math.min(this.maxStreams, this.providerFull.cap) : this.maxStreams;
+  }
+
+  /** Drops unused tickets and lapsed kept places. */
+  private tidy(now: number) {
+    for (const [key, ticket] of this.tickets) if (ticket.expires < now) this.tickets.delete(key);
+    for (const [key, until] of this.held) if (until <= now || this.active.has(key)) this.held.delete(key);
+  }
+
+  /** Places in use: streams, unused tickets and kept places, apart from `id`'s own. */
+  private taken(id: string | null) {
+    const own = id === null ? 0 : (this.tickets.has(id) ? 1 : 0) + (this.held.has(id) ? 1 : 0);
+    return this.active.size + this.tickets.size + this.held.size - own;
+  }
+
+  /** Offered a place and did not come for it: passed over (still in line) so the next person gets it. */
+  private passed(w: Waiting, now: number) {
+    return w.offered !== null && now - w.offered > (this.o.offerMs ?? OFFER_MS);
+  }
+
+  /**
+   * How many people come before `id`: everyone ahead of where it stands in line (or would join),
+   * and anyone offered a free place and still on their way to it.
+   */
+  private ahead(id: string, now: number) {
+    const back = (this.back.get(id) ?? 0) > now;
+    let n = 0;
+    let reached = false;
+    for (const w of this.line) {
+      if (w.id === id) {
+        if (w.offered !== null && !this.passed(w, now)) return 0; // the place offered is theirs
+        reached = true;
+        continue;
+      }
+      if (back && !w.back) reached = true;
+      if (w.offered !== null ? !this.passed(w, now) : !reached) n++;
+    }
+    return n;
+  }
+
+  /** Joins the line or stays in it; returns the place in it (1: next), or 0 when the line is full. */
+  private join(id: string, now: number) {
+    let w = this.line.find((x) => x.id === id);
+    if (!w) {
+      if (this.line.length >= MAX_LINE) return 0;
+      const back = (this.back.get(id) ?? 0) > now;
+      const at = back ? this.line.findIndex((x) => !x.back) : -1;
+      w = { id, seen: now, offered: null, back };
+      this.line.splice(at < 0 ? this.line.length : at, 0, w);
+      this.watchLine();
+    }
+    w.seen = now;
+    if (this.passed(w, now)) w.offered = null; // missed a turn but still here: in the running again
+    return this.ahead(id, now) + 1;
+  }
+
+  /** Leave the line (the page stopped listening). */
+  leave(id: string) {
+    const at = this.line.findIndex((w) => w.id === id);
+    if (at < 0) return;
+    this.line.splice(at, 1);
+    this.offerSoon();
+  }
+
+  private watchLine() {
+    if (this.lineTimer) return;
+    // While anyone waits: let go of those who left, and offer places as they free up.
+    this.lineTimer = setInterval(() => {
+      const now = Date.now();
+      this.line = this.line.filter((w) => now - w.seen < LINE_GONE_MS || this.o.present?.(w.id));
+      for (const [key, until] of this.back) if (until <= now) this.back.delete(key);
+      if (this.line.length) return this.offer(now);
+      clearInterval(this.lineTimer!);
+      this.lineTimer = null;
+    }, 5000);
+    this.lineTimer.unref?.();
+  }
+
+  private offerSoon() {
+    if (this.offerTimer || !this.line.length) return;
+    this.offerTimer = setTimeout(() => {
+      this.offerTimer = null;
+      this.offer(Date.now());
+    }, 100);
+    this.offerTimer.unref?.();
+  }
+
+  /** Tells the first people in line, as many as there are free places not yet offered, that a place is theirs. */
+  private offer(now: number) {
+    if (!this.line.length || this.o.busy?.()) return;
+    this.tidy(now);
+    let free = this.capacity(now) - this.taken(null);
+    for (const w of this.line) if (w.offered !== null && !this.passed(w, now)) free--;
+    for (const w of this.line) {
+      if (free <= 0) break;
+      if (w.offered !== null) continue; // on their way, or passed over (in the running again when they ask)
+      w.offered = now;
+      free--;
+      this.o.onTurn?.(w.id);
+    }
+  }
+
+  /**
+   * The recogniser refused a new stream (too many at once, or too many starts; its limits are
+   * shared with other products): use the places it allowed for a while, and this reciter is next.
+   */
+  private refused(id: string) {
+    const now = Date.now();
+    this.providerFull = { cap: this.active.size - (this.active.has(id) ? 1 : 0), until: now + PROVIDER_FULL_MS };
+    this.back.set(id, now + BACK_MS);
   }
 
   /** People reciting through the relay now. */
@@ -62,15 +216,26 @@ export class HostedSpeech {
 
   issue(id: string, ip: string) {
     const now = Date.now();
-    for (const [key, ticket] of this.tickets) if (ticket.expires < now) this.tickets.delete(key);
+    this.tidy(now);
     const safety = this.o.safety.status(id, ip, now);
     if (safety.retryAfter) return { error: 'LISTENING_COOLDOWN', retryAfter: safety.retryAfter };
     if (!this.o.apiKey) return { error: 'NOT_CONFIGURED' };
     if (this.tickets.size >= 5000 && !this.tickets.has(id)) return { error: 'SERVICE_BUSY' };
-    if ((this.active.size >= this.maxStreams && !this.active.has(id)) || this.o.busy?.()) return { error: 'LISTENING_BUSY' };
     const balance = this.o.credits.balance(id, ip, now);
     if (balance.available < this.o.credits.cfg.holdMinSeconds) return { error: 'NO_CREDITS', limitedBy: balance.limitedBy, renewsAt: balance.renewsAt };
-    const ticket = { value: randomBytes(24).toString('base64url'), expires: now + 60_000, ip };
+    // Every place taken: wait in line. A stream open, a ticket not yet used or a place kept is the
+    // visitor's own; otherwise a free place goes to whoever is first.
+    if (!this.active.has(id) && !this.tickets.has(id) && !this.held.has(id)) {
+      const free = this.o.busy?.() ? 0 : this.capacity(now) - this.taken(id);
+      if (this.ahead(id, now) >= free) {
+        const position = this.join(id, now);
+        return position ? { error: 'LISTENING_BUSY', position } : { error: 'LISTENING_BUSY' };
+      }
+      this.leave(id);
+    }
+    this.held.delete(id);
+    this.back.delete(id);
+    const ticket = { value: randomBytes(24).toString('base64url'), expires: now + TICKET_MS, ip };
     this.tickets.set(id, ticket);
     // This is a single-use relay ticket, not a Soniox credential.
     return { api_key: ticket.value, expires_at: new Date(ticket.expires).toISOString() };
@@ -110,7 +275,19 @@ export class HostedSpeech {
           this.o.safety.record(id, ip, now - (lastRecitation || connectedAt), heardRecitation, now);
         } else this.o.credits.release(holdId);
       }
-      if (this.active.get(id) === end) this.active.delete(id);
+      if (this.active.get(id) === end) {
+        this.active.delete(id);
+        // A long pause (the page closes its stream) or a restart: the next stream finds its place kept.
+        if (connectedAt && kind !== 'listening_cooldown' && !this.tickets.has(id)) {
+          const now = Date.now();
+          const holdMs = this.o.holdMs ?? HOLD_MS;
+          this.held.set(id, now + holdMs);
+          this.back.set(id, now + BACK_MS);
+          // Not back by then: the place goes to whoever is first in line.
+          setTimeout(() => this.offerSoon(), holdMs + 1).unref?.();
+        }
+        this.offerSoon();
+      }
       if (!validated) this.pending--;
       this.connections.delete(end);
       queue = []; queuedBytes = 0;
@@ -143,7 +320,11 @@ export class HostedSpeech {
         if (!config || !ticket || config.api_key !== ticket.value || ticket.ip !== ip || ticket.expires < now) return end('Please start listening again.');
         this.tickets.delete(id);
         if (this.active.has(id)) return end('Listening is already open on another page. Stop it there first.');
-        if (this.active.size >= this.maxStreams || this.o.busy?.()) return end(BUSY, 'listening_busy');
+        if (this.active.size >= this.capacity(now) || this.o.busy?.()) {
+          this.back.set(id, now + BACK_MS); // let in, then full after all: next in line
+          return end(BUSY, 'listening_busy');
+        }
+        this.held.delete(id);
         const safety = this.o.safety.status(id, ip, now);
         if (safety.retryAfter) return end('Listening is taking a short break. Please try again in five minutes.', 'listening_cooldown');
         previousIdle = safety.idleMs;
@@ -187,7 +368,10 @@ export class HostedSpeech {
               // The recogniser's own limits: too many people at once, or its balance ran out. It
               // refused the stream, so nothing is charged: the time set aside goes back.
               if (result.error_code === 429 || result.error_type === 'limit_exceeded' || result.error_code === 402 || result.error_type === 'organization_balance_exhausted') connectedAt = 0;
-              if (result.error_code === 429 || result.error_type === 'limit_exceeded') return end(BUSY, 'listening_busy');
+              if (result.error_code === 429 || result.error_type === 'limit_exceeded') {
+                this.refused(id);
+                return end(BUSY, 'listening_busy');
+              }
               if (result.error_code === 402 || result.error_type === 'organization_balance_exhausted') {
                 if (Date.now() - balanceWarned > 60_000) {
                   balanceWarned = Date.now();
@@ -211,7 +395,12 @@ export class HostedSpeech {
               }
             } catch { end('Listening returned an invalid response. Please try again.'); }
           });
-        }).catch((e) => { clearTimeout(setup); end(e instanceof SonioxKeyError && e.code === 'RATE_LIMITED' ? BUSY : 'Listening could not connect. Please try again.', e instanceof SonioxKeyError && e.code === 'RATE_LIMITED' ? 'listening_busy' : 'listening_paused'); });
+        }).catch((e) => {
+          clearTimeout(setup);
+          if (!(e instanceof SonioxKeyError && e.code === 'RATE_LIMITED')) return end('Listening could not connect. Please try again.');
+          this.refused(id);
+          end(BUSY, 'listening_busy');
+        });
         return;
       }
       if (!binary) {
@@ -233,5 +422,12 @@ export class HostedSpeech {
       }
     });
   }
-  close() { for (const stop of this.connections) stop(); this.tickets.clear(); }
+  close() {
+    for (const stop of this.connections) stop();
+    this.tickets.clear();
+    this.line = [];
+    if (this.lineTimer) clearInterval(this.lineTimer);
+    if (this.offerTimer) clearTimeout(this.offerTimer);
+    this.lineTimer = this.offerTimer = null;
+  }
 }

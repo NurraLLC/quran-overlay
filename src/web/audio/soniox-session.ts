@@ -15,7 +15,7 @@ import {listeningConsent} from './consent';
 const PROACTIVE_RESTART_MS = 175 * 60 * 1000;
 const FINALIZE_WAIT_MS = 2500;
 
-export type CaptureStatus = { state: 'off' | 'starting' | 'recording' | 'reconnecting' | 'dozing' | 'error'; detail: string | null };
+export type CaptureStatus = { state: 'off' | 'starting' | 'recording' | 'reconnecting' | 'dozing' | 'waiting' | 'error'; detail: string | null };
 type CaptureEvent = Extract<ControlClientMessage, { type: 'capture' }>['event'];
 
 /** A phone or tablet: its screen turns off, it suspends hidden pages, and it has no "computer" or other programs to close. */
@@ -115,6 +115,25 @@ const BUSY = 'Many people are reciting right now, so listening is full for the m
 const TAP_TO_CONTINUE = 'Listening paused while the screen was off. Tap anywhere to continue.';
 const TAP_TO_LISTEN = 'Tap anywhere to start listening.';
 const STOPPED_OFF_SCREEN = 'Listening stopped while the screen was off. Start again when you are ready.';
+/**
+ * Waiting in line (every place to listen is taken): the page asks again this often, and at once
+ * when the server says a place is free. An ask with no answer this long is dropped and made again.
+ */
+const LINE_ASK_MS = 12_000;
+const LINE_ASK_TIMEOUT_MS = 20_000;
+const YOUR_TURN = 'It’s your turn. Recite when you’re ready.';
+
+function ordinal(n: number) {
+  const tens = n % 100;
+  return `${n}${tens >= 11 && tens <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][n % 10] ?? 'th')}`;
+}
+
+/** Said while waiting in line: where the reciter stands, and that listening starts by itself. */
+export function lineText(position: number | null) {
+  if (position === 1) return 'Many people are reciting right now. You’re next, and listening starts by itself in a moment.';
+  const place = position === null ? 'You’re in line' : `You’re ${ordinal(position)} in line`;
+  return `Many people are reciting right now. ${place}, and listening starts by itself when it’s your turn.`;
+}
 /** How long a notice stays (it also clears once recitation is heard again). */
 const NOTICE_MS = 8_000;
 /**
@@ -208,6 +227,14 @@ export class SonioxCapture {
   /** A short explanation shown while listening goes on (e.g. after the screen was off). */
   private notice: string | null = null;
   private noticeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Waiting in line for a place to listen: where (null: not yet known). */
+  private line: { position: number | null } | null = null;
+  private lineTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The server's answer to this ask was "in line" (at this place); read by the stream's error. */
+  private lineAnswer: number | null | undefined = undefined;
+  /** Told a place is free while an ask was under way: ask again right after its answer. */
+  private turnPending = false;
+  private askedAt = 0;
 
   constructor(
     private readonly send: (m: ControlClientMessage) => void,
@@ -255,7 +282,18 @@ export class SonioxCapture {
       config: async () => {
         const res = await fetch(u('/api/soniox/temporary-key'), { method: 'POST', credentials: 'same-origin' });
         if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as { error?: string; limitedBy?: string | null; renewsAt?: number; retryAfter?: number };
+          const body = (await res.json().catch(() => ({}))) as { error?: string; limitedBy?: string | null; renewsAt?: number; retryAfter?: number; position?: number };
+          // Every place to listen is taken: wait in line. (A spoken request, or a line too long to
+          // join, is asked to try again later.)
+          if (body.error === 'LISTENING_BUSY' && typeof body.position === 'number' && !this.commandOnly) {
+            this.lineAnswer = body.position;
+            throw new Error('In line to listen');
+          }
+          // Asked too often while waiting (a few asks a minute are allowed): the place stays.
+          if (body.error === 'RATE_LIMITED' && this.line) {
+            this.lineAnswer = this.line.position;
+            throw new Error('In line to listen');
+          }
           if (body.error === 'LISTENING_BUSY') {
             this.noCredits = BUSY;
             throw new Error(this.noCredits);
@@ -333,6 +371,7 @@ export class SonioxCapture {
         // Back on screen but not yet recovered (the event can come after overdue timers): recover
         // first, since the time away is not the reciter's silence.
         if (this.awaySince !== null && !this.tapWaiter && document.visibilityState === 'visible') return void this.recover();
+        if (this.line) return; // not listened to yet: the idle clock starts with the stream
         const limit = this.dozing ? DOZE_IDLE_STOP_MS : IDLE_STOP_MS;
         if (performance.now() - this.lastArabicAt < limit) return;
         const offScreen = this.awaySince !== null;
@@ -424,6 +463,7 @@ export class SonioxCapture {
         this.mic.close();
         this.mic = mic;
         this.awaySince = null;
+        if (this.line) return this.askAgain();
         if (!this.dozing) void this.restart();
         return this.tell(BACK_ON_SCREEN);
       }
@@ -434,6 +474,7 @@ export class SonioxCapture {
       if (!this.listening) return;
       this.awaySince = null;
       if (this.notice === TAP_TO_CONTINUE || this.notice === TAP_TO_LISTEN) this.clearNotice();
+      if (this.line) return this.askAgain(); // waiting in line: the place may have come meanwhile
       if (this.dozing) return; // nothing was streaming; the voice detector hears the voice return
       const rec = this.recording;
       const answered = this.lastResultAt > 0 && performance.now() - this.lastResultAt < 2_000;
@@ -481,7 +522,7 @@ export class SonioxCapture {
     this.noticeTimer = null;
     const text = this.notice;
     this.notice = null;
-    if (this.active && text && this.status.detail === text) this.setStatus({ ...this.status, detail: null });
+    if (this.active && text && this.status.detail === text) this.setStatus({ ...this.status, detail: this.line ? lineText(this.line.position) : null });
   }
 
   /** A provider stream on the open microphone (its own key and container header). */
@@ -535,6 +576,9 @@ export class SonioxCapture {
     rec.on('state_change', ({ new_state }) => {
       if (this.recording !== rec || this.stopping) return;
       if (new_state === 'recording') {
+        // "Recording" here only means the socket opened: out of the line once the recogniser
+        // answers (it may still refuse the stream), or after a moment without a refusal.
+        if (this.line) return this.confirmTurn(rec);
         this.setStatus({ state: 'recording', detail: this.notice });
         if (!this.commandOnly) this.capture(this.epoch, 'recording');
       } else if (new_state === 'reconnecting') {
@@ -546,9 +590,18 @@ export class SonioxCapture {
     rec.on('source_unmuted', () => !this.commandOnly && this.capture(this.epoch, 'unmuted'));
     rec.on('error', (e) => {
       if (this.recording !== rec || this.stopping) return;
+      // Every place taken: wait in line. Refused by the relay itself (let in, then full after all),
+      // this page is first in line: it asks again shortly to learn so.
+      const refusal = (e as { raw?: { error_type?: unknown } })?.raw?.error_type;
+      if (this.lineAnswer !== undefined || (refusal === 'listening_busy' && !this.commandOnly)) {
+        const answered = this.lineAnswer !== undefined;
+        const position = this.lineAnswer ?? null;
+        this.lineAnswer = undefined;
+        this.waitInLine(position, answered ? LINE_ASK_MS : 2_000);
+        return;
+      }
       // Out of listening time: stop cleanly (the page keeps its place) and say why.
       // The relay's own refusals (listening full, or unavailable) are a clean stop with its words.
-      const refusal = (e as { raw?: { error_type?: unknown } })?.raw?.error_type;
       if (!this.noCredits && (refusal === 'listening_busy' || refusal === 'listening_unavailable')) this.noCredits = e instanceof Error ? e.message : BUSY;
       if (this.noCredits) {
         const detail = this.noCredits;
@@ -573,6 +626,66 @@ export class SonioxCapture {
     });
     if (!this.commandOnly) this.restartTimer = setTimeout(() => void this.restart(), PROACTIVE_RESTART_MS);
     void epoch;
+  }
+
+  // ---------- waiting in line ----------
+
+  /**
+   * Every place to listen is taken: wait in line. The microphone stays open and nothing is sent;
+   * the page asks again every LINE_ASK_MS (the answer says where it stands) and at once when the
+   * server says a place is free, and listening then starts by itself.
+   */
+  private waitInLine(position: number | null, askInMs: number) {
+    const entering = !this.line;
+    this.endStream();
+    this.dozing = false;
+    this.line = { position: position ?? this.line?.position ?? null };
+    this.setStatus({ state: 'waiting', detail: lineText(this.line.position) });
+    if (entering) this.capture(this.epoch, 'waiting');
+    if (this.lineTimer) clearTimeout(this.lineTimer);
+    const soon = this.turnPending;
+    this.turnPending = false;
+    this.lineTimer = setTimeout(() => this.askAgain(), soon ? 250 : askInMs);
+  }
+
+  /** Asks for a place: listening starts if one is free; otherwise the answer updates the place in line. */
+  private askAgain() {
+    if (!this.line || !this.listening || !this.mic) return;
+    if (this.recording && performance.now() - this.askedAt < LINE_ASK_TIMEOUT_MS) {
+      this.turnPending = true; // an ask is under way: ask again right after its answer
+      return;
+    }
+    if (this.lineTimer) clearTimeout(this.lineTimer);
+    this.endStream(); // an ask lost while the phone was asleep, if any
+    this.askedAt = performance.now();
+    this.nextEpoch(); // a stream of its own, announced to the server once it is open
+    this.openStream(this.epoch);
+    this.lineTimer = setTimeout(() => this.askAgain(), LINE_ASK_TIMEOUT_MS);
+  }
+
+  /** The server says a place is free for this page, which is waiting in line. */
+  onTurn() {
+    if (this.line) this.askAgain();
+  }
+
+  private confirmTurn(rec: Recording) {
+    if (this.lineTimer) clearTimeout(this.lineTimer);
+    this.lineTimer = setTimeout(() => {
+      if (this.recording === rec) this.leaveLine();
+    }, 2000);
+  }
+
+  /** A place was free and the recogniser took the stream: listening starts, and the reciter is told. */
+  private leaveLine() {
+    this.line = null;
+    if (this.lineTimer) clearTimeout(this.lineTimer);
+    this.lineTimer = null;
+    this.turnPending = false;
+    this.lastArabicAt = performance.now();
+    this.capture(this.epoch, 'starting');
+    this.capture(this.epoch, 'recording');
+    this.setStatus({ state: 'recording', detail: this.notice });
+    this.tell(YOUR_TURN);
   }
 
   // ---------- silence skipper ----------
@@ -616,6 +729,7 @@ export class SonioxCapture {
 
   private onResult(r: RealtimeResult, epoch: number) {
     if (this.stopping || epoch !== this.epoch) return; // late results after Stop never resume the overlay
+    if (this.line) this.leaveLine(); // the recogniser answered: the place is ours
     this.lastProcMs = r.total_audio_proc_ms;
     this.lastResultAt = performance.now();
     const tokens: WireToken[] = r.tokens.map((t) => ({
@@ -704,6 +818,11 @@ export class SonioxCapture {
     this.mic = null;
     this.active = false;
     this.dozing = false;
+    this.line = null;
+    if (this.lineTimer) clearTimeout(this.lineTimer);
+    this.lineTimer = null;
+    this.lineAnswer = undefined;
+    this.turnPending = false;
     this.awaySince = null;
     this.tapWaiter?.();
     if (this.noticeTimer) clearTimeout(this.noticeTimer);

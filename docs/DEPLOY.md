@@ -66,7 +66,7 @@ QO_HOSTED=1 QO_HOST=127.0.0.1 npm start
 | `QO_BASE_PATH` | no | Serve under a path of another site, e.g. `/quran-reader` |
 | `QO_EXTRA_HOSTS` | no | Extra Host names to accept, comma-separated: the name a proxy in front forwards to |
 | `QO_TRUST_PROXY` | `1` behind a proxy | Take the visitor address from `X-Forwarded-For` (per-network daily share). Without it every visitor shares the proxy's address; the server warns once at the first proxied request |
-| `QO_MAX_LISTENERS` | no | People reciting at once (default 60). Keep it at or below your Soniox concurrency limit (10 unless raised in the Soniox Console) and what the server's CPU carries (see *Capacity*); beyond it people are asked to try again in a minute |
+| `QO_MAX_LISTENERS` | no | People reciting at once (default 60). Keep it at or below your Soniox concurrency limit (10 unless raised in the Soniox Console) and what the server's CPU carries (see *Capacity*); beyond it people wait in line, and listening starts by itself when a place frees |
 | `QO_HOST` | `0.0.0.0` in a container | Listen address (default loopback) |
 | `PORT` | no | Default 4317 |
 | `QO_SECRET` | no | Visitor-cookie signing secret (48+ random bytes); otherwise generated into the state volume |

@@ -1,5 +1,6 @@
-// At capacity: a full relay (or a recogniser at its own limit) asks people to wait a minute, returns
-// the listening time it had set aside, and never lets a page inject results without a stream.
+// At capacity: a full relay (or a recogniser at its own limit) puts people in line and tells their
+// page when a place frees, returns the listening time it had set aside, and never lets a page inject
+// results without a stream.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import type { FastifyInstance } from 'fastify';
@@ -35,7 +36,7 @@ beforeAll(async () => {
   hub = new SessionHub(() => new Session({ corpus, ix, resolver, decisionClient: null, mode: 'deterministic', setup: { soniox: true, jev: { provider: null, configured: false, detail: '' }, semantic: () => '' }, overlayUrl: (v) => v }));
   const mint = (async () => new Response(JSON.stringify({ api_key: 'temp', expires_at: new Date(Date.now() + 60_000).toISOString() }), { status: 201 })) as unknown as typeof fetch;
   const port = 47170 + Math.floor(Math.random() * 500);
-  ({ app } = await buildApp({ port, sonioxApiKey: 'server-key', fetchImpl: mint, speechEndpoint: `ws://127.0.0.1:${(provider.address() as { port: number }).port}`, hosted: { hub, credits, identity, maxListeners: 1 } }));
+  ({ app } = await buildApp({ port, sonioxApiKey: 'server-key', fetchImpl: mint, speechHoldMs: 50, speechEndpoint: `ws://127.0.0.1:${(provider.address() as { port: number }).port}`, hosted: { hub, credits, identity, maxListeners: 1 } }));
   await app.listen({ host: '127.0.0.1', port });
   base = `http://127.0.0.1:${port}`;
 });
@@ -68,15 +69,52 @@ async function relay(cookie: string) {
   return { ws, frames, closed };
 }
 
+const page = async (cookie: string) => {
+  const ws = new WebSocket(`${base.replace('http', 'ws')}/ws/control`, { headers: { origin: base, cookie } });
+  const told: string[] = [];
+  ws.on('message', (d) => told.push(JSON.parse(String(d)).type));
+  await new Promise<void>((r) => ws.on('open', () => r()));
+  return { ws, told };
+};
+const settle = async () => {
+  await until(() => provider.clients.size === 0);
+  await new Promise((r) => setTimeout(r, 150)); // closed streams' kept places lapse
+};
+
 describe('listening at capacity', () => {
-  it('asks the next person to wait while the relay is full', async () => {
+  it('puts the next person in line while the relay is full, and tells their page when a place frees', async () => {
     const a = await relay(await visit());
     await until(() => provider.clients.size === 1);
-    const res = await ticket(await visit());
+    const cookie = await visit();
+    const b = await page(cookie);
+    const res = await ticket(cookie);
     expect(res.status).toBe(429);
-    expect(((await res.json()) as { error: string }).error).toBe('LISTENING_BUSY');
+    expect(await res.json()).toEqual({ error: 'LISTENING_BUSY', position: 1 });
     a.ws.close();
-    await until(() => provider.clients.size === 0);
+    await until(() => b.told.includes('listen_turn'));
+    const stream = await relay(cookie); // the place is theirs
+    await until(() => provider.clients.size === 1);
+    stream.ws.close();
+    b.ws.close();
+    await settle();
+  });
+
+  it('lets a page that stops waiting leave the line at once', async () => {
+    const a = await relay(await visit());
+    await until(() => provider.clients.size === 1);
+    const first = await visit();
+    const b = await page(first);
+    expect(((await (await ticket(first)).json()) as { position: number }).position).toBe(1);
+    const second = await visit();
+    expect(((await (await ticket(second)).json()) as { position: number }).position).toBe(2);
+    b.ws.send(JSON.stringify({ type: 'capture', captureEpoch: 1, event: 'stopped' }));
+    await new Promise((r) => setTimeout(r, 200)); // the message reaches the server
+    expect(((await (await ticket(second)).json()) as { position: number }).position).toBe(1);
+    a.ws.close();
+    b.ws.close();
+    await settle();
+    await relay(second).then((s) => s.ws.close()); // leave nothing held for the next test
+    await settle();
   });
 
   it('turns the recogniser’s own limit into a wait, and returns the time set aside', async () => {

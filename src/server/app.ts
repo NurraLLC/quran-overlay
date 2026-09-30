@@ -74,6 +74,8 @@ export type AppOptions = {
   /** Server-owned local test provider; never set from a browser request. */
   speechEndpoint?: string;
   speechIdleMs?: number;
+  /** How long a closed stream keeps its place in the waiting line (shortened in tests). */
+  speechHoldMs?: number;
 };
 
 const COOKIE = 'qo_owner';
@@ -268,8 +270,10 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     });
   }
   const speech = hosted ? new HostedSpeech({ credits: hosted.credits, safety: safety!, apiKey: o.sonioxApiKey, fetchImpl: o.fetchImpl,
-    isRecitation: hosted.isRecitation ?? (() => false), onSettled: pushCredits, endpoint: o.speechEndpoint, idleLimitMs: o.speechIdleMs,
-    maxStreams: hosted.maxListeners, busy: () => overloaded }) : null;
+    isRecitation: hosted.isRecitation ?? (() => false), onSettled: pushCredits, endpoint: o.speechEndpoint, idleLimitMs: o.speechIdleMs, holdMs: o.speechHoldMs,
+    maxStreams: hosted.maxListeners, busy: () => overloaded,
+    // The waiting line: a free place is announced on the visitor's pages, and a page still open keeps its place.
+    onTurn: (id) => hosted.hub.peek(id)?.notify({ type: 'listen_turn' }), present: (id) => controlSockets.has(id) }) : null;
   app.addHook('preClose', async () => speech?.close());
   app.addHook('onClose', async () => safety?.close());
   const requireOwner = (req: FastifyRequest, reply: FastifyReply) => {
@@ -499,7 +503,9 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
         // One bad message never takes the server (and everyone's listening) down.
         console.error('Control message failed:', e instanceof Error ? e.message : e);
       }
-      // Client capture messages control the display only. The audio relay owns settlement.
+      // Client capture messages control the display only. The audio relay owns settlement. A page
+      // that stops listening leaves the waiting line at once, so the next person is not held up.
+      if (visitorId && m.type === 'capture' && (m.event === 'stopped' || m.event === 'error')) speech?.leave(visitorId);
     });
     socket.on('close', () => {
       off();

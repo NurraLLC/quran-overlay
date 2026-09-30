@@ -152,7 +152,8 @@ export const ControlClientMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('capture'),
     captureEpoch: z.number().int().positive(),
     // 'dozing': the silence skipper closed the provider stream during a long pause; listening is on.
-    event: z.enum(['starting', 'recording', 'reconnecting', 'dozing', 'stopped', 'error', 'muted', 'unmuted']),
+    // 'waiting': every place to listen is taken; the page is in line and starts by itself.
+    event: z.enum(['starting', 'recording', 'reconnecting', 'dozing', 'waiting', 'stopped', 'error', 'muted', 'unmuted']),
     detail: z.string().max(240).optional(),
   }),
   z.object({ type: z.literal('nav'), action: z.enum(['next', 'prev']) }),
@@ -235,8 +236,8 @@ export type CreditView = {
   listeningSeconds: number;
 };
 
-export type CapturePhase = 'off' | 'starting' | 'recording' | 'reconnecting' | 'dozing' | 'stopped' | 'error' | 'disconnected';
-export type TrackerPhase = 'idle' | 'listening_unlocated' | 'tracking' | 'uncertain' | 'dozing' | 'held' | 'stopped' | 'disconnected' | 'error';
+export type CapturePhase = 'off' | 'starting' | 'recording' | 'reconnecting' | 'dozing' | 'waiting' | 'stopped' | 'error' | 'disconnected';
+export type TrackerPhase = 'idle' | 'listening_unlocated' | 'tracking' | 'uncertain' | 'dozing' | 'waiting' | 'held' | 'stopped' | 'disconnected' | 'error';
 
 export type CandidateView = { key: string; score: number; relation: string; matched: number; trailing: number };
 
@@ -307,4 +308,6 @@ export type ControlServerMessage =
   | { type: 'display'; state: DisplayState }
   | { type: 'command_pending'; requestId: string }
   | { type: 'command_result'; requestId: string; result: CommandResult }
-  | { type: 'credits'; credits: CreditView };
+  | { type: 'credits'; credits: CreditView }
+  /** This page is waiting in line to listen and a place is free for it now. */
+  | { type: 'listen_turn' };

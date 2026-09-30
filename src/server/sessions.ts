@@ -511,7 +511,7 @@ export class Session {
 
   private onTranscript(msg: Extract<ControlClientMessage, { type: 'transcript' }>) {
     if (msg.captureEpoch !== this.capture.captureEpoch) return; // an old stream can never apply
-    if (this.capture.phase === 'stopped' || this.capture.phase === 'off' || this.capture.phase === 'dozing') return; // late results after Stop
+    if (this.capture.phase === 'stopped' || this.capture.phase === 'off' || this.capture.phase === 'dozing' || this.capture.phase === 'waiting') return; // late results after Stop
     if (msg.seq <= this.lastSeq) return; // duplicate delivery
     this.lastSeq = msg.seq;
     // Far beyond any stream (a provider stream lasts at most three hours): the page is misbehaving.
@@ -747,12 +747,12 @@ export class Session {
     }
     this.cancelDisconnect();
     const phase: CapturePhase =
-      msg.event === 'starting' ? 'starting' : msg.event === 'recording' || msg.event === 'unmuted' || msg.event === 'muted' ? 'recording' : msg.event === 'reconnecting' ? 'reconnecting' : msg.event === 'dozing' ? 'dozing' : msg.event === 'stopped' ? 'stopped' : 'error';
+      msg.event === 'starting' ? 'starting' : msg.event === 'recording' || msg.event === 'unmuted' || msg.event === 'muted' ? 'recording' : msg.event === 'reconnecting' ? 'reconnecting' : msg.event === 'dozing' ? 'dozing' : msg.event === 'waiting' ? 'waiting' : msg.event === 'stopped' ? 'stopped' : 'error';
     this.capture = { ...this.capture, phase, detail: msg.detail ?? (msg.event === 'muted' ? 'Microphone muted at the system or device level.' : null), since: now };
     this.logEvent(`capture:${msg.event}`, null, msg.detail);
-    // Dozing (a long pause closed the provider stream) ends the stream like Stop, but listening is
-    // still on and the next stream continues from the same place.
-    if (msg.event === 'stopped' || msg.event === 'dozing') {
+    // Dozing (a long pause closed the provider stream) and waiting in line end the stream like
+    // Stop, but listening is still on and the next stream continues from the same place.
+    if (msg.event === 'stopped' || msg.event === 'dozing' || msg.event === 'waiting') {
       this.listeningCommands.cancel();
       if (this.latestCommand?.id.startsWith('listen:')) this.latestCommand.ctrl.abort();
       this.follower.stop();
@@ -946,6 +946,7 @@ export class Session {
     if (c === 'off') return 'idle';
     if (c === 'stopped') return 'stopped';
     if (c === 'dozing') return 'dozing';
+    if (c === 'waiting') return 'waiting';
     if (this.liveVerse !== null && this.cursor) return 'tracking';
     const p = this.follower.engine.phase;
     return p === 'unlocated' ? 'listening_unlocated' : p;

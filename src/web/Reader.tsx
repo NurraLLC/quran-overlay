@@ -153,6 +153,7 @@ export function Reader() {
             if (m.type === 'snapshot') setSnap((prev) => applySnapshot(prev, m.snapshot));
             else if (m.type === 'display') setSnap((prev) => applyDisplay(prev, m.state));
             else if (m.type === 'credits') setCredits(m.credits);
+            else if (m.type === 'listen_turn') capRef.current?.onTurn(); // waiting in line: a place is free
             else if (m.type === 'command_pending') {
               if (m.requestId.startsWith('listen:')) lastRequest.current = m.requestId;
               if (m.requestId === lastRequest.current) {
@@ -347,6 +348,8 @@ export function Reader() {
 
   const listening = cap.listening;
   const starting = capture.state === 'starting' || capture.state === 'reconnecting';
+  // In line for a place to listen: the microphone is open but nothing is heard yet, so no level ring.
+  const waiting = capture.state === 'waiting';
   const r = result?.r ?? null;
   const shownSurah = surah && cur && surah.number === cur.surah ? surah : null;
   const shownSurahForBar = shownSurah;
@@ -641,14 +644,14 @@ export function Reader() {
           <button className="r-kbd" onClick={() => setTyping((t) => !t)} aria-pressed={typing} aria-label="Type instead">
             <Keys />
           </button>
-          <div className="r-mic-wrap" ref={micWrap} data-live={listening || undefined}>
+          <div className="r-mic-wrap" ref={micWrap} data-live={(listening && !waiting) || undefined} data-waiting={waiting || undefined}>
             {/* The ring follows the microphone level: proof that it hears you, before any word appears. */}
             <span className="r-mic-ring" aria-hidden="true" />
             <button
-              className={`r-mic${listening ? ' live' : ''}${starting ? ' starting' : ''}`}
+              className={`r-mic${listening && !waiting ? ' live' : ''}${starting ? ' starting' : ''}${waiting ? ' waiting' : ''}`}
               onClick={() => (listening || starting ? cap.stop() : void cap.start(null))}
               disabled={!listening && !starting && (!snap.setup.soniox || connection !== 'open')}
-              aria-label={listening || starting ? 'Stop listening' : 'Start listening'}
+              aria-label={waiting ? 'Stop waiting to listen' : listening || starting ? 'Stop listening' : 'Start listening'}
             >
               {listening || starting ? <Stop /> : <Mic />}
             </button>

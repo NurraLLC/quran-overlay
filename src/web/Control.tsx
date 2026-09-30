@@ -45,6 +45,8 @@ function statusLine(s: ControlSnapshot): { tone: string; title: string; detail: 
               ? 'Still listening privately; the screen will not move until you resume.'
               : 'The screen will not move until you resume following.',
       };
+    case 'waiting':
+      return { tone: 'seeking', title: 'In line to listen', detail: `Many people are reciting right now. Listening starts by itself when it’s your turn.${key ? ` ${key} stays on screen.` : ''}` };
     case 'dozing':
       return { tone: 'following', title: 'Listening · waiting for you to recite', detail: `${key ? `${key} stays on screen. ` : ''}Nothing is sent while you are quiet; recite and it continues at once.` };
     case 'stopped':
@@ -134,6 +136,7 @@ export function Control() {
           onMessage: (data) => {
             const m = data as ControlServerMessage;
             if (m.type === 'credits') setCredits(m.credits);
+            else if (m.type === 'listen_turn') captureRef.current?.onTurn(); // waiting in line: a place is free
             else if (m.type === 'snapshot') {
               setSnap((prev) => applySnapshot(prev, m.snapshot));
               measureSpeed(m.snapshot.speed);
@@ -465,13 +468,13 @@ function VoiceCard(p: {
       {p.listening && (
         <div className="live-status" aria-live="polite">
           <span className="live-dot" aria-hidden />
-          <span className={following ? undefined : 'muted'}>{following ?? 'Listening…'}</span>
+          <span className={following ? undefined : 'muted'}>{following ?? (p.capture.state === 'waiting' ? 'In line to listen…' : 'Listening…')}</span>
         </div>
       )}
       <p className="hint">
         {starting
           ? 'Connecting the microphone…'
-          : p.capture.state === 'error'
+          : p.capture.state === 'error' || p.capture.state === 'waiting'
             ? p.capture.detail
             : p.capture.state === 'dozing'
               ? 'Waiting for you to recite. After a long pause the microphone stays on here but nothing is sent (listening is billed while a stream is open); recite and it continues at once.'

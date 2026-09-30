@@ -424,8 +424,14 @@ details.r-privacy p { text-align: left; margin: 8px 0 0 !important; font-size: 1
 .r-mic-wrap { position: relative; flex: none; --level: 0; }
 .r-mic-ring { position: absolute; inset: -7px; border-radius: 50%; border: 3px solid var(--follow); opacity: 0; transform: scale(1); pointer-events: none; transition: opacity 200ms ease; }
 .r-mic-wrap[data-live] .r-mic-ring { opacity: calc(0.25 + var(--level) * 0.75); transform: scale(calc(1 + var(--level) * 0.2)); }
+/* In line to listen: a slow dotted ring turns (nothing is heard yet, so it does not follow the voice). */
+.r-mic-wrap[data-waiting] .r-mic-ring { opacity: 0.55; border-style: dotted; animation: r-wait 8s linear infinite; }
+@keyframes r-wait { to { transform: rotate(360deg); } }
 .r-mic.live { animation: none; }
-@media (prefers-reduced-motion: reduce) { .r-mic-wrap[data-live] .r-mic-ring { transform: none; } .r-progress span { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .r-mic-wrap[data-live] .r-mic-ring { transform: none; } .r-mic-wrap[data-waiting] .r-mic-ring { animation: none; } .r-progress span { transition: none; } }
+/* A loud voice grows the ring up to 15 px past the button: the status beside it stays clear, and above its glow. */
+.r-mic-wrap { margin-right: 4px; }
+.r-status { position: relative; z-index: 1; }
 /* design pass, round 2 (after inspecting frames) */
 .r-welcome .r-iqra { color: var(--gold); text-shadow: 0 0 28px rgba(207, 170, 98, 0.18); }
 .r-dock { background: linear-gradient(180deg, rgba(10, 20, 24, 0) 0, var(--ink-0) 26px); }
