@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView, SearchCard } from '../shared/contracts';
 import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
-import { access, connect, formatListening, listeningLine, u } from './net';
+import { access, applyDisplay, applySnapshot, connect, formatListening, listeningLine, u } from './net';
 import { NurraBadge } from './Nurra';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { StageFrame, VerseDisplay, useFontsReady, type LayoutInfo } from './VerseDisplay';
@@ -84,35 +84,26 @@ export function Control() {
   }
   const cap = captureRef.current;
 
-  // Live speed meter: how far the screen trails the voice. Measured after the preview paints the
-  // change, against Soniox's audio clock (zero = first microphone chunk). Mic/driver input latency
-  // is not included, so real values are slightly higher.
+  // Live speed meter: how far the screen trails the voice, timed by the server against the
+  // recogniser's audio clock (zero = first microphone chunk). A word is timed from when it began,
+  // so a highlight that keeps pace reads near zero. Mic input, network and paint add a little.
   const [speedView, setSpeedView] = useState<{ ayah: number[]; word: number[]; last: number | null }>({ ayah: [], word: [], last: null });
   const lastSpeedRev = useRef(-1);
   // Diagnostic hook for the speed lab (scripts/speedlab): the audio clock's zero point.
   useEffect(() => {
     (window as unknown as { __qoAudioOrigin?: () => number | null }).__qoAudioOrigin = () => cap.audioOrigin;
   }, [cap]);
-  const measureSpeed = useCallback(
-    (sp: ControlSnapshot['speed']) => {
-      if (!sp || sp.revision === lastSpeedRev.current) return;
-      lastSpeedRev.current = sp.revision;
-      const origin = cap.audioOrigin;
-      if (origin === null || sp.captureEpoch !== cap.captureEpoch) return;
-      requestAnimationFrame(() =>
-        setTimeout(() => {
-          const lag = performance.now() - (origin + sp.heardEndMs);
-          if (lag < -500 || lag > 30000) return;
-          setSpeedView((v) => ({
-            ayah: sp.verseChanged ? [...v.ayah, lag].slice(-60) : v.ayah,
-            word: sp.verseChanged ? v.word : [...v.word, lag].slice(-120),
-            last: sp.verseChanged ? lag : v.last,
-          }));
-        }, 0),
-      );
-    },
-    [cap],
-  );
+  const measureSpeed = useCallback((sp: ControlSnapshot['speed']) => {
+    if (!sp || sp.revision === lastSpeedRev.current) return;
+    lastSpeedRev.current = sp.revision;
+    const lag = sp.lagMs;
+    if (lag < -3000 || lag > 30000) return;
+    setSpeedView((v) => ({
+      ayah: sp.verseChanged ? [...v.ayah, lag].slice(-60) : v.ayah,
+      word: sp.verseChanged ? v.word : [...v.word, lag].slice(-120),
+      last: sp.verseChanged ? lag : v.last,
+    }));
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.surface = 'control';
@@ -137,9 +128,9 @@ export function Control() {
             const m = data as ControlServerMessage;
             if (m.type === 'credits') setCredits(m.credits);
             else if (m.type === 'snapshot') {
-              setSnap(m.snapshot);
+              setSnap((prev) => applySnapshot(prev, m.snapshot));
               measureSpeed(m.snapshot.speed);
-            }
+            } else if (m.type === 'display') setSnap((prev) => applyDisplay(prev, m.state));
             else if (m.type === 'command_pending') {
               if (m.requestId.startsWith('listen:')) { lastRequest.current = m.requestId; setResult(null); }
               if (m.requestId === lastRequest.current) setPendingId(m.requestId);
@@ -627,7 +618,7 @@ const secs = (ms: number | null) => (ms === null ? '—' : `${Math.max(0, ms / 1
 function SpeedMeter({ view, listening }: { view: { ayah: number[]; word: number[]; last: number | null }; listening: boolean }) {
   if (!listening && !view.ayah.length && !view.word.length) return null;
   return (
-    <span className="speed" title="How far the screen trails your voice, measured after it paints. Microphone input latency is not included.">
+    <span className="speed" title="How far the screen trails your voice: a word from when you begin it, an ayah change from the last sound heard. Timed where the screen is updated; your network adds a little.">
       Behind your voice: ayah changes <strong>{secs(median(view.ayah))}</strong>
       {view.ayah.length ? ` (median of ${view.ayah.length}, last ${secs(view.last)})` : ''} · words <strong>{secs(median(view.word))}</strong>
     </span>

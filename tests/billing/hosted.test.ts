@@ -179,9 +179,11 @@ describe('hosted service', () => {
     const cb = open(b.cookie);
     await Promise.all([ca.ready, cb.ready]);
     ca.ws.send(JSON.stringify({ type: 'goto', key: '36:1' }));
-    await until(() => ca.msgs.some((m) => m.type === 'snapshot' && m.snapshot.display.verse?.key === '36:1'));
+    // The display reaches pages in its own messages (and in each page's first full snapshot).
+    const shows = (m: ControlServerMessage, key: string) => (m.type === 'display' ? m.state : m.type === 'snapshot' ? m.snapshot.display : undefined)?.verse?.key === key;
+    await until(() => ca.msgs.some((m) => shows(m, '36:1')));
     await new Promise((r) => setTimeout(r, 200));
-    expect(cb.msgs.some((m) => m.type === 'snapshot' && m.snapshot.display.verse?.key === '36:1')).toBe(false);
+    expect(cb.msgs.some((m) => shows(m, '36:1'))).toBe(false);
     ca.ws.close();
     cb.ws.close();
   });

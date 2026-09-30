@@ -285,14 +285,21 @@ export type ControlSnapshot = {
   };
   notice: string | null;
   /**
-   * Evidence behind the latest live display change, for the control-side speed meter: the provider
-   * audio time (ms from stream start) of the newest heard word when the screen moved.
+   * The control-side speed meter's latest reading, in the reciter's audio time where the screen is
+   * updated (network and painting add a little). A word: from when it began to when it was first
+   * highlighted (negative: highlighted early). An ayah change: from the newest sound heard.
    */
-  speed: { revision: number; captureEpoch: number; verseKey: string; verseChanged: boolean; heardEndMs: number } | null;
+  speed: { revision: number; verseKey: string; verseChanged: boolean; lagMs: number } | null;
 };
 
+/**
+ * A snapshot as sent after the first: the display travels in its own messages, and setup only
+ * when it changed, so a phone reciting for half an hour is not sent the same data over and over.
+ */
+export type ControlSnapshotUpdate = Omit<ControlSnapshot, 'display' | 'setup'> & Partial<Pick<ControlSnapshot, 'display' | 'setup'>>;
+
 export type ControlServerMessage =
-  | { type: 'snapshot'; snapshot: ControlSnapshot }
+  | { type: 'snapshot'; snapshot: ControlSnapshotUpdate }
   /** Each display change at once (snapshots are batched): the phone reader's highlight keeps pace. */
   | { type: 'display'; state: DisplayState }
   | { type: 'command_pending'; requestId: string }

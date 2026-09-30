@@ -24,6 +24,7 @@ import {
   type ControlClientMessage,
   type ControlServerMessage,
   type ControlSnapshot,
+  type ControlSnapshotUpdate,
   type DisplayState,
   type DisplayStyle,
   type TrackerPhase,
@@ -115,6 +116,9 @@ export class Session {
   /** The evidence is a word taken from its first letters only (pace.begun). */
   private evidenceGuessed = false;
   private shownPos: number | null = null;
+  /** When each word of the ayah on screen was first highlighted (audio ms), and words already timed: the speed meter. */
+  private readonly shownAt = new Map<number, number>();
+  private readonly measured = new Set<number>();
   /** Provider audio time minus this clock, from the control page's audio clock (per stream). */
   private audioOffset: number | null = null;
   /** Silences the control page's microphone heard in this stream (provider audio ms), newest last. */
@@ -274,7 +278,7 @@ export class Session {
       for (const fn of this.displayListeners) fn(this.display);
       this.emitControl({ type: 'display', state: this.display });
       this.schedulePageTimer();
-      if (this.pendingSpeed) this.speed = { revision: this.revision, captureEpoch: this.capture.captureEpoch, ...this.pendingSpeed };
+      if (this.pendingSpeed) this.speed = { revision: this.revision, ...this.pendingSpeed };
     }
     this.pendingSpeed = null;
     this.queueSnapshot();
@@ -575,11 +579,10 @@ export class Session {
     const live = this.liveCursor.update(words, this.follower.engine.anchor, this.buffer.hasProvisional, this.follower.engine.prior, this.follower.engine.neighbours);
     if (live && (this.follower.mode !== 'jev_required' || live.verseIndex === this.trackerVerse)) {
       const verseChanged = live.verseIndex !== this.displayVerse;
+      // Speed meter, ayah changes: from the newest sound heard to the change.
       const heardEndMs = words.at(-1)?.endMs ?? null;
-      if (heardEndMs !== null && (verseChanged || live.word !== this.lastLiveWord)) {
-        this.pendingSpeed = { verseKey: this.o.corpus.at(live.verseIndex)!.key, verseChanged, heardEndMs };
-      }
-      this.lastLiveWord = live.word;
+      const now = this.audioNow();
+      if (verseChanged && heardEndMs !== null && now !== null) this.pendingSpeed = { verseKey: this.o.corpus.at(live.verseIndex)!.key, verseChanged: true, lagMs: now - heardEndMs };
       this.liveVerse = live.verseIndex;
       this.showVerse(live.verseIndex);
       this.pace.learn(live.path);
@@ -597,6 +600,12 @@ export class Session {
       else {
         this.stopPace();
         this.setCursor(pos);
+      }
+      // Speed meter, words: from when the word began to when it was first highlighted.
+      const shownAt = ev ? this.shownAt.get(ev.pos) : undefined;
+      if (ev && !verseChanged && shownAt !== undefined && !this.measured.has(ev.pos)) {
+        this.measured.add(ev.pos);
+        this.pendingSpeed = { verseKey: this.o.corpus.at(live.verseIndex)!.key, verseChanged: false, lagMs: shownAt - ev.startMs };
       }
     } else {
       this.cursor = null;
@@ -635,6 +644,8 @@ export class Session {
       target = shown + 1;
       dueIn = SWEEP_MS;
     }
+    // Going back (a restart): the words from there on are recited again, and timed again.
+    if (this.shownPos !== null && target < this.shownPos) for (const p of [...this.shownAt.keys()]) if (p >= target) { this.shownAt.delete(p); this.measured.delete(p); }
     this.setCursor(target);
     if (dueIn !== null) {
       this.paceTimer = this.clock.setTimeout(() => {
@@ -655,6 +666,12 @@ export class Session {
     const span = mapping[word];
     this.cursor = span ? { ...span, provisional: this.buffer.hasProvisional } : null;
     this.progress = Math.min(1, (word + 1) / this.o.ix.verseLen[verse]);
+    if (this.shownPos === null || this.o.ix.wordVerse[this.shownPos] !== verse) {
+      this.shownAt.clear();
+      this.measured.clear();
+    }
+    const now = this.audioNow();
+    if (now !== null && !this.shownAt.has(pos)) this.shownAt.set(pos, now);
     this.shownPos = pos;
   }
 
@@ -664,6 +681,8 @@ export class Session {
     this.evidence = null;
     this.evidenceGuessed = false;
     this.shownPos = null;
+    this.shownAt.clear();
+    this.measured.clear();
   }
 
   private resetLive() {
@@ -878,7 +897,7 @@ export class Session {
     if (this.snapshotTimer !== null) return;
     this.snapshotTimer = this.clock.setTimeout(() => {
       this.snapshotTimer = null;
-      this.emitControl({ type: 'snapshot', snapshot: this.snapshot() });
+      this.emitControl({ type: 'snapshot', snapshot: this.snapshotUpdate() });
     }, 30);
   }
 
@@ -942,8 +961,20 @@ export class Session {
   }
 
   private candidatesView: ControlSnapshot['candidates'] = [];
-  private lastLiveWord = -1;
-  private pendingSpeed: { verseKey: string; verseChanged: boolean; heardEndMs: number } | null = null;
+  private pendingSpeed: { verseKey: string; verseChanged: boolean; lagMs: number } | null = null;
+  private lastSetup = '';
+
+  /**
+   * The snapshot as sent after a page's first: its display travels in its own messages (publish),
+   * and setup only when it changed. Reciting for half an hour sent ~75 MB of repeats to a phone.
+   */
+  private snapshotUpdate(): ControlSnapshotUpdate {
+    const { display: _display, setup, ...update } = this.snapshot();
+    const key = JSON.stringify(setup);
+    if (key === this.lastSetup) return update;
+    this.lastSetup = key;
+    return { ...update, setup };
+  }
   private speed: ControlSnapshot['speed'] = null;
   private resourceCache: ControlSnapshot['setup']['resources'] | null = null;
 

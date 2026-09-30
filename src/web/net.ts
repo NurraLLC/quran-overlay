@@ -13,6 +13,25 @@ export type Socket = {
 export const BASE = (typeof document !== 'undefined' ? document.querySelector<HTMLMetaElement>('meta[name="qo-base"]')?.content ?? '' : '').replace(/\/+$/, '');
 export const u = (path: string) => `${BASE}${path}`;
 
+type Snapshot = import('../shared/contracts').ControlSnapshot;
+type Display = import('../shared/contracts').DisplayState;
+/** `a` is an earlier or the same display state as `b` of the same session. */
+const stale = (a: Display, b: Display) => a.sessionEpoch === b.sessionEpoch && a.revision <= b.revision;
+
+/**
+ * Control-channel state as a page keeps it: after the first full snapshot, updates leave out the
+ * display (sent at once in its own messages) and unchanged setup; an older display never wins.
+ */
+export function applySnapshot(prev: Snapshot | null, next: import('../shared/contracts').ControlSnapshotUpdate): Snapshot | null {
+  const display = next.display && !(prev && stale(next.display, prev.display)) ? next.display : prev?.display;
+  const setup = next.setup ?? prev?.setup;
+  return display && setup ? { ...next, display, setup } : prev;
+}
+
+export function applyDisplay(prev: Snapshot | null, display: Display): Snapshot | null {
+  return prev && !stale(display, prev.display) ? { ...prev, display } : prev;
+}
+
 export function connect(
   path: string,
   handlers: {

@@ -4,9 +4,9 @@
 // the control page's session, so a stream overlay, if open, follows along too.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView, DisplayState } from '../shared/contracts';
+import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView } from '../shared/contracts';
 import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
-import { access, connect, listeningLine, type Access, u } from './net';
+import { access, applyDisplay, applySnapshot, connect, listeningLine, type Access, u } from './net';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { arabicNumber } from './VerseDisplay';
 import { NurraBadge } from './Nurra';
@@ -22,8 +22,6 @@ const NBSP = String.fromCharCode(0xa0);
 /** Per-device memory: the last place and language, and today's recited ayahs. Never required. */
 type Saved = { key?: string; name?: string; lang?: 'both' | 'arabic' | 'english'; day?: string; recited?: string[] };
 const today = () => new Date().toLocaleDateString('en-CA');
-/** `a` is a later display state than `b` of the same session. */
-const newer = (a: DisplayState, b: DisplayState) => a.sessionEpoch === b.sessionEpoch && a.revision > b.revision;
 function loadSaved(): Saved {
   try {
     const s = JSON.parse(localStorage.getItem('qo.reader') ?? '{}') as Saved;
@@ -147,9 +145,9 @@ export function Reader() {
           shouldRetry: (code) => code !== 4401,
           onMessage: (data) => {
             const m = data as ControlServerMessage;
-            // Display changes arrive on their own, at once; a batched snapshot never undoes a newer one.
-            if (m.type === 'snapshot') setSnap((prev) => (prev && newer(prev.display, m.snapshot.display) ? { ...m.snapshot, display: prev.display } : m.snapshot));
-            else if (m.type === 'display') setSnap((prev) => (prev && newer(m.state, prev.display) ? { ...prev, display: m.state } : prev));
+            // Display changes arrive on their own, at once; batched snapshots carry the rest.
+            if (m.type === 'snapshot') setSnap((prev) => applySnapshot(prev, m.snapshot));
+            else if (m.type === 'display') setSnap((prev) => applyDisplay(prev, m.state));
             else if (m.type === 'credits') setCredits(m.credits);
             else if (m.type === 'command_pending') {
               if (m.requestId.startsWith('listen:')) lastRequest.current = m.requestId;
