@@ -6,8 +6,17 @@ import { relaxed } from '../tracker/normalize';
 
 export type SurahRequest = { chapter: number; end: number };
 
+const shared = new WeakMap<object, ArabicSurahRequests>();
+
 export class ArabicSurahRequests {
   private readonly names: Array<{ chapter: number; parts: string[] }> = [];
+
+  /** One per corpus: it never changes after it is built, and it was ~90% of a visitor's session. */
+  static for(chapters: ReadonlyArray<{ number: number; nameArabic: string }>): ArabicSurahRequests {
+    let r = shared.get(chapters);
+    if (!r) shared.set(chapters, (r = new ArabicSurahRequests(chapters)));
+    return r;
+  }
 
   constructor(chapters: ReadonlyArray<{ number: number; nameArabic: string }>) {
     for (const c of chapters) {
@@ -27,14 +36,15 @@ export class ArabicSurahRequests {
    * request is not held back until the recogniser finalizes it (seconds, at the end of speech).
    */
   find(words: readonly string[], from = 0, lastOpen = false): SurahRequest | null {
-    const keys = words.map(relaxed);
-    for (let i = Math.max(0, from); i < keys.length - 1; i++) {
+    const start = Math.max(0, from);
+    const keys = words.slice(start).map(relaxed);
+    for (let i = 0; i < keys.length - 1; i++) {
       if (keys[i] !== 'سوره') continue;
       for (const n of this.names) {
         if (!n.parts.every((p, k) => keys[i + 1 + k] === p)) continue;
         const end = i + 1 + n.parts.length;
         if (lastOpen && end === keys.length && !this.complete(n.parts)) continue;
-        return { chapter: n.chapter, end };
+        return { chapter: n.chapter, end: start + end };
       }
     }
     return null;

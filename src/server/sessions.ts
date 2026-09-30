@@ -170,7 +170,7 @@ export class Session {
     this.liveCursor = new LiveCursor(o.ix);
     this.pace = new Pace(o.ix, o.corpus);
     this.viewToken = o.viewToken ?? randomBytes(18).toString('base64url');
-    this.arabicRequests = new ArabicSurahRequests(o.corpus.data.chapters);
+    this.arabicRequests = ArabicSurahRequests.for(o.corpus.data.chapters);
     this.listeningCommands = new ListeningCommands(o.decisionClient, this.clock, (text, id, intent) => {
       if (this.capture.phase !== 'recording' || this.commandActive) return;
       void this.command(id, text, intent === 'show');
@@ -533,7 +533,10 @@ export class Session {
     // "قولت سورة الرحمن" for "go to Surah Rahman") opens it, like the spoken English request.
     if (!this.commandActive) {
       const live = this.buffer.liveWords();
-      const req = this.arabicRequests.find(live.map((w) => w.text), Math.max(this.liveFloor, this.arabicScan), !!live.at(-1)?.open);
+      // A request is found as soon as its words arrive: only the newest words need looking at, not
+      // everything recited since the stream began (that grew with every result).
+      const from = Math.max(this.liveFloor, this.arabicScan, live.length - 16);
+      const req = this.arabicRequests.find(live.map((w) => w.text), from, !!live.at(-1)?.open);
       if (req) {
         this.arabicScan = req.end;
         void this.command(`listen:ar-${msg.seq}`, `surah ${req.chapter}`, true);
