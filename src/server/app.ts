@@ -12,6 +12,7 @@
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { isIPv6 } from 'node:net';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import fastifyStatic from '@fastify/static';
@@ -48,6 +49,8 @@ export type HostedOptions = {
   isRecitation?: (text: string) => boolean;
   /** Reading needs no visitor cookie (surah text, translation, word meanings are for anyone). */
   reading?: Session;
+  /** People reciting at once (QO_MAX_LISTENERS); keep it within the recogniser's own concurrency limit. */
+  maxListeners?: number;
 };
 
 export type AppOptions = {
@@ -202,8 +205,13 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     }
   });
 
+  let proxyWarned = false;
   app.addHook('onRequest', async (req, reply) => {
     if (!req.headers.host || !allowedHosts.has(req.headers.host)) return reply.code(421).send({ error: 'unexpected host' });
+    if (o.hosted && !o.hosted.trustProxy && req.headers['x-forwarded-for'] && !proxyWarned) {
+      proxyWarned = true;
+      console.warn('Requests arrive through a proxy (X-Forwarded-For) but QO_TRUST_PROXY is not set: every visitor shares the proxy\'s address, so per-network limits apply to everyone at once. Set QO_TRUST_PROXY=1.');
+    }
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'no-referrer');
     reply.header('Cache-Control', 'no-store');
@@ -242,8 +250,25 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     if (s) s.notify({ type: 'credits', credits: creditView(id, lastIp.get(id) ?? 'unknown') });
   };
   const safety = hosted ? hosted.safety ?? new ListeningSafety(':memory:') : null;
+  // New listening waits while the server cannot keep up (its event loop delayed): everyone already
+  // reciting or reading stays responsive instead of all slowing together.
+  let overloaded = false;
+  const loopDelay = hosted ? monitorEventLoopDelay({ resolution: 20 }) : null;
+  if (loopDelay) {
+    loopDelay.enable();
+    const watch = setInterval(() => {
+      overloaded = loopDelay.percentile(99) > 250e6;
+      loopDelay.reset();
+    }, 5000);
+    watch.unref?.();
+    app.addHook('onClose', async () => {
+      clearInterval(watch);
+      loopDelay.disable();
+    });
+  }
   const speech = hosted ? new HostedSpeech({ credits: hosted.credits, safety: safety!, apiKey: o.sonioxApiKey, fetchImpl: o.fetchImpl,
-    isRecitation: hosted.isRecitation ?? (() => false), onSettled: pushCredits, endpoint: o.speechEndpoint, idleLimitMs: o.speechIdleMs }) : null;
+    isRecitation: hosted.isRecitation ?? (() => false), onSettled: pushCredits, endpoint: o.speechEndpoint, idleLimitMs: o.speechIdleMs,
+    maxStreams: hosted.maxListeners, busy: () => overloaded }) : null;
   app.addHook('preClose', async () => speech?.close());
   app.addHook('onClose', async () => safety?.close());
   const requireOwner = (req: FastifyRequest, reply: FastifyReply) => {
@@ -456,6 +481,8 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
       const m = parsed.data;
       // The tracker mode is the owner's setting: it decides which decisions are paid for.
       if (hosted && m.type === 'mode') return;
+      // Recogniser results come from the visitor's own stream through the relay: none without one.
+      if (hosted && (m.type === 'transcript' || m.type === 'voice') && !(visitorId && speech?.streaming(visitorId))) return;
       if (m.type === 'command' && !commands.take(now)) {
         send({ type: 'command_result', requestId: m.requestId, result: { kind: 'no_match', message: 'That was a lot of requests at once. Please wait a moment and ask again.' } });
         return;

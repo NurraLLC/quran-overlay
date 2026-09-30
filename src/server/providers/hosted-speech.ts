@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import WebSocket, { type RawData } from 'ws';
 import type { CreditStore } from '../billing/credits';
 import { IDLE_LIMIT_MS, ListeningSafety } from '../billing/listening-safety';
-import { mintTemporaryKey } from './soniox';
+import { mintTemporaryKey, SonioxKeyError } from './soniox';
 
 type Options = {
   credits: CreditStore;
@@ -14,6 +14,10 @@ type Options = {
   /** Server-owned injection points for local provider tests only. */
   endpoint?: string;
   idleLimitMs?: number;
+  /** People reciting at once (each costs tracker CPU); more wait for a free place. */
+  maxStreams?: number;
+  /** The server is overloaded right now: no new listening until it recovers. */
+  busy?: () => boolean;
 };
 type Ticket = { value: string; expires: number; ip: string };
 /**
@@ -26,13 +30,35 @@ const MAX_BUFFER = 512 * 1024;
 const PCM = { audio_format: 'pcm_s16le', sample_rate: 16_000, num_channels: 1 } as const;
 /** Provider control messages a reader needs: finalize (spoken requests) and keepalive (the SDK's, while the microphone is muted). */
 const CONTROL = new Set(['finalize', 'keepalive']);
+/** Sockets not yet past their ticket (at most 5 s each): a flood of them never takes reciters' places. */
+const MAX_PENDING = 64;
+export const DEFAULT_MAX_STREAMS = 60;
+/** Full, here or at the recogniser: a clear wait, and nothing in reading changes. */
+const BUSY = 'Many people are reciting right now, so listening is full for the moment. Please try again in a minute. Reading, word meanings and translations work as usual.';
+const UNAVAILABLE = 'Listening is unavailable right now. Reading, word meanings and translations work as usual.';
+let balanceWarned = 0;
 
 /** Hosted-only audio relay. No recording, no client-controlled provider options or credentials. */
 export class HostedSpeech {
   private tickets = new Map<string, Ticket>();
   private active = new Map<string, () => void>();
   private connections = new Set<() => void>();
+  private pending = 0;
   constructor(private o: Options) {}
+
+  private get maxStreams() {
+    return this.o.maxStreams ?? DEFAULT_MAX_STREAMS;
+  }
+
+  /** People reciting through the relay now. */
+  get streams() {
+    return this.active.size;
+  }
+
+  /** This visitor has a stream open (their page's recogniser results can only come from it). */
+  streaming(id: string) {
+    return this.active.has(id);
+  }
 
   issue(id: string, ip: string) {
     const now = Date.now();
@@ -41,6 +67,7 @@ export class HostedSpeech {
     if (safety.retryAfter) return { error: 'LISTENING_COOLDOWN', retryAfter: safety.retryAfter };
     if (!this.o.apiKey) return { error: 'NOT_CONFIGURED' };
     if (this.tickets.size >= 5000 && !this.tickets.has(id)) return { error: 'SERVICE_BUSY' };
+    if ((this.active.size >= this.maxStreams && !this.active.has(id)) || this.o.busy?.()) return { error: 'LISTENING_BUSY' };
     const balance = this.o.credits.balance(id, ip, now);
     if (balance.available < this.o.credits.cfg.holdMinSeconds) return { error: 'NO_CREDITS', limitedBy: balance.limitedBy, renewsAt: balance.renewsAt };
     const ticket = { value: randomBytes(24).toString('base64url'), expires: now + 60_000, ip };
@@ -50,7 +77,9 @@ export class HostedSpeech {
   }
 
   accept(client: WebSocket, id: string, ip: string) {
-    if (this.connections.size >= 128) { client.close(1013, 'Please try again shortly'); return; }
+    if (this.pending >= MAX_PENDING) { client.close(1013, 'Please try again shortly'); return; }
+    this.pending++;
+    let validated = false;
     let upstream: WebSocket | null = null;
     let holdId: string | null = null;
     let connectedAt = 0;
@@ -82,6 +111,7 @@ export class HostedSpeech {
         } else this.o.credits.release(holdId);
       }
       if (this.active.get(id) === end) this.active.delete(id);
+      if (!validated) this.pending--;
       this.connections.delete(end);
       queue = []; queuedBytes = 0;
       if (message && client.readyState === WebSocket.OPEN) client.send(JSON.stringify({ error_code: 403, error_type: kind, error_message: message }));
@@ -113,6 +143,7 @@ export class HostedSpeech {
         if (!config || !ticket || config.api_key !== ticket.value || ticket.ip !== ip || ticket.expires < now) return end('Please start listening again.');
         this.tickets.delete(id);
         if (this.active.has(id)) return end('Listening is already open on another page. Stop it there first.');
+        if (this.active.size >= this.maxStreams || this.o.busy?.()) return end(BUSY, 'listening_busy');
         const safety = this.o.safety.status(id, ip, now);
         if (safety.retryAfter) return end('Listening is taking a short break. Please try again in five minutes.', 'listening_cooldown');
         previousIdle = safety.idleMs;
@@ -124,6 +155,8 @@ export class HostedSpeech {
         if ('error' in hold) return end('Shared listening hours are unavailable. Reading and translations are still free.');
         holdId = hold.id;
         this.active.set(id, end);
+        validated = true;
+        this.pending--;
         clearTimeout(handshake);
         // An upstream setup failure cannot leave a reservation open indefinitely.
         const setup = setTimeout(() => end('Listening could not connect. Please try again.'), 10_000);
@@ -151,6 +184,17 @@ export class HostedSpeech {
             if (finished) return;
             try {
               const result = JSON.parse(body.toString());
+              // The recogniser's own limits: too many people at once, or its balance ran out. It
+              // refused the stream, so nothing is charged: the time set aside goes back.
+              if (result.error_code === 429 || result.error_type === 'limit_exceeded' || result.error_code === 402 || result.error_type === 'organization_balance_exhausted') connectedAt = 0;
+              if (result.error_code === 429 || result.error_type === 'limit_exceeded') return end(BUSY, 'listening_busy');
+              if (result.error_code === 402 || result.error_type === 'organization_balance_exhausted') {
+                if (Date.now() - balanceWarned > 60_000) {
+                  balanceWarned = Date.now();
+                  console.error('Soniox balance exhausted: listening is refused until it is topped up.');
+                }
+                return end(UNAVAILABLE, 'listening_unavailable');
+              }
               // A browser cannot claim future audio to obtain more processing than real time.
               if (Number(result.total_audio_proc_ms) > Date.now() - connectedAt + 10_000) return end('Audio arrived too quickly. Please start again.');
               const tokens: Array<{ text: string; is_final?: boolean; start_ms?: number; end_ms?: number }> = Array.isArray(result.tokens) ? result.tokens : [];
@@ -167,7 +211,7 @@ export class HostedSpeech {
               }
             } catch { end('Listening returned an invalid response. Please try again.'); }
           });
-        }).catch(() => { clearTimeout(setup); end('Listening could not connect. Please try again.'); });
+        }).catch((e) => { clearTimeout(setup); end(e instanceof SonioxKeyError && e.code === 'RATE_LIMITED' ? BUSY : 'Listening could not connect. Please try again.', e instanceof SonioxKeyError && e.code === 'RATE_LIMITED' ? 'listening_busy' : 'listening_paused'); });
         return;
       }
       if (!binary) {

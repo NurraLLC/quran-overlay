@@ -25,6 +25,7 @@ import { Transliteration } from './search/transliteration';
 import { LatinReader } from './tracker/latin';
 import { ListeningSafety } from './billing/listening-safety';
 import { recitationActivity } from './providers/recitation-activity';
+import { DEFAULT_MAX_STREAMS } from './providers/hosted-speech';
 
 function loadEnvFile() {
   const file = path.join(ROOT, '.env');
@@ -92,6 +93,8 @@ function hostedSetup(create: (saved: Pick<ConstructorParameters<typeof Session>[
     identity: VisitorIdentity.fromFile(path.join(stateDir, 'identity.key'), process.env.QO_SECRET),
     publicOrigin: process.env.QO_PUBLIC_ORIGIN || undefined,
     trustProxy: process.env.QO_TRUST_PROXY === '1',
+    // Each reciter costs tracker CPU, and the recogniser has its own limit (Soniox: 10 at once unless raised).
+    maxListeners: Number(process.env.QO_MAX_LISTENERS) || undefined,
     // Voluntary community donations only. No personal purchases or subscriptions.
     billing: process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET ? new StripeBilling(process.env.STRIPE_SECRET_KEY, process.env.STRIPE_WEBHOOK_SECRET, fetch, parseDonations(process.env.QO_DONATIONS, process.env.QO_SPONSOR_CENTS_PER_HOUR)) : null,
   };
@@ -200,6 +203,7 @@ async function main() {
     const h = (sec: number) => `${+(sec / 3600).toFixed(2)} h`;
     console.log('\nHosted mode: anonymous reader sessions; listening is funded by shared sponsored hours.');
     console.log(`Sponsored listening: ${h(hosted.credits.poolSeconds())} in the pool, up to ${h(c.poolDailySecondsPerVisitor ?? 3600)} per visitor per day; donations ${hosted.billing ? 'on' : 'off'}.`);
+    console.log(`Up to ${hosted.maxListeners ?? DEFAULT_MAX_STREAMS} people reciting at once (QO_MAX_LISTENERS). Keep it within your Soniox concurrency limit (10 unless raised in the Soniox Console); beyond it people are asked to try again in a minute.`);
     console.log(`Open: ${process.env.QO_PUBLIC_ORIGIN || publicOrigin}${base}/\n`);
   } else console.log(`\nOpen the control page (keep this link private):\n  ${publicOrigin}${base}/control#owner=${ownerToken}\n`);
 }

@@ -109,6 +109,8 @@ class TimedSource implements AudioSource {
 
 /** Said while listening goes on after a phone suspended it (screen off, another app, a call). */
 const BACK_ON_SCREEN = 'Listening paused while the screen was off. Recite to continue.';
+/** Listening is full (here or at the recogniser): a wait, not a failure; the server says the same. */
+const BUSY = 'Many people are reciting right now, so listening is full for the moment. Please try again in a minute. Reading, word meanings and translations work as usual.';
 /** iOS can keep the audio thread suspended until the next touch; nothing is heard until then. */
 const TAP_TO_CONTINUE = 'Listening paused while the screen was off. Tap anywhere to continue.';
 const TAP_TO_LISTEN = 'Tap anywhere to start listening.';
@@ -254,6 +256,10 @@ export class SonioxCapture {
         const res = await fetch(u('/api/soniox/temporary-key'), { method: 'POST', credentials: 'same-origin' });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string; limitedBy?: string | null; renewsAt?: number; retryAfter?: number };
+          if (body.error === 'LISTENING_BUSY') {
+            this.noCredits = BUSY;
+            throw new Error(this.noCredits);
+          }
           if (body.error === 'LISTENING_COOLDOWN') {
             this.noCredits = `Listening is taking a short break. Please try again in ${Math.max(1, Math.ceil((body.retryAfter ?? 300) / 60))} minutes. Reading and translations are still available.`;
             throw new Error(this.noCredits);
@@ -541,6 +547,9 @@ export class SonioxCapture {
     rec.on('error', (e) => {
       if (this.recording !== rec || this.stopping) return;
       // Out of listening time: stop cleanly (the page keeps its place) and say why.
+      // The relay's own refusals (listening full, or unavailable) are a clean stop with its words.
+      const refusal = (e as { raw?: { error_type?: unknown } })?.raw?.error_type;
+      if (!this.noCredits && (refusal === 'listening_busy' || refusal === 'listening_unavailable')) this.noCredits = e instanceof Error ? e.message : BUSY;
       if (this.noCredits) {
         const detail = this.noCredits;
         this.noCredits = null;
