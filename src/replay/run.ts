@@ -200,6 +200,7 @@ export async function replay(
   let stopped = false;
   for (const ev of loaded.events) {
     await clock.advanceTo(ev.t);
+    if (ev.type === 'voice') continue; // display timing only (sessions.ts); the follower ignores it
     if (ev.type === 'control') {
       const a = ev.action;
       if (a.kind === 'manual') {

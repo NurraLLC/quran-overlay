@@ -7,7 +7,7 @@ import { SonioxClient, type AudioSource, type AudioSourceHandlers, type Realtime
 import type { ControlClientMessage } from '../../shared/contracts';
 import type { WireToken } from '../../shared/transcript';
 import { TokenRouter, type CommandCapture } from './command-lane';
-import { MicError, MicStreamSource, SharedMic } from './mic';
+import { MicError, MicStreamSource, PAUSE_QUIET_MS, SharedMic, VOICE_ONSET_MS } from './mic';
 import { u } from '../net';
 import {listeningConsent} from './consent';
 
@@ -259,6 +259,7 @@ export class SonioxCapture {
         },
         DOZE_AFTER_MS,
         (e) => this.onVoice(e),
+        (speaking) => this.onPause(speaking),
       );
     } catch (e) {
       this.active = false;
@@ -375,6 +376,17 @@ export class SonioxCapture {
     else if (this.dozing) this.wake();
   }
 
+  /**
+   * Breaths between words, for keeping the highlight in step (the server's pace.ts): sent when the
+   * voice stops or returns, stamped with the provider audio time it happened.
+   */
+  private onPause(speaking: boolean) {
+    const origin = this.timed?.audioOrigin;
+    if (!this.active || this.commandOnly || this.dozing || !this.recording || origin === null || origin === undefined) return;
+    const audioMs = Math.max(0, performance.now() - origin - (speaking ? VOICE_ONSET_MS : PAUSE_QUIET_MS));
+    this.send({ type: 'voice', captureEpoch: this.epoch, speaking, audioMs });
+  }
+
   /** Close the provider stream during a long pause; listening stays on. */
   private doze() {
     if (!this.recording || this.dozing || this.resetting || this.router.active || this.status.state !== 'recording') return;
@@ -412,7 +424,11 @@ export class SonioxCapture {
     if (this.router.active) this.onHearing(this.router.hearing());
     if (finalized) this.finalizeWaiter?.(false);
     if (this.commandOnly || !recitation.length) return;
-    this.send({ type: 'transcript', captureEpoch: epoch, seq: this.seq++, tokens: recitation, receivedAt: performance.now() });
+    const now = performance.now();
+    const origin = this.timed?.audioOrigin;
+    // Where the reciter is now in the provider's audio clock (the tokens say where they were).
+    const audioMs = origin === null || origin === undefined ? undefined : Math.max(0, now - origin);
+    this.send({ type: 'transcript', captureEpoch: epoch, seq: this.seq++, tokens: recitation, receivedAt: now, ...(audioMs === undefined ? {} : { audioMs }) });
   }
 
   private watchLanguage(tokens: WireToken[]) {

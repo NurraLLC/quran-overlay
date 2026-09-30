@@ -5,18 +5,30 @@
 import type { AudioSource, AudioSourceHandlers } from '@soniox/client';
 import { createVad } from './vad';
 
+/**
+ * Silence this long between words is a pause (a breath, a stop at a pause mark). Longer than the
+ * closure of a doubled stop consonant, shorter than a breath. The tracker hears it at once instead
+ * of ~0.8 s later from the recogniser, so the highlight waits instead of running ahead.
+ */
+export const PAUSE_QUIET_MS = 180;
+/** Voiced audio needed before the voice counts as back (createVad's onset). */
+export const VOICE_ONSET_MS = 30;
+
 const WORKLET = `
 const createVad = (${createVad.toString()});
 class QoVad extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.push = createVad(sampleRate, options.processorOptions.quietAfterMs);
+    this.pause = createVad(sampleRate, options.processorOptions.pauseMs);
   }
   process(inputs) {
     const ch = inputs[0] && inputs[0][0];
     if (ch) {
       const r = this.push(ch);
       if (r) this.port.postMessage(r);
+      const p = this.pause(ch);
+      if (p) this.port.postMessage('pause:' + p);
     }
     return true;
   }
@@ -43,7 +55,7 @@ export class SharedMic {
 
   private constructor(readonly stream: MediaStream) {}
 
-  static async open(constraints: MediaTrackConstraints, quietAfterMs: number, onVoice: (e: 'voice' | 'quiet') => void): Promise<SharedMic> {
+  static async open(constraints: MediaTrackConstraints, quietAfterMs: number, onVoice: (e: 'voice' | 'quiet') => void, onPause: (speaking: boolean) => void = () => undefined): Promise<SharedMic> {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) throw new MicError('unavailable', 'navigator.mediaDevices.getUserMedia is not available');
     if (typeof MediaRecorder === 'undefined') throw new MicError('unavailable', 'MediaRecorder is not available');
     let stream: MediaStream;
@@ -60,12 +72,12 @@ export class SharedMic {
     const track = stream.getAudioTracks()[0];
     track?.addEventListener('mute', () => mic.muteHandlers.forEach((h) => h(true)));
     track?.addEventListener('unmute', () => mic.muteHandlers.forEach((h) => h(false)));
-    await mic.attach(quietAfterMs, onVoice);
+    await mic.attach(quietAfterMs, onVoice, onPause);
     return mic;
   }
 
   /** Level meter and the voice detector. Without them listening still works, just never pauses. */
-  private async attach(quietAfterMs: number, onVoice: (e: 'voice' | 'quiet') => void) {
+  private async attach(quietAfterMs: number, onVoice: (e: 'voice' | 'quiet') => void, onPause: (speaking: boolean) => void) {
     try {
       const ctx = new AudioContext();
       this.ctx = ctx;
@@ -83,8 +95,11 @@ export class SharedMic {
       } finally {
         URL.revokeObjectURL(url);
       }
-      const vad = new AudioWorkletNode(ctx, 'qo-vad', { numberOfInputs: 1, numberOfOutputs: 0, processorOptions: { quietAfterMs } });
-      vad.port.onmessage = (e: MessageEvent<'voice' | 'quiet'>) => onVoice(e.data);
+      const vad = new AudioWorkletNode(ctx, 'qo-vad', { numberOfInputs: 1, numberOfOutputs: 0, processorOptions: { quietAfterMs, pauseMs: PAUSE_QUIET_MS } });
+      vad.port.onmessage = (e: MessageEvent<'voice' | 'quiet' | 'pause:voice' | 'pause:quiet'>) => {
+        if (e.data === 'pause:voice' || e.data === 'pause:quiet') onPause(e.data === 'pause:voice');
+        else onVoice(e.data);
+      };
       src.connect(vad);
       this.vad = vad;
     } catch {

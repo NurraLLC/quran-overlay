@@ -13,40 +13,12 @@ import path from 'node:path';
 import { CommandResolver } from '../src/server/commands/reducer';
 import { Corpus, loadCorpus } from '../src/server/corpus/load';
 import { Session } from '../src/server/sessions';
-import type { Clock } from '../src/server/tracker/scheduler';
 import { buildIndex } from '../src/server/tracker/index';
 import { tokenize } from '../src/server/tracker/normalize';
 import { LatinReader } from '../src/server/tracker/latin';
 import { loadFixture } from '../src/replay/run';
+import { VClock } from '../src/replay/vclock';
 import { TranscriptBuffer, type WireToken } from '../src/shared/transcript';
-
-class VClock implements Clock {
-  t = 0;
-  private timers: Array<{ at: number; fn: () => void; id: number }> = [];
-  private seq = 0;
-  now() {
-    return this.t;
-  }
-  setTimeout(fn: () => void, ms: number) {
-    const id = ++this.seq;
-    this.timers.push({ at: this.t + Math.max(0, ms), fn, id });
-    return id;
-  }
-  clearTimeout(h: unknown) {
-    this.timers = this.timers.filter((x) => x.id !== h);
-  }
-  advanceTo(t: number) {
-    for (;;) {
-      this.timers.sort((a, b) => a.at - b.at || a.id - b.id);
-      const n = this.timers[0];
-      if (!n || n.at > t) break;
-      this.timers.shift();
-      this.t = n.at;
-      n.fn();
-    }
-    this.t = Math.max(this.t, t);
-  }
-}
 
 const corpus = new Corpus(loadCorpus());
 const ix = buildIndex(corpus.verses);
@@ -111,8 +83,9 @@ export async function run(file: string, advanceWords: 1 | 2): Promise<Result> {
     clock.advanceTo(e.t);
     if (e.type === 'result') {
       heard.apply(e.tokens as WireToken[]);
-      session.handle({ type: 'transcript', captureEpoch: 1, seq: seq++, tokens: e.tokens as WireToken[], receivedAt: e.t });
+      session.handle({ type: 'transcript', captureEpoch: 1, seq: seq++, tokens: e.tokens as WireToken[], receivedAt: e.t, ...(e.audioMs === undefined ? {} : { audioMs: e.audioMs }) });
     }
+    else if (e.type === 'voice') session.handle({ type: 'voice', captureEpoch: 1, speaking: e.speaking, audioMs: e.audioMs });
     else if (e.action.kind === 'manual') session.handle({ type: 'goto', key: e.action.key });
     // Let asynchronous work (spoken requests) finish at this moment, as it would on the server.
     await new Promise((r) => setImmediate(r));

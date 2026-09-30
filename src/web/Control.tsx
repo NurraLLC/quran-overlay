@@ -326,10 +326,7 @@ export function Control() {
             }}
           />
           <details className="diagnostics">
-            <summary>What the tracker hears (private)</summary>
-            <p className="heard" lang="ar" dir="rtl">
-              {snap.heard.final} <span className="provisional">{snap.heard.provisional}</span>
-            </p>
+            <summary>Tracker diagnostics</summary>
             <div className="diag-grid">
               <div>
                 <h4>Candidates</h4>
@@ -416,8 +413,8 @@ function VoiceCard(p: {
   const ch = p.chapters.find((c) => c.number === surah);
   const starting = p.capture.state === 'starting' || p.capture.state === 'reconnecting';
   const r = p.result;
-  // The last few heard words, so it is obvious the microphone is working (full view in diagnostics).
-  const heard = `${p.snap.heard.final} ${p.snap.heard.provisional}`.trim().split(/\s+/).filter(Boolean).slice(-9).join(' ');
+  // Where it is following, never the recogniser's own text (its spelling is not the Quran's).
+  const following = p.snap.phase === 'tracking' && p.snap.display.verse ? `Following ${p.snap.display.verse.surahName} ${p.snap.display.verse.key}` : null;
   return (
     <section className="card voice-card">
       <h2>Recite or ask</h2>
@@ -438,9 +435,9 @@ function VoiceCard(p: {
         </select>
       </div>
       {p.listening && (
-        <div className="live-heard">
+        <div className="live-status" aria-live="polite">
           <span className="live-dot" aria-hidden />
-          {heard ? <span className="live-words"><span lang="ar">{heard}</span></span> : <span className="muted">Listening…</span>}
+          <span className={following ? undefined : 'muted'}>{following ?? 'Listening…'}</span>
         </div>
       )}
       <p className="hint">

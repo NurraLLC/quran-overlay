@@ -71,6 +71,8 @@ export type StepResult = {
   /** Collision-neighbour regions aligned this step, and neighbours skipped by the budget. */
   neighbourRegions?: number;
   neighbourTruncated?: number;
+  /** The heard window this step aligned (candidate pairs index into it). */
+  obs?: Obs[];
 };
 
 const SHORTLIST = 12;
@@ -161,7 +163,7 @@ export class TrackerEngine {
     const allObs = this.toObs(words);
     const obs = allObs.slice(-this.cfg.window);
     this.atStart = from === this.floor && allObs.length === obs.length;
-    const res: StepResult = { ...base, changed: true };
+    const res: StepResult = { ...base, changed: true, obs };
     if (!obs.length) {
       res.computeMs = performance.now() - t0;
       return res;

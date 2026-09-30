@@ -314,7 +314,6 @@ export function Reader() {
 
   const listening = cap.listening;
   const starting = capture.state === 'starting' || capture.state === 'reconnecting';
-  const heard = `${snap.heard.final} ${snap.heard.provisional}`.trim().split(/\s+/).filter(Boolean).slice(-7).join(' ');
   const r = result?.r ?? null;
   const shownSurah = surah && cur && surah.number === cur.surah ? surah : null;
   const shownSurahForBar = shownSurah;
@@ -620,11 +619,9 @@ export function Reader() {
             </button>
           </div>
           <div className="r-status" aria-live="polite">
-            {connection === 'open' && (listening || listeningElsewhere) && heard ? (
-              <span className="r-heard" lang="ar" dir="auto">{heard}</span>
-            ) : (
-              <span>{status}</span>
-            )}
+            {/* What the recogniser heard is never shown: its spelling is not the Quran's, and the
+                page itself (the highlighted word) is the proof that listening works. */}
+            <span>{status}</span>
             {credits && (
               <button className={`r-credits${credits.available < 600 ? ' low' : ''}`} onClick={() => setTimeOpen('time')}>
                 {listeningLine(credits)}

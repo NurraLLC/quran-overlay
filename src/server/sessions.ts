@@ -28,7 +28,7 @@ import {
   type DisplayStyle,
   type TrackerPhase,
 } from '../shared/contracts';
-import { TranscriptBuffer } from '../shared/transcript';
+import { isMarker, TranscriptBuffer } from '../shared/transcript';
 import type { CommandResolver } from './commands/reducer';
 import type { Corpus } from './corpus/load';
 import type { DecisionClient } from './providers/jev';
@@ -37,6 +37,7 @@ import type { CorpusIndex } from './tracker/index';
 import type { ResourceCatalog } from './resources/catalog';
 import { realClock, type Clock } from './tracker/scheduler';
 import { LiveCursor } from './tracker/live-cursor';
+import { Lag, Pace, type Quiet, type Timed } from './tracker/pace';
 import { mapDisplayWords, type WordSpan } from './corpus/word-map';
 import { ListeningCommands } from './commands/listening';
 import { ArabicSurahRequests } from './commands/arabic-request';
@@ -105,6 +106,22 @@ export class Session {
   private progress: number | null = null;
   private cursor: DisplayState['cursor'] = null;
   private readonly liveCursor: LiveCursor;
+  /** Keeps the highlight on the word being recited, not the last one recognised (pace.ts). */
+  private readonly pace: Pace;
+  /** Newest evidence of the word being recited, and the word highlighted now (global positions). */
+  private evidence: Timed | null = null;
+  /** The evidence is a word taken from its first letters only (pace.begun). */
+  private evidenceGuessed = false;
+  private shownPos: number | null = null;
+  /** Provider audio time minus this clock, from the control page's audio clock (per stream). */
+  private audioOffset: number | null = null;
+  /** Silences the control page's microphone heard in this stream (provider audio ms), newest last. */
+  private quiet: Quiet[] = [];
+  /** Start of the newest heard piece (provider audio ms) in this stream. */
+  private heardMs = -Infinity;
+  /** How late the recogniser reports speech (kept across streams: same provider and network). */
+  private readonly lag = new Lag();
+  private paceTimer: unknown = null;
   private liveFloor = 0;
   /** "سورة الرحمن" heard in Arabic script: requests are looked for in finals from here on. */
   private readonly arabicRequests: ArabicSurahRequests;
@@ -139,6 +156,7 @@ export class Session {
   constructor(private readonly o: SessionOptions) {
     this.clock = o.clock ?? realClock;
     this.liveCursor = new LiveCursor(o.ix);
+    this.pace = new Pace(o.ix, o.corpus);
     this.viewToken = o.viewToken ?? randomBytes(18).toString('base64url');
     this.arabicRequests = new ArabicSurahRequests(o.corpus.data.chapters);
     this.listeningCommands = new ListeningCommands(o.decisionClient, this.clock, (text, id, intent) => {
@@ -294,7 +312,7 @@ export class Session {
     } else if (e.kind === 'clear') {
       this.trackerVerse = null;
       this.liveVerse = null;
-      this.liveCursor.reset();
+      this.resetLive();
       this.cursor = null;
       this.logEvent(e.keepDisplay ? 'lost' : 'clear', null, e.reason);
       // Kept on screen (the default): the place is forgotten, so the next one is found as quickly
@@ -331,6 +349,8 @@ export class Session {
     switch (msg.type) {
       case 'transcript':
         return this.onTranscript(msg);
+      case 'voice':
+        return this.onVoice(msg);
       case 'capture':
         return this.onCapture(msg);
       case 'nav': {
@@ -428,7 +448,7 @@ export class Session {
 
   gotoIndex(i: number, source: 'manual' | 'search' | 'command') {
     this.listeningCommands.cancel();
-    this.liveCursor.reset();
+    this.resetLive();
     this.liveVerse = null;
     this.liveFloor = this.buffer.liveWords().length;
     this.cursor = null;
@@ -469,7 +489,18 @@ export class Session {
     if (this.capture.phase === 'stopped' || this.capture.phase === 'off' || this.capture.phase === 'dozing') return; // late results after Stop
     if (msg.seq <= this.lastSeq) return; // duplicate delivery
     this.lastSeq = msg.seq;
-    this.writeCapture(msg.tokens);
+    this.writeCapture(msg.tokens, msg.audioMs);
+    // The audio clock: the least-delayed report gives the closest offset (delivery only adds delay).
+    if (msg.audioMs !== undefined) {
+      const offset = msg.audioMs - this.clock.now();
+      if (this.audioOffset === null || offset > this.audioOffset) this.audioOffset = offset;
+    }
+    for (const t of msg.tokens) {
+      if (typeof t.startMs !== 'number' || t.startMs <= this.heardMs || isMarker(t.text)) continue;
+      // A newly heard piece: how late it was reported (a backlog after connecting is not typical).
+      if (msg.audioMs !== undefined && msg.audioMs >= t.startMs && msg.audioMs - t.startMs < 2000) this.lag.observe(msg.audioMs - t.startMs);
+      this.heardMs = t.startMs;
+    }
     const r = this.buffer.apply(msg.tokens);
     // A surah named in Arabic script ("سورة الرحمن"; also English the recogniser wrote in Arabic,
     // "قولت سورة الرحمن" for "go to Surah Rahman") opens it, like the spoken English request.
@@ -487,7 +518,7 @@ export class Session {
     if (english) {
       this.englishTail = true;
       this.cursor = null;
-      this.liveCursor.reset();
+      this.resetLive();
       this.follower.stop();
       this.publish();
       return;
@@ -510,6 +541,25 @@ export class Session {
     this.publish();
   }
 
+  /** The control page's voice detector: a breath is known at once, not ~0.8 s later from the recogniser. */
+  private onVoice(msg: Extract<ControlClientMessage, { type: 'voice' }>) {
+    if (msg.captureEpoch !== this.capture.captureEpoch || this.capture.phase !== 'recording') return;
+    this.writeCaptureEvent({ type: 'voice', speaking: msg.speaking, audioMs: Math.round(msg.audioMs) });
+    const open = this.quiet.at(-1);
+    if (!msg.speaking) {
+      if (!open || open.to !== null) this.quiet.push({ from: msg.audioMs, to: null });
+      if (this.quiet.length > 12) this.quiet.shift();
+      return;
+    }
+    if (!open || open.to !== null) return;
+    open.to = Math.max(open.from, msg.audioMs);
+    // The voice is back: a word that was waiting for it is being recited now.
+    if (this.evidence && !this.held && !this.commandActive && !this.englishTail && this.liveVerse === this.displayVerse) {
+      this.followPace(false);
+      this.publish();
+    }
+  }
+
   /** Heard words with recitation that arrived in Latin letters read as the Arabic it matches. */
   private readable(words: Word[]): Word[] {
     const reader = this.o.latin?.get();
@@ -529,17 +579,85 @@ export class Session {
       this.lastLiveWord = live.word;
       this.liveVerse = live.verseIndex;
       this.showVerse(live.verseIndex);
-      const v = this.o.corpus.at(live.verseIndex)!;
-      let mapping = this.wordMaps.get(live.verseIndex);
-      if (!mapping) { mapping = mapDisplayWords(v.searchText, v.arabicDisplay); this.wordMaps.set(live.verseIndex, mapping); }
-      const span = mapping[live.word];
-      this.cursor = span ? { ...span, provisional: live.provisional } : null;
-      this.progress = Math.min(1, (live.word + 1) / this.o.ix.verseLen[live.verseIndex]);
+      this.pace.learn(live.path);
+      const pos = this.o.ix.verseStart[live.verseIndex] + live.word;
+      const prev = this.evidence;
+      const guessed = this.evidenceGuessed;
+      const ev = live.startMs === null ? null : this.pace.begun({ pos, startMs: live.startMs }, live.newest);
+      this.evidence = ev;
+      this.evidenceGuessed = !!ev && ev.pos !== pos;
+      // Evidence of an earlier word heard later (a restart after a breath) moves the highlight
+      // back, as does more of a word first taken from its opening letters; a re-reading of the
+      // same audio, or a prediction running ahead, never does.
+      const back = verseChanged || !ev || !prev || (ev.pos < prev.pos && (ev.startMs > prev.startMs || guessed));
+      if (ev) this.followPace(back);
+      else {
+        this.stopPace();
+        this.setCursor(pos);
+      }
     } else {
       this.cursor = null;
+      this.stopPace();
       // A provisional subword is frequently rewritten. Hold the source verse without an
       // active cursor while it forms; never flash an older finalized verse between updates.
     }
+  }
+
+  /** Current provider audio time, when the control page reports its audio clock. */
+  private audioNow(): number | null {
+    return this.audioOffset === null ? null : this.clock.now() + this.audioOffset;
+  }
+
+  /**
+   * Highlight the word being recited: the newest evidence carried forward at the reciter's pace,
+   * then again whenever the next word is due. Never past a pause mark or the end of the ayah.
+   */
+  private followPace(allowBack: boolean) {
+    if (this.paceTimer !== null) this.clock.clearTimeout(this.paceTimer);
+    this.paceTimer = null;
+    const ev = this.evidence;
+    if (!ev || this.liveVerse === null) return;
+    let target = ev.pos;
+    const now = this.audioNow();
+    if (now !== null) {
+      const p = this.pace.predict(ev, now, this.lag.ms, this.quiet);
+      target = p.pos;
+      if (p.nextAt !== null) {
+        this.paceTimer = this.clock.setTimeout(() => {
+          this.paceTimer = null;
+          if (this.held || this.commandActive || this.englishTail || this.capture.phase !== 'recording' || this.liveVerse !== this.displayVerse) return;
+          this.followPace(false);
+          this.publish();
+        }, Math.max(1, Math.ceil(p.nextAt - now)));
+      }
+    }
+    if (!allowBack && this.shownPos !== null && this.o.ix.wordVerse[this.shownPos] === this.liveVerse && this.shownPos > target) target = this.shownPos;
+    this.setCursor(target);
+  }
+
+  private setCursor(pos: number) {
+    const verse = this.o.ix.wordVerse[pos];
+    const word = pos - this.o.ix.verseStart[verse];
+    const v = this.o.corpus.at(verse)!;
+    let mapping = this.wordMaps.get(verse);
+    if (!mapping) { mapping = mapDisplayWords(v.searchText, v.arabicDisplay); this.wordMaps.set(verse, mapping); }
+    const span = mapping[word];
+    this.cursor = span ? { ...span, provisional: this.buffer.hasProvisional } : null;
+    this.progress = Math.min(1, (word + 1) / this.o.ix.verseLen[verse]);
+    this.shownPos = pos;
+  }
+
+  private stopPace() {
+    if (this.paceTimer !== null) this.clock.clearTimeout(this.paceTimer);
+    this.paceTimer = null;
+    this.evidence = null;
+    this.evidenceGuessed = false;
+    this.shownPos = null;
+  }
+
+  private resetLive() {
+    this.liveCursor.reset();
+    this.stopPace();
   }
 
   private onCapture(msg: Extract<ControlClientMessage, { type: 'capture' }>) {
@@ -550,7 +668,11 @@ export class Session {
       this.buffer = new TranscriptBuffer();
       this.listeningCommands.cancel(true);
       this.englishTail = false;
-      this.liveCursor.reset();
+      this.resetLive();
+      // Each stream has its own audio clock.
+      this.audioOffset = null;
+      this.quiet = [];
+      this.heardMs = -Infinity;
       this.liveVerse = null;
       this.liveFloor = 0;
       this.arabicScan = 0;
@@ -571,7 +693,7 @@ export class Session {
       this.listeningCommands.cancel();
       if (this.latestCommand?.id.startsWith('listen:')) this.latestCommand.ctrl.abort();
       this.follower.stop();
-      this.liveCursor.reset();
+      this.resetLive();
       this.liveVerse = null;
       this.cursor = null;
       this.publish();
@@ -594,14 +716,19 @@ export class Session {
   }
 
   /** Replay-format lines ({t, type:'result', tokens}); stops at the size bound. */
-  private writeCapture(tokens: unknown) {
+  private writeCapture(tokens: unknown, audioMs?: number) {
+    // audioMs (the reciter's audio clock at receipt) lets replays measure lag exactly.
+    this.writeCaptureEvent({ type: 'result', tokens, ...(audioMs === undefined ? {} : { audioMs: Math.round(audioMs) }) });
+  }
+
+  private writeCaptureEvent(event: Record<string, unknown>) {
     if (!this.captureFile) return;
     try {
       if ((statSync(this.captureFile, { throwIfNoEntry: false })?.size ?? 0) > CAPTURE_MAX_BYTES) {
         this.captureFile = null;
         return this.say('Diagnostic capture stopped at its 20 MB limit.');
       }
-      appendFileSync(this.captureFile, JSON.stringify({ t: Math.round(this.clock.now() - this.captureStart), type: 'result', tokens }) + EOL);
+      appendFileSync(this.captureFile, JSON.stringify({ t: Math.round(this.clock.now() - this.captureStart), ...event }) + EOL);
     } catch {
       this.captureFile = null;
     }
@@ -629,6 +756,7 @@ export class Session {
     this.pageTimer = null;
     if (this.snapshotTimer !== null) this.clock.clearTimeout(this.snapshotTimer);
     this.snapshotTimer = null;
+    this.stopPace();
     this.displayListeners.clear();
     this.controlListeners.clear();
     this.revokeListeners.clear();
@@ -757,7 +885,6 @@ export class Session {
   }
 
   snapshot(): ControlSnapshot {
-    const heard = this.buffer.heardText(18);
     const st = this.follower.stats;
     const m = this.o.corpus.data.manifest;
     return {
@@ -774,8 +901,8 @@ export class Session {
       pinned: this.pinned,
       keepOnUncertain: this.follower.engine.cfg.keepOnUncertain,
       startHint: this.verseLabel(this.startHint),
+      // What the recogniser heard stays on the server: pages show the Quran's own text, not ASR spelling.
       capture: this.capture,
-      heard,
       candidates: this.candidatesView,
       decisions: this.follower.decisions.slice(-8).map((d) => ({
         at: d.at,

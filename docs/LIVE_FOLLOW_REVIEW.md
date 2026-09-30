@@ -54,3 +54,18 @@ Run `scripts/eval-listening-routing.ts` explicitly to repeat paid live requests;
 1. Measure actual spoken-word end to rendered highlight with synchronized microphone/audio and paint evidence. ASR emission delay remains outside the local matcher; these changes cannot highlight a word before useful recognition arrives.
 2. Import licensed, verified word-level English and canonical QUL word-coordinate data for synchronized meanings and remaining script differences. Do not generate missing scripture or silently guess alignments.
 3. Retain the existing font/text limitation at 52:37 and resource-specific redistribution restrictions documented in README. They were not resolved by this update.
+
+## September 29, 2026: keeping pace with the reciter
+
+The owner reported the highlight moving on only as each word ended. Measured on replay of nine recorded owner sessions (1,268 words, `npm run replay:timing`): while a word was being recited the highlight was on it 13% of the time and behind it 69% (by about one word); a word lit up a median 0.90 s after it began. The recogniser reports each piece of a word about 0.65–0.8 s after it is spoken (consistent across every capture), and the tracker needed about half of a word's letters before placing it.
+
+The live display now keeps pace (`src/server/tracker/pace.ts`, `Session.followPace`):
+
+- A word counts as begun from its first letters when they begin the next word of the ayah on screen; the piece carries the word's start time.
+- From the newest evidenced word and when it began, the reciter's own pace (learned from their recent consecutive words, letters plus written madd) says which word they are on now; a timer moves the highlight when the next word is due.
+- Bounds: never past the end of the ayah or a pause mark by the clock; at most two words beyond the evidence; a word due long enough ago to have been reported, yet not reported, means a pause or a held madd, so the highlight waits. The control page's voice detector reports silences (180 ms) and the voice returning at once: the highlight waits through a breath and moves on as the voice returns, including past a pause mark. Evidence of an earlier word heard later (a restart) moves it back; a prediction never does.
+- Ayah changes are unchanged and evidence-only. Replay of all 105 captures and scenarios: 805 ayahs, 0 wrong, 0 blank, flip-backs and highlight gaps identical to the previous code.
+
+After, on the same nine sessions: on the word 61%, behind 13%, ahead 9%, a different ayah or no highlight 17% (mostly the first word of each new ayah); a word lights up p50 0.09 s, p90 0.66 s after it begins. The audio start in these captures is estimated (earliest delivery minus 0.6 s), so absolute timings are estimates; the before/after comparison is exact. Recorded sessions contain no voice-detector events, so waiting during breaths is covered by tests, not yet by a live measurement. New captures record the page's audio clock and voice events, so the next owner session can be replayed exactly.
+
+The page no longer shows what the recogniser heard: its spelling is not the Quran's, and the highlighted word is the proof that listening works. The server stopped sending it.

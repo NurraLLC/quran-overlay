@@ -32,8 +32,10 @@ export const NO_ERRORS: SynthErrors = { substitute: 0, drop: 0, insert: 0, lette
 export type TruthWord = { text: string; startMs: number; endMs: number; verseKey: string | null };
 
 export type ReplayEvent =
-  | { t: number; type: 'result'; tokens: WireToken[] }
-  | { t: number; type: 'control'; action: ControlAction };
+  | { t: number; type: 'result'; tokens: WireToken[]; /** Reciter's audio clock at receipt (newer captures). */ audioMs?: number }
+  | { t: number; type: 'control'; action: ControlAction }
+  /** The control page's voice detector (newer captures): voice heard or gone quiet at `audioMs`. */
+  | { t: number; type: 'voice'; speaking: boolean; audioMs: number };
 
 export type ControlAction =
   | { kind: 'manual'; key: string }

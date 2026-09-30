@@ -128,6 +128,22 @@ export const ControlClientMessageSchema = z.discriminatedUnion('type', [
     tokens: z.array(WireTokenSchema).max(600),
     /** Control browser monotonic ms at receipt from the provider (trace only; clocks are not mixed). */
     receivedAt: z.number().finite(),
+    /**
+     * Provider audio time (ms since this stream's first audio) at that receipt: where the reciter
+     * is now, while the tokens describe where they were. Keeps the highlight in step (pace.ts).
+     */
+    audioMs: z.number().finite().nonnegative().optional(),
+  }),
+  z.object({
+    type: z.literal('voice'),
+    captureEpoch: z.number().int().positive(),
+    /**
+     * The control page's microphone heard the voice start (true) or go quiet (false) at `audioMs`
+     * (provider audio time). Heard at once, where the recogniser reports ~0.8 s late: the paced
+     * highlight waits during a breath and moves on when the voice returns.
+     */
+    speaking: z.boolean(),
+    audioMs: z.number().finite().nonnegative(),
   }),
   z.object({
     type: z.literal('capture'),
@@ -248,7 +264,6 @@ export type ControlSnapshot = {
   keepOnUncertain: boolean;
   startHint: string | null;
   capture: { phase: CapturePhase; captureEpoch: number; detail: string | null; since: number };
-  heard: { final: string; provisional: string };
   candidates: CandidateView[];
   decisions: DecisionView[];
   setup: {
