@@ -130,8 +130,9 @@ export async function access(): Promise<Access> {
 }
 
 /** The one-line listening status: free and shared, or the personal allowance when one is configured. */
-/** The listening time line; `live`: the session is live on stream (no daily limit applies). */
-export function listeningLine(c: import('../shared/contracts').CreditView, live = false): string {
+/** The listening time line; `live`: the session is live on stream; `own`: the reciter's own Soniox key pays (no daily limit applies either way). */
+export function listeningLine(c: import('../shared/contracts').CreditView, live = false, own = false): string {
+  if (own) return 'Your own Soniox key · no time limit';
   if (c.freePerMonth > 0) return c.available > 0 ? `${formatListening(c.available)} of listening left` : 'No listening time left';
   if (c.limitedBy === 'pool') return 'Shared listening hours are unavailable · reading stays free';
   if (live) return 'Live on stream · no time limit';

@@ -51,6 +51,8 @@ export type HostedOptions = {
   reading?: Session;
   /** People reciting at once (QO_MAX_LISTENERS); keep it within the recogniser's own concurrency limit. */
   maxListeners?: number;
+  /** Streams the server's processor carries at once, own-key streams included (QO_MAX_RECITERS). */
+  maxReciters?: number;
 };
 
 export type AppOptions = {
@@ -271,7 +273,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   }
   const speech = hosted ? new HostedSpeech({ credits: hosted.credits, safety: safety!, apiKey: o.sonioxApiKey, fetchImpl: o.fetchImpl,
     isRecitation: hosted.isRecitation ?? (() => false), onSettled: pushCredits, endpoint: o.speechEndpoint, idleLimitMs: o.speechIdleMs, holdMs: o.speechHoldMs,
-    maxStreams: hosted.maxListeners, busy: () => overloaded,
+    maxStreams: hosted.maxListeners, maxReciters: hosted.maxReciters, busy: () => overloaded,
     // The waiting line: a free place is announced on the visitor's pages, and a page still open keeps its place.
     onTurn: (id) => hosted.hub.peek(id)?.notify({ type: 'listen_turn' }), present: (id) => controlSockets.has(id),
     // Live on stream (the visitor's overlay is open in OBS or on a reading screen): no daily limit or idle stop.
@@ -393,7 +395,10 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     const id = visitor(req)!;
     const ip = clientIp(req);
     lastIp.set(id, ip);
-    const ticket = speech!.issue(id, ip);
+    // A reciter's own Soniox key (optional): given with each request, used once for that stream, never stored or logged.
+    const own = (req.body as { ownKey?: unknown } | undefined)?.ownKey;
+    if (own !== undefined && own !== null && (typeof own !== 'string' || !/^[A-Za-z0-9._~+/=-]{16,256}$/.test(own))) return reply.code(400).send({ error: 'OWN_KEY_INVALID' });
+    const ticket = speech!.issue(id, ip, own || undefined);
     if ('error' in ticket) {
       if ('retryAfter' in ticket && ticket.retryAfter) reply.header('Retry-After', ticket.retryAfter);
       return reply.code(ticket.error === 'NO_CREDITS' ? 402 : ticket.error === 'NOT_CONFIGURED' ? 503 : 429).send(ticket);

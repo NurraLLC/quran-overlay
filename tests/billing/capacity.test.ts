@@ -117,6 +117,20 @@ describe('listening at capacity', () => {
     await settle();
   });
 
+  it('lets a reciter with their own Soniox key in while the shared places are full, and never echoes the key', async () => {
+    const a = await relay(await visit());
+    await until(() => provider.clients.size === 1);
+    const cookie = await visit();
+    const own = (ownKey: unknown) => fetch(`${base}/api/soniox/temporary-key`, { method: 'POST', headers: { origin: base, cookie, 'content-type': 'application/json' }, body: JSON.stringify({ ownKey }) });
+    expect((await own('short')).status).toBe(400);
+    expect((await own('has spaces in it, not a key')).status).toBe(400);
+    const res = await own('own-soniox-key-0123456789abcdef');
+    expect(res.status).toBe(200);
+    expect(await res.text()).not.toContain('own-soniox-key-0123456789abcdef');
+    a.ws.close();
+    await settle();
+  });
+
   it('turns the recogniser’s own limit into a wait, and returns the time set aside', async () => {
     const cookie = await visit();
     const id = identity.verify(cookie.split('=')[1])!;

@@ -130,6 +130,28 @@ export const LIVE_RECONNECTING = 'The connection was lost. Reconnecting by itsel
 /** The listening library's own brief reconnect (a phone reader does not show it). */
 export const RECONNECTING = 'Reconnecting to Soniox…';
 
+/**
+ * A reciter's own Soniox key (hosted site): kept only in this browser, sent with each listening
+ * request so their account pays for it (no shared hours, no daily limit); the server never stores it.
+ */
+const OWN_KEY_STORAGE = 'qo.ownSonioxKey';
+export const OWN_KEY_SHAPE = /^[A-Za-z0-9._~+/=-]{16,256}$/;
+export function ownSonioxKey(): string | null {
+  try {
+    return localStorage.getItem(OWN_KEY_STORAGE) || null;
+  } catch {
+    return null;
+  }
+}
+export function setOwnSonioxKey(key: string | null) {
+  try {
+    if (key) localStorage.setItem(OWN_KEY_STORAGE, key);
+    else localStorage.removeItem(OWN_KEY_STORAGE);
+  } catch {
+    /* storage blocked: nothing is kept */
+  }
+}
+
 /** A lost or failed connection, as opposed to a refusal, a microphone problem or a bad request. */
 function lostConnection(e: unknown) {
   const { name, code, message, raw } = (e ?? {}) as { name?: string; code?: string; message?: string; raw?: { error_type?: unknown } };
@@ -255,6 +277,11 @@ export class SonioxCapture {
   private unreachable = false;
   /** The key was refused because the sponsored hours ran out (for everyone). */
   private poolEmpty = false;
+  /** Why the reciter's own key was refused (read by the stream's error); until changed, the shared hours are used. */
+  private ownRefused: string | null = null;
+  private ownKeyFailed = false;
+  /** Told when the reciter's own key is refused (why), or changed (null). */
+  onOwnKeyProblem: ((problem: string | null) => void) | null = null;
   private liveRetries = 0;
   private liveRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private askedAt = 0;
@@ -304,8 +331,9 @@ export class SonioxCapture {
     return new SonioxClient({
       config: async () => {
         let res: Response;
+        const own = this.ownKeyFailed || this.commandOnly ? null : ownSonioxKey();
         try {
-          res = await fetch(u('/api/soniox/temporary-key'), { method: 'POST', credentials: 'same-origin' });
+          res = await fetch(u('/api/soniox/temporary-key'), { method: 'POST', credentials: 'same-origin', ...(own ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ownKey: own }) } : {}) });
         } catch (e) {
           this.unreachable = true;
           throw e;
@@ -313,6 +341,10 @@ export class SonioxCapture {
         if (!res.ok) {
           if (res.status >= 500) this.unreachable = true; // the server restarting, or a proxy's error page
           const body = (await res.json().catch(() => ({}))) as { error?: string; limitedBy?: string | null; renewsAt?: number; retryAfter?: number; position?: number };
+          if (body.error === 'OWN_KEY_INVALID') {
+            this.ownRefused = 'Your own Soniox key doesn’t look right. Check it, or remove it.';
+            throw new Error(this.ownRefused);
+          }
           // Every place to listen is taken: wait in line. (A spoken request, or a line too long to
           // join, is asked to try again later.)
           if (body.error === 'LISTENING_BUSY' && typeof body.position === 'number' && !this.commandOnly) {
@@ -634,6 +666,17 @@ export class SonioxCapture {
         this.waitInLine(position, answered ? LINE_ASK_MS : 2_000);
         return;
       }
+      // The reciter's own key refused (not accepted, or its account's limit or balance): listening
+      // carries on at once with the shared hours, and says why. The key is tried again once changed.
+      const ownRefused = this.ownRefused ?? (refusal === 'own_key_refused' && e instanceof Error ? e.message : null);
+      this.ownRefused = null;
+      if (ownRefused && !this.commandOnly) {
+        this.ownKeyFailed = true;
+        this.onOwnKeyProblem?.(ownRefused);
+        this.tell(`${ownRefused} Listening continues on the shared hours.`);
+        void this.restart();
+        return;
+      }
       // Out of listening time: stop cleanly (the page keeps its place) and say why.
       // The relay's own refusals (listening full, or unavailable) are a clean stop with its words.
       if (!this.noCredits && (refusal === 'listening_busy' || refusal === 'listening_unavailable')) this.noCredits = e instanceof Error ? e.message : BUSY;
@@ -706,6 +749,12 @@ export class SonioxCapture {
     this.nextEpoch(); // a stream of its own, announced to the server once it is open
     this.openStream(this.epoch);
     this.lineTimer = setTimeout(() => this.askAgain(), LINE_ASK_TIMEOUT_MS);
+  }
+
+  /** The reciter saved or removed their own key: the next stream uses it (or the shared hours). */
+  ownKeyChanged() {
+    this.ownKeyFailed = false;
+    this.onOwnKeyProblem?.(null);
   }
 
   /** Whether the session is live on stream (from the server's snapshots). */

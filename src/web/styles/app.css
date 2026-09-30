@@ -244,6 +244,10 @@ button.stop { background: #4a2620; border-color: #8a4a3e; color: #ffe0d8; }
 .start-point { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
 .start-point summary { cursor: pointer; color: var(--muted); font-size: 13.5px; }
 .start-point .start-from { margin-top: 10px; }
+.own-key .start-from input { flex: 1; min-width: 0; }
+.own-key-tail { flex: 1; align-self: center; color: var(--muted); font-size: 13.5px; }
+.own-key-problem { color: #f0b2a6; }
+.own-key a { color: var(--gold); }
 
 /* Short ayahs together: one passage, the current ayah bright, the rest quieter. Only the
    highlight moves inside a passage; the text itself stays still. */

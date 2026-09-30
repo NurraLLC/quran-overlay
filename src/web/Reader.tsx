@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView } from '../shared/contracts';
-import { RECONNECTING, SonioxCapture, type CaptureStatus } from './audio/soniox-session';
+import { ownSonioxKey, RECONNECTING, SonioxCapture, type CaptureStatus } from './audio/soniox-session';
 import { access, applyDisplay, applySnapshot, connect, listeningLine, type Access, u } from './net';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { arabicNumber } from './VerseDisplay';
@@ -124,8 +124,14 @@ export function Reader() {
   const lastRequest = useRef<string | null>(null);
   const send = useCallback((m: ControlClientMessage) => sock.current?.send(m) ?? false, []);
   const capRef = useRef<SonioxCapture | null>(null);
-  if (!capRef.current) capRef.current = new SonioxCapture((m) => send(m), (s) => setCapture(s), () => undefined);
+  // A Soniox key of the reciter's own, saved in this browser from the control page, pays for listening here too.
+  const [ownProblem, setOwnProblem] = useState<string | null>(null);
+  if (!capRef.current) {
+    capRef.current = new SonioxCapture((m) => send(m), (s) => setCapture(s), () => undefined);
+    capRef.current.onOwnKeyProblem = setOwnProblem;
+  }
   const cap = capRef.current;
+  const ownKey = !!ownSonioxKey() && !ownProblem;
 
   useEffect(() => {
     document.documentElement.dataset.surface = 'reader';
@@ -555,7 +561,7 @@ export function Reader() {
             </button>
             {credits ? (
               <button className="r-menu-item" onClick={() => { setMenuOpen(false); setTimeOpen('time'); }}>
-                Listening<span>{listeningLine(credits, snap.overlay.clients > 0)}</span>
+                Listening<span>{listeningLine(credits, snap.overlay.clients > 0, ownKey)}</span>
               </button>
             ) : (
               <p className="r-menu-item r-menu-static">Listening time<span>Unlimited: this reader runs on your own computer, with your own key</span></p>
@@ -665,7 +671,7 @@ export function Reader() {
             <span>{status}</span>
             {credits && (
               <button className={`r-credits${credits.available < 600 ? ' low' : ''}`} onClick={() => setTimeOpen('time')}>
-                {listeningLine(credits, snap.overlay.clients > 0)}
+                {listeningLine(credits, snap.overlay.clients > 0, ownKey)}
               </button>
             )}
             {snap.held && (

@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView, SearchCard } from '../shared/contracts';
-import { SonioxCapture, type CaptureStatus } from './audio/soniox-session';
+import { OWN_KEY_SHAPE, ownSonioxKey, setOwnSonioxKey, SonioxCapture, type CaptureStatus } from './audio/soniox-session';
 import { access, applyDisplay, applySnapshot, connect, formatListening, listeningLine, u } from './net';
 import { NurraBadge } from './Nurra';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
@@ -81,12 +81,16 @@ export function Control() {
 
   const send = useCallback((m: ControlClientMessage) => sock.current?.send(m) ?? false, []);
   const captureRef = useRef<SonioxCapture | null>(null);
+  // The streamer's own Soniox key, if saved in this browser, and why it was refused (then the shared hours are used).
+  const [ownKey, setOwnKey] = useState(() => ownSonioxKey());
+  const [ownProblem, setOwnProblem] = useState<string | null>(null);
   if (!captureRef.current) {
     captureRef.current = new SonioxCapture(
       (m) => send(m),
       (s) => setCapture(s),
       () => undefined,
     );
+    captureRef.current.onOwnKeyProblem = setOwnProblem;
   }
   const cap = captureRef.current;
 
@@ -336,6 +340,13 @@ export function Control() {
             chapters={chapters}
             send={send}
             credits={credits}
+            ownKey={ownKey}
+            ownProblem={ownProblem}
+            onOwnKey={(key) => {
+              setOwnSonioxKey(key);
+              setOwnKey(key);
+              cap.ownKeyChanged();
+            }}
             query={query}
             setQuery={setQuery}
             pending={!!pendingId}
@@ -432,6 +443,9 @@ function VoiceCard(p: {
   chapters: ChapterRow[];
   send: (m: ControlClientMessage) => boolean;
   credits: CreditView | null;
+  ownKey: string | null;
+  ownProblem: string | null;
+  onOwnKey: (key: string | null) => void;
   query: string;
   setQuery: (q: string) => void;
   pending: boolean;
@@ -480,7 +494,7 @@ function VoiceCard(p: {
             : p.capture.state === 'dozing'
               ? 'Waiting for you to recite. After a long pause the microphone stays on here but nothing is sent (listening is billed while a stream is open); recite and it continues at once.'
               : p.listening
-              ? 'Recite and the screen follows. Or just say it in English: “go to Surah Maryam, ayah three”, “show the ayah about the orphan”, or describe one to find it here privately. Other English talk never changes the screen.'
+              ? p.capture.detail ?? 'Recite and the screen follows. Or just say it in English: “go to Surah Maryam, ayah three”, “show the ayah about the orphan”, or describe one to find it here privately. Other English talk never changes the screen.'
               : (p.capture.detail ??
                 (p.snap.overlay.clients > 0
                   ? 'One microphone for both: recite to follow, or speak an English request. Audio goes to Soniox only while you speak: long pauses send nothing. While you’re live on stream, listening stays on through breaks and talk with your audience, with no time limit.'
@@ -489,7 +503,7 @@ function VoiceCard(p: {
 
       {p.credits && (
         <p className={`credits-line${p.credits.available < 600 ? ' low' : ''}`}>
-          {listeningLine(p.credits, p.snap.overlay.clients > 0)}
+          {listeningLine(p.credits, p.snap.overlay.clients > 0, !!p.ownKey && !p.ownProblem)}
         </p>
       )}
       <form
@@ -541,7 +555,43 @@ function VoiceCard(p: {
         </div>
         <p className="hint">Helps when several surahs open the same way; other passages are still recognized.</p>
       </details>
+      {p.credits && <OwnKey saved={p.ownKey} problem={p.ownProblem} onChange={p.onOwnKey} />}
     </section>
+  );
+}
+
+/** A streamer's own Soniox key (hosted site): kept only in this browser, sent when listening starts. */
+function OwnKey(p: { saved: string | null; problem: string | null; onChange: (key: string | null) => void }) {
+  const [draft, setDraft] = useState('');
+  const valid = OWN_KEY_SHAPE.test(draft.trim());
+  return (
+    <details className="start-point own-key" open={p.problem ? true : undefined}>
+      <summary>{p.saved ? (p.problem ? 'Your own Soniox key isn’t working' : 'Using your own Soniox key') : 'Your own Soniox key (optional)'}</summary>
+      {p.saved ? (
+        <div className="start-from">
+          <span className="own-key-tail">Key ending …{p.saved.slice(-4)}</span>
+          <button onClick={() => p.onChange(null)}>Remove</button>
+        </div>
+      ) : (
+        <form
+          className="start-from"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!valid) return;
+            p.onChange(draft.trim());
+            setDraft('');
+          }}
+        >
+          <input type="password" autoComplete="off" spellCheck={false} aria-label="Your Soniox API key" placeholder="Your Soniox API key" value={draft} onChange={(e) => setDraft(e.target.value)} />
+          <button type="submit" disabled={!valid}>Use it</button>
+        </form>
+      )}
+      {p.problem && <p className="hint own-key-problem">{p.problem} Listening uses the shared hours meanwhile.</p>}
+      <p className="hint">
+        For long streams: listening is billed to your own Soniox account instead of the shared hours, with no daily limit. The key stays in this browser and is sent over the encrypted connection only when listening starts; the server never stores it. Get one at{' '}
+        <a href="https://console.soniox.com" target="_blank" rel="noreferrer">console.soniox.com</a>.
+      </p>
+    </details>
   );
 }
 

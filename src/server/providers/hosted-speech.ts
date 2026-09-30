@@ -18,8 +18,10 @@ type Options = {
   holdMs?: number;
   offerMs?: number;
   liveBreakMs?: number;
-  /** People reciting at once (each costs tracker CPU); more wait for a free place. */
+  /** People reciting at once on the service's Soniox key (its concurrency limit); more wait in line. */
   maxStreams?: number;
+  /** Streams the server's processor carries at once, own-key streams included (default: max(maxStreams, 60)). */
+  maxReciters?: number;
   /** The server is overloaded right now: no new listening until it recovers. */
   busy?: () => boolean;
   /** A place is free for this visitor, who is waiting in line: their page asks for it now. */
@@ -34,7 +36,8 @@ type Options = {
   live?: (id: string) => boolean;
   listeningOn?: (id: string) => boolean;
 };
-type Ticket = { value: string; expires: number; ip: string };
+/** `own`: the reciter's own Soniox key, kept only until the ticket is used (at most TICKET_MS), then used once. */
+type Ticket = { value: string; expires: number; ip: string; own?: string };
 /** Someone waiting to listen: last heard from, offered a place (when), and back after reciting. */
 type Waiting = { id: string; seen: number; offered: number | null; back: boolean };
 /**
@@ -53,6 +56,11 @@ export const DEFAULT_MAX_STREAMS = 60;
 /** Full, here or at the recogniser: a clear wait, and nothing in reading changes. */
 const BUSY = 'Many people are reciting right now, so listening is full for the moment. Please try again in a minute. Reading, word meanings and translations work as usual.';
 const UNAVAILABLE = 'Listening is unavailable right now. Reading, word meanings and translations work as usual.';
+/** A reciter's own Soniox key refused ('own_key_refused'): the page carries on with the shared hours and says why. */
+const OWN_KEY_REJECTED = 'Soniox did not accept your own key. Check it in the Soniox Console, or remove it here.';
+const OWN_KEY_LIMIT = 'Your Soniox account is at its limit (streams at once, or starts a minute). Check its limits in the Soniox Console.';
+const OWN_KEY_BALANCE = 'Your Soniox account has run out of balance. Top it up in the Soniox Console.';
+const OWN_KEY_REFUSED = 'Soniox refused a stream on your own key. Check your account in the Soniox Console.';
 let balanceWarned = 0;
 /**
  * The waiting line, when every place is taken: first come, first served. A waiting page asks again
@@ -85,6 +93,8 @@ export class HostedSpeech {
   private active = new Map<string, () => void>();
   /** The network of each open stream. */
   private streamIps = new Map<string, string>();
+  /** Open streams on the reciter's own Soniox key (no shared hours or shared places). */
+  private own = new Set<string>();
   private connections = new Set<() => void>();
   private pending = 0;
   private line: Waiting[] = [];
@@ -101,15 +111,21 @@ export class HostedSpeech {
     return this.o.maxStreams ?? DEFAULT_MAX_STREAMS;
   }
 
+  private get maxReciters() {
+    return this.o.maxReciters ?? Math.max(this.maxStreams, DEFAULT_MAX_STREAMS);
+  }
+
   /** People waiting in line to listen. */
   get waiting() {
     return this.line.length;
   }
 
-  /** Places that may be used now: ours, or fewer while the recogniser says it is full. */
+  /** Shared places that may be used now: ours, or fewer while the recogniser says it is full. */
   private capacity(now: number) {
     if (this.providerFull && this.providerFull.until <= now) this.providerFull = null;
-    return this.providerFull ? Math.min(this.maxStreams, this.providerFull.cap) : this.maxStreams;
+    const shared = this.providerFull ? Math.min(this.maxStreams, this.providerFull.cap) : this.maxStreams;
+    // Own-key streams take none of the recogniser's shared places, but the server's processor all the same.
+    return Math.max(0, Math.min(shared, this.maxReciters - this.own.size));
   }
 
   /** Drops unused tickets and lapsed kept places. */
@@ -128,14 +144,15 @@ export class HostedSpeech {
   private unlimited(id: string, ip: string) {
     if (!this.o.live?.(id)) return false;
     let others = 0;
-    for (const [key, at] of this.streamIps) if (key !== id && at === ip && this.o.live(key)) others++;
+    for (const [key, at] of this.streamIps) if (key !== id && at === ip && !this.own.has(key) && this.o.live(key)) others++;
     return others < MAX_LIVE_PER_NETWORK;
   }
 
-  /** Places in use: streams, unused tickets and kept places, apart from `id`'s own. */
+  /** Shared places in use: streams on the service's key, their unused tickets and kept places, apart from `id`'s own. */
   private taken(id: string | null) {
-    const own = id === null ? 0 : (this.tickets.has(id) ? 1 : 0) + (this.held.has(id) ? 1 : 0);
-    return this.active.size + this.tickets.size + this.held.size - own;
+    let n = this.active.size - this.own.size + this.held.size - (id !== null && this.held.has(id) ? 1 : 0);
+    for (const [key, t] of this.tickets) if (!t.own && key !== id) n++;
+    return n;
   }
 
   /** Offered a place and did not come for it: passed over (still in line) so the next person gets it. */
@@ -231,7 +248,7 @@ export class HostedSpeech {
    */
   private refused(id: string) {
     const now = Date.now();
-    this.providerFull = { cap: this.active.size - (this.active.has(id) ? 1 : 0), until: now + PROVIDER_FULL_MS };
+    this.providerFull = { cap: this.active.size - this.own.size - (this.active.has(id) ? 1 : 0), until: now + PROVIDER_FULL_MS };
     this.back.set(id, now + BACK_MS);
   }
 
@@ -245,9 +262,23 @@ export class HostedSpeech {
     return this.active.has(id);
   }
 
-  issue(id: string, ip: string) {
+  /**
+   * A ticket for one stream through the relay. `own`: the reciter's own Soniox key, given with each
+   * request and never stored: their account pays, so no shared hours, daily share or shared place is
+   * used, only the server's own capacity.
+   */
+  issue(id: string, ip: string, own?: string) {
     const now = Date.now();
     this.tidy(now);
+    if (own) {
+      if (this.tickets.size >= 5000 && !this.tickets.has(id)) return { error: 'SERVICE_BUSY' };
+      if (!this.active.has(id) && (this.active.size >= this.maxReciters || this.o.busy?.())) return { error: 'LISTENING_BUSY' };
+      this.leave(id);
+      if (this.held.delete(id)) this.offerSoon(); // a shared place kept for them is not needed now
+      const ticket = { value: randomBytes(24).toString('base64url'), expires: now + TICKET_MS, ip, own };
+      this.tickets.set(id, ticket);
+      return { api_key: ticket.value, expires_at: new Date(ticket.expires).toISOString() };
+    }
     const unlimited = this.unlimited(id, ip);
     const safety = this.o.safety.status(id, ip, now);
     if (safety.retryAfter && !unlimited) return { error: 'LISTENING_COOLDOWN', retryAfter: safety.retryAfter };
@@ -297,6 +328,8 @@ export class HostedSpeech {
     let previousIdle = this.o.safety.status(id, ip).idleMs;
     /** Live on stream without limits (decided when the stream starts). */
     let exempt = false;
+    /** On the reciter's own Soniox key. */
+    let ownStream = false;
     const end = (message?: string, kind = 'listening_paused') => {
       if (finished) return;
       finished = true;
@@ -313,9 +346,10 @@ export class HostedSpeech {
       }
       if (this.active.get(id) === end) {
         this.active.delete(id);
+        this.own.delete(id);
         this.streamIps.delete(id);
         // A long pause (the page closes its stream) or a restart: the next stream finds its place kept.
-        if (connectedAt && kind !== 'listening_cooldown' && !this.tickets.has(id)) {
+        if (connectedAt && kind !== 'listening_cooldown' && !this.tickets.has(id) && !ownStream) {
           const now = Date.now();
           const live = exempt && !!this.o.live?.(id);
           this.held.set(id, { at: now, live });
@@ -357,32 +391,43 @@ export class HostedSpeech {
         const ticket = this.tickets.get(id);
         if (!config || !ticket || config.api_key !== ticket.value || ticket.ip !== ip || ticket.expires < now) return end('Please start listening again.');
         this.tickets.delete(id);
+        // The reciter's own Soniox key, if they gave one: used once below to open this stream.
+        let ownKey = ticket.own ?? null;
         if (this.active.has(id)) return end('Listening is already open on another page. Stop it there first.');
-        if (this.active.size >= this.capacity(now) || this.o.busy?.()) {
-          this.back.set(id, now + BACK_MS); // let in, then full after all: next in line
+        const full = ownKey ? this.active.size >= this.maxReciters : this.active.size - this.own.size >= this.capacity(now);
+        if (full || this.o.busy?.()) {
+          if (!ownKey) this.back.set(id, now + BACK_MS); // let in, then full after all: next in line
           return end(BUSY, 'listening_busy');
         }
         this.held.delete(id);
-        const unlimited = this.unlimited(id, ip);
+        const unlimited = !ownKey && this.unlimited(id, ip);
         const safety = this.o.safety.status(id, ip, now);
-        if (safety.retryAfter && !unlimited) return end('Listening is taking a short break. Please try again in five minutes.', 'listening_cooldown');
+        if (safety.retryAfter && !unlimited && !ownKey) return end('Listening is taking a short break. Please try again in five minutes.', 'listening_cooldown');
         previousIdle = safety.idleMs;
         // Exactly two audio forms: a detected container, or the reader's PCM described in full.
         const pcm = config.audio_format === PCM.audio_format;
         const detected = (config.audio_format === undefined || config.audio_format === 'auto') && config.sample_rate === undefined && config.num_channels === undefined;
         if (pcm ? config.sample_rate !== PCM.sample_rate || config.num_channels !== PCM.num_channels : !detected) return end('This audio format is not supported.');
-        const hold = this.o.credits.reserve(id, ip, now, unlimited);
-        if ('error' in hold) return end('Shared listening hours are unavailable. Reading and translations are still free.');
-        holdId = hold.id;
+        // Shared hours are set aside for the stream; on a reciter's own key their account pays.
+        let maxSeconds = this.o.credits.cfg.holdMaxSeconds;
+        if (!ownKey) {
+          const hold = this.o.credits.reserve(id, ip, now, unlimited);
+          if ('error' in hold) return end('Shared listening hours are unavailable. Reading and translations are still free.');
+          holdId = hold.id;
+          maxSeconds = hold.maxSeconds;
+        }
         exempt = unlimited;
+        ownStream = !!ownKey;
         this.active.set(id, end);
+        if (ownStream) this.own.add(id);
         this.streamIps.set(id, ip);
         validated = true;
         this.pending--;
         clearTimeout(handshake);
         // An upstream setup failure cannot leave a reservation open indefinitely.
         const setup = setTimeout(() => end('Listening could not connect. Please try again.'), 10_000);
-        void mintTemporaryKey(this.o.apiKey, `quran-reader:${id}`, this.o.fetchImpl, hold.maxSeconds).then((key) => {
+        void mintTemporaryKey(ownKey ?? this.o.apiKey, ownKey ? 'quran-reader' : `quran-reader:${id}`, this.o.fetchImpl, maxSeconds).then((key) => {
+          ownKey = null; // not kept past its one use
           if (finished) { clearTimeout(setup); return; }
           upstream = new WebSocket(this.o.endpoint ?? 'wss://stt-rt.soniox.com/transcribe-websocket', { handshakeTimeout: 5000, maxPayload: MAX_BUFFER });
           upstream.on('error', () => { clearTimeout(setup); end('Listening could not connect. Please try again.'); });
@@ -398,13 +443,15 @@ export class HostedSpeech {
             queue = []; queuedBytes = 0;
             timer = setInterval(() => {
               const now = Date.now();
-              if (now - connectedAt >= hold.maxSeconds * 1000) return end('Temporary API key session duration limit exceeded.', 'temp_api_key_session_expired');
+              if (now - connectedAt >= maxSeconds * 1000) return end('Temporary API key session duration limit exceeded.', 'temp_api_key_session_expired');
+              // Their own account pays: no shared time to protect (the page stops an idle microphone itself).
+              if (ownStream) return;
               // Live on stream: talking with the audience between recitations never stops listening
               // (and once the stream ends, the usual idle rule counts from then). A stream that
               // started before its overlay reconnected (after a restart) becomes live when it does.
               if (!exempt && this.o.live?.(id) && this.unlimited(id, ip)) {
                 exempt = true;
-                this.o.credits.markStream(hold.id);
+                if (holdId) this.o.credits.markStream(holdId);
               }
               if (exempt && this.o.live?.(id)) {
                 lastRecitation = now;
@@ -421,6 +468,9 @@ export class HostedSpeech {
               // The recogniser's own limits: too many people at once, or its balance ran out. It
               // refused the stream, so nothing is charged: the time set aside goes back.
               if (result.error_code === 429 || result.error_type === 'limit_exceeded' || result.error_code === 402 || result.error_type === 'organization_balance_exhausted') connectedAt = 0;
+              // On the reciter's own key these are their account's limits, not the service's.
+              if (ownStream && (result.error_code === 429 || result.error_type === 'limit_exceeded')) return end(OWN_KEY_LIMIT, 'own_key_refused');
+              if (ownStream && (result.error_code === 402 || result.error_type === 'organization_balance_exhausted')) return end(OWN_KEY_BALANCE, 'own_key_refused');
               if (result.error_code === 429 || result.error_type === 'limit_exceeded') {
                 this.refused(id);
                 return end(BUSY, 'listening_busy');
@@ -449,8 +499,13 @@ export class HostedSpeech {
             } catch { end('Listening returned an invalid response. Please try again.'); }
           });
         }).catch((e) => {
+          ownKey = null;
           clearTimeout(setup);
-          if (!(e instanceof SonioxKeyError && e.code === 'RATE_LIMITED')) return end('Listening could not connect. Please try again.');
+          const code = e instanceof SonioxKeyError ? e.code : null;
+          if (ownStream && code && code !== 'TRANSPORT_UNAVAILABLE' && code !== 'SERVICE_UNAVAILABLE') {
+            return end(code === 'AUTHENTICATION_FAILED' ? OWN_KEY_REJECTED : code === 'RATE_LIMITED' ? OWN_KEY_LIMIT : OWN_KEY_REFUSED, 'own_key_refused');
+          }
+          if (code !== 'RATE_LIMITED') return end('Listening could not connect. Please try again.');
           this.refused(id);
           end(BUSY, 'listening_busy');
         });

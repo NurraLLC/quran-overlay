@@ -66,7 +66,8 @@ QO_HOSTED=1 QO_HOST=127.0.0.1 npm start
 | `QO_BASE_PATH` | no | Serve under a path of another site, e.g. `/quran-reader` |
 | `QO_EXTRA_HOSTS` | no | Extra Host names to accept, comma-separated: the name a proxy in front forwards to |
 | `QO_TRUST_PROXY` | `1` behind a proxy | Take the visitor address from `X-Forwarded-For` (per-network daily share). Without it every visitor shares the proxy's address; the server warns once at the first proxied request |
-| `QO_MAX_LISTENERS` | no | People reciting at once (default 60). Keep it at or below your Soniox concurrency limit (10 unless raised in the Soniox Console) and what the server's CPU carries (see *Capacity*); beyond it people wait in line, and listening starts by itself when a place frees |
+| `QO_MAX_RECITERS` | no | Streams the server's processor carries at once, streamers' own-key streams included (default: the larger of `QO_MAX_LISTENERS` and 60) |
+| `QO_MAX_LISTENERS` | no | People reciting at once on the service's Soniox key (default 60). Keep it at or below your Soniox concurrency limit (10 unless raised in the Soniox Console) and what the server's CPU carries (see *Capacity*); beyond it people wait in line, and listening starts by itself when a place frees |
 | `QO_HOST` | `0.0.0.0` in a container | Listen address (default loopback) |
 | `PORT` | no | Default 4317 |
 | `QO_SECRET` | no | Visitor-cookie signing secret (48+ random bytes); otherwise generated into the state volume |
@@ -139,6 +140,8 @@ A visitor whose overlay link is open (in OBS, or as a reading screen) is **live 
 - **No idle stop.** Breaks and talk with the audience never stop listening (silence costs nothing; talk is recognised, so billed).
 - **The place is kept.** When listening is full, a live stream keeps its place through breaks of up to 30 minutes while its listening is on, and goes to the front of the line otherwise.
 - **Connections come back.** A lost connection (the network, a server restart or deploy) is retried by the page every few seconds until it is back, instead of stopping.
+
+**Their own Soniox key.** A streamer can also add their own Soniox API key on the control page (*Your own Soniox key*). Their listening is then billed to their Soniox account: no shared hours, no daily limit, and no shared place (a stream on it takes only server capacity, `QO_MAX_RECITERS`, not one of the service's Soniox places). The key is kept only in their browser and sent with each listening request over the encrypted connection; the relay uses it once to open that stream and never stores or logs it. If Soniox refuses it (a wrong key, their account's limit or balance), listening carries on with the shared hours and the page says why.
 
 At most three live streams per network have these rules at once (a household, a masjid); more have the usual limits. The page shows "Live on stream · no time limit". Before a long stream, check the pool and the Soniox balance (turn on its auto top-up), and avoid deploying during it: listening reconnects by itself, but a restart interrupts following for the seconds it takes. Donations for another organization go through that organization's own link, separate from this pool (see *Payments*).
 

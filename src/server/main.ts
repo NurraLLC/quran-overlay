@@ -95,6 +95,7 @@ function hostedSetup(create: (saved: Pick<ConstructorParameters<typeof Session>[
     trustProxy: process.env.QO_TRUST_PROXY === '1',
     // Each reciter costs tracker CPU, and the recogniser has its own limit (Soniox: 10 at once unless raised).
     maxListeners: Number(process.env.QO_MAX_LISTENERS) || undefined,
+    maxReciters: Number(process.env.QO_MAX_RECITERS) || undefined,
     // Voluntary community donations only. No personal purchases or subscriptions.
     billing: process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET ? new StripeBilling(process.env.STRIPE_SECRET_KEY, process.env.STRIPE_WEBHOOK_SECRET, fetch, parseDonations(process.env.QO_DONATIONS, process.env.QO_SPONSOR_CENTS_PER_HOUR)) : null,
   };
