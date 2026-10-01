@@ -1,4 +1,36 @@
-# Launch status — 2026-09-29
+# Launch status — 2026-10-01
+
+## Current update: charity stream scene
+
+The owner explicitly approved deployment on October 1. Production now runs
+`quran-reader:c889d26` (image `63449bc561c2`), with the existing content and state
+volumes preserved. Sites routing is unchanged. `QO_TRUST_PROXY=1` and
+`QO_MAX_LISTENERS=10` are configured. The content-refresh timer remains active.
+Live payments remain disabled.
+
+- Fresh source checks: TypeScript, all 271 unit/integration tests, production
+  build and all 18 Edge browser tests passed. The image build passed all 25
+  corpus checks covering 6,236 ayahs and 114 surahs. These are source/browser
+  checks, not fresh replay or microphone measurements.
+- Production container is healthy. Public health, policies, assets, anonymous
+  session and control WebSocket checks passed. Direct origin access returns 404.
+  The shared pool retained its pre-update totals: 276,923 funded seconds,
+  2,378 used seconds, 108,391 available seconds and 166,154 reserve seconds.
+- Live browser walkthrough: the Charity stream card appears; Al-Ikhlas displays
+  in the stream panel; a temporary $1 donation announces and updates the total;
+  removal restores $0 and zero donors; 2:282 displays Arabic and English part
+  1 of 5. No microphone or paid recognition was started in this walkthrough.
+- The previous container is retained as
+  `quran-reader-old-48183d0-20261001T110836Z`. A private state archive and env
+  backup were made in `/opt/quran-reader-backups` before the switch.
+- The owner selected OBS Studio on this PC with the full charity scene. OBS is
+  installed. Camera composition, the owner's microphone, phone QR scanning and
+  a rendered OBS recording still require the owner test in [STREAM_TEST.md](STREAM_TEST.md).
+
+The records below describe the original September 29 launch, not the current
+image or new measurements.
+
+## Original launch — 2026-09-29
 
 **Public reader launched:** https://nurra.org/quran-reader/ . Sites version 14
 (`fea5e1f`) forwards only the reader path to backend image
