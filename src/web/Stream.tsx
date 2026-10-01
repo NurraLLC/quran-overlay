@@ -98,6 +98,19 @@ export function Stream() {
   const [denied, setDenied] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const fontsReady = useFontsReady(NURRA_ENGLISH_FONT, NURRA_ENGLISH_WEIGHT);
+  // The scene appears once its own lettering is loaded (never a flash of a fallback face on stream);
+  // a font that fails to load does not hold it back for more than a moment.
+  const [letteringReady, setLetteringReady] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const done = () => alive && setLetteringReady(true);
+    const t = setTimeout(done, 3000);
+    Promise.all(['20px "Marcellus SC"', '700 34px "Cormorant Garamond"', 'italic 500 28px "Cormorant Garamond"', '600 32px "Cormorant Garamond"'].map((f) => document.fonts.load(f))).then(done, done);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, []);
   const lastRevision = useRef(-1);
   const epoch = useRef<string | null>(null);
   const sock = useRef<ReturnType<typeof connect> | null>(null);
@@ -184,7 +197,7 @@ export function Stream() {
     if (denied) console.warn('Quran Reader: this stream link is missing or was replaced. Copy the current one from the control page (Charity stream).');
   }, [denied]);
 
-  if (denied || !stream) return null;
+  if (denied || !stream || !letteringReady) return null;
   const s = stream.settings;
   const camera = s.camera;
   // The slot shows the donation being announced, or (settled) the latest one.
@@ -262,6 +275,8 @@ export function Stream() {
 
         <div className="cs-reader">
           <div className="cs-reader-inner">
+            {/* Before the first ayah (or while it is hidden): a quiet star, never an empty box. */}
+            <span className={`cs-reader-idle${display?.verse && display.visible ? ' cs-reader-idle-off' : ''}`}><Star size={150} color="rgba(255, 247, 178, 0.14)" /></span>
             {display && <VerseDisplay state={display} fontsReady={fontsReady} frame={PANEL} theme="nurra" />}
           </div>
           <Corners size={20} />

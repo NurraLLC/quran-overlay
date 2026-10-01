@@ -764,6 +764,9 @@ a.about-ref:hover { text-decoration: underline; }
 
 .cs-reader { position: absolute; left: 520px; top: 160px; width: 860px; height: 760px; box-sizing: border-box; padding: 12px; border: 1px solid rgba(255, 247, 178, 0.5); }
 .cs-reader-inner { position: relative; height: 100%; box-sizing: border-box; overflow: hidden; border: 1px solid rgba(255, 247, 178, 0.2); background: #041663; }
+.cs-reader-idle { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); line-height: 0; transition: opacity 400ms ease; }
+.cs-reader-idle-off { opacity: 0; }
+.cs-reader-inner .stage { position: relative; z-index: 1; }
 
 .cs-giving { position: absolute; left: 1428px; top: 160px; width: 420px; height: 760px; display: flex; flex-direction: column; gap: 26px; }
 .cs-total { display: flex; flex-direction: column; gap: 10px; }
