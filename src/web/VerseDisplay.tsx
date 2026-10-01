@@ -1,7 +1,8 @@
-// One renderer for the OBS overlay, the reading screen and the control preview. It lays out a
-// fixed 1920×1080 stage, measures real line boxes with the loaded fonts, and either fits the verse
-// or pages it deliberately (with visible continuation), never clipping or shrinking below the
-// legibility floor. Arabic, translation and reference change together in one commit.
+// One renderer for the OBS overlay, the reading screen, the control preview and the charity stream's
+// panel. It lays out a fixed 1920×1080 stage (or, for the stream scene, a panel of a given size),
+// measures real line boxes with the loaded fonts, and either fits the verse or pages it deliberately
+// (with visible continuation), never clipping or shrinking below the legibility floor. Arabic,
+// translation and reference change together in one commit.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { DisplayState } from '../shared/contracts';
@@ -49,6 +50,9 @@ export const STAGE_H = 1080;
 
 export const ARABIC_FONT = "'Uthmanic Hafs', serif";
 export const ENGLISH_FONT = "'Charter', 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif";
+/** The charity stream's translation face (bundled Cormorant Garamond), measured at its weight. */
+export const NURRA_ENGLISH_FONT = "'Cormorant Garamond', 'Palatino Linotype', Georgia, serif";
+export const NURRA_ENGLISH_WEIGHT = 500;
 
 export type LayoutInfo = {
   key: string;
@@ -73,10 +77,11 @@ function root(): HTMLDivElement {
   return measureRoot;
 }
 
-function measureLines(words: string[], font: string, px: number, lineHeight: number, width: number, rtl: boolean): Lines {
+function measureLines(words: string[], font: string, px: number, lineHeight: number, width: number, rtl: boolean, weight = 400): Lines {
   const r = root();
   r.style.width = `${width}px`;
   r.style.fontFamily = font;
+  r.style.fontWeight = String(weight);
   r.style.fontSize = `${px}px`;
   r.style.lineHeight = String(lineHeight);
   r.style.direction = rtl ? 'rtl' : 'ltr';
@@ -182,6 +187,51 @@ type Plan = {
 
 type Geometry = { width: number; height: number; refH: number; gap: number };
 
+/**
+ * Where a verse is laid out and at what sizes: the full-frame stage (DEFAULT_GEO, below) or a panel
+ * of the charity stream scene (panelGeo). Sizes are px at arabicScale 1.
+ */
+type Geo = {
+  full: Geometry;
+  /** The lower third, where there is one. */
+  lower: Geometry | null;
+  nextW: number;
+  nextH: number;
+  bannerH: number;
+  /** Arabic: largest, smallest alone, smallest with a preview or in a passage, and when paging. */
+  ar: { max: number; min: number; minWide: number; page: number };
+  en: { max: number; min: number; page: number };
+  nextPx: [number, number];
+  /** English only: largest, smallest, smallest in a passage, smallest with a preview. */
+  enOnly: { max: number; min: number; minGroup: number; minNext: number };
+  enOnlyNextPx: [number, number];
+  englishFont: string;
+  englishWeight: number;
+};
+
+/** The stream panel's padding around the verse (matches .stage[data-layout='panel'] .verse). */
+const PANEL_PAD = { x: 30, top: 24, bottom: 20 };
+
+/** A panel of the charity stream scene: the same rules at sizes for a smaller frame. */
+function panelGeo(frame: { width: number; height: number }, theme: 'nurra' | undefined): Geo {
+  const width = frame.width - 2 * PANEL_PAD.x;
+  return {
+    // The Nurra reference is a framed pill with the credit under it; paged ayahs add their markers.
+    full: { width, height: frame.height - PANEL_PAD.top - PANEL_PAD.bottom, refH: theme === 'nurra' ? 140 : 72, gap: 24 },
+    lower: null,
+    nextW: width - 40,
+    nextH: 128,
+    bannerH: 96,
+    ar: { max: 86, min: 46, minWide: 54, page: 48 },
+    en: { max: 38, min: 26, page: 28 },
+    nextPx: [30, 40],
+    enOnly: { max: 58, min: 30, minGroup: 36, minNext: 34 },
+    enOnlyNextPx: [24, 32],
+    englishFont: theme === 'nurra' ? NURRA_ENGLISH_FONT : ENGLISH_FONT,
+    englishWeight: theme === 'nurra' ? NURRA_ENGLISH_WEIGHT : 400,
+  };
+}
+
 const FULL: Geometry = { width: 1560, height: 812, refH: 64, gap: 34 };
 const LOWER: Geometry = { width: 1600, height: 318, refH: 48, gap: 16 };
 /** Height kept for the next-ayah preview (hairline, optional surah label, one Arabic line). */
@@ -193,10 +243,12 @@ const BANNER_H = 118;
 const opensSurah = (state: DisplayState, group: boolean) => (group && state.group ? state.group[0].ayah : state.verse!.ayah) === 1;
 const NEXT_W = 1480;
 
-function planFor(state: DisplayState, useGroup = true): Plan | null {
+function planFor(state: DisplayState, useGroup = true, geo: Geo = DEFAULT_GEO): Plan | null {
   const v = state.verse;
   if (!v) return null;
-  if (state.style.language === 'english') return planEnglish(state, useGroup);
+  if (state.style.language === 'english') return planEnglish(state, useGroup, geo);
+  // A panel has no lower third: the streamer's layout choice is for the full-frame overlay.
+  const lowerWanted = !!geo.lower && state.style.layout === 'lowerthird';
   const scale = state.style.arabicScale;
   const group = useGroup && state.group && state.group.length > 1 && state.style.readingMode !== 'word' ? state.group : null;
   let arWords = toQpcHafsEncoding(v.arabic).split(/\s+/).filter(Boolean);
@@ -223,28 +275,28 @@ function planFor(state: DisplayState, useGroup = true): Plan | null {
   const band = (a: number) => (following ? meaningBand(a) : 0);
   const arH = (lines: number, a: number) => lines * a * AR_LH + Math.max(0, lines - 1) * band(a);
 
-  const banner = opensSurah(state, !!group) && !(state.style.layout === 'lowerthird' && state.style.readingMode !== 'word') && state.style.readingMode !== 'word';
-  const FULLB: Geometry = banner ? { ...FULL, height: FULL.height - BANNER_H } : FULL;
+  const banner = opensSurah(state, !!group) && !(lowerWanted && state.style.readingMode !== 'word') && state.style.readingMode !== 'word';
+  const FULLB: Geometry = banner ? { ...geo.full, height: geo.full.height - geo.bannerH } : geo.full;
   type Fit = { a: number; e: number; al: Lines; els: Lines[]; enLines: number };
   const tryFit = (g: Geometry, arMax: number, arMin: number, enMax: number, enMin: number) =>
-    remember(`ar|${g.width}x${g.height}/${g.gap}/${g.refH}|${arMax}-${arMin}|${enMax}-${enMin}|${following}|${arWords.join(' ')}|${enSets.map((ws) => ws.join(' ')).join('\n')}`, (): Fit | null => {
+    remember(`ar|${g.width}x${g.height}/${g.gap}/${g.refH}|${arMax}-${arMin}|${enMax}-${enMin}|${following}|${geo.englishFont}/${geo.englishWeight}|${arWords.join(' ')}|${enSets.map((ws) => ws.join(' ')).join('\n')}`, (): Fit | null => {
       for (let a = arMax; a >= arMin; a -= 2) {
         const e = Math.max(enMin, Math.min(enMax, Math.round(a * 0.5)));
         const al = measureLines(arWords, ARABIC_FONT, a, AR_LH, g.width, true);
-        const els = enSets.map((ws) => measureLines(ws, ENGLISH_FONT, e, EN_LH, g.width, false));
+        const els = enSets.map((ws) => measureLines(ws, geo.englishFont, e, EN_LH, g.width, false, geo.englishWeight));
         const enLines = Math.max(0, ...els.map((l) => l.length));
         if (arH(al.length, a) + (enLines ? g.gap + enLines * e * EN_LH : 0) + g.refH <= g.height) return { a, e, al, els, enLines };
       }
       return null;
     });
-  const nextPx = (a: number) => Math.max(40, Math.min(54, Math.round(a * 0.52)));
+  const nextPx = (a: number) => Math.max(geo.nextPx[0], Math.min(geo.nextPx[1], Math.round(a * 0.52)));
   const nextLine = (a: number): Plan['next'] => {
     const n = state.next;
     if (!n) return null;
     const px = nextPx(a);
     // The end-of-ayah ornament closes the preview when the whole ayah fits on the line.
     const words = [...toQpcHafsEncoding(n.arabic).split(/\s+/).filter(Boolean), arabicNumber(n.ayah)];
-    const lines = measureLines(words, ARABIC_FONT, px, AR_LH, NEXT_W, true);
+    const lines = measureLines(words, ARABIC_FONT, px, AR_LH, geo.nextW, true);
     return { px, words: lines[0] ?? [], cut: lines.length > 1, lang: 'ar' };
   };
   const single = (fit: Fit, layout: Plan['layout'], promoted: boolean, next: Plan['next'] = null, room = false): Plan => ({
@@ -265,31 +317,31 @@ function planFor(state: DisplayState, useGroup = true): Plan | null {
     banner: banner && layout === 'fullframe',
   });
 
-  if (state.style.layout === 'lowerthird' && state.style.readingMode !== 'word') {
-    if (group) return planFor(state, false);
-    const fit = tryFit(LOWER, Math.round(62 * scale), Math.round(46 * scale), 30, 26);
+  if (lowerWanted && geo.lower && state.style.readingMode !== 'word') {
+    if (group) return planFor(state, false, geo);
+    const fit = tryFit(geo.lower, Math.round(62 * scale), Math.round(46 * scale), 30, 26);
     if (fit) return single(fit, 'lowerthird', false);
   }
-  const promoted = state.style.layout === 'lowerthird';
+  const promoted = lowerWanted;
   // The preview only takes space the current ayah can spare at a comfortable size. A passage keeps
   // that room from its first ayah, though the server sends the preview only with its last.
   const room = !!group && state.style.showNext !== false;
   if ((state.next || room) && state.style.readingMode !== 'word') {
-    const withNext = tryFit({ ...FULLB, height: FULLB.height - NEXT_H }, Math.round(108 * scale), Math.round(64 * scale), 44, 31);
+    const withNext = tryFit({ ...FULLB, height: FULLB.height - geo.nextH }, Math.round(geo.ar.max * scale), Math.round(geo.ar.minWide * scale), geo.en.max, geo.en.min);
     if (withNext) return single(withNext, 'fullframe', promoted, nextLine(withNext.a), room);
   }
   // A passage of short ayahs is only worth it at a comfortable size; otherwise show the ayah alone.
-  const fit = tryFit(FULLB, Math.round(108 * scale), Math.round((group ? 64 : 54) * scale), 44, 31);
+  const fit = tryFit(FULLB, Math.round(geo.ar.max * scale), Math.round((group ? geo.ar.minWide : geo.ar.min) * scale), geo.en.max, geo.en.min);
   if (fit) return single(fit, 'fullframe', promoted);
-  if (group) return planFor(state, false);
+  if (group) return planFor(state, false, geo);
 
   // Deliberate paging: fixed comfortable sizes; Arabic and translation page independently.
-  const a = Math.round(58 * scale);
-  const e = 32;
+  const a = Math.round(geo.ar.page * scale);
+  const e = geo.en.page;
   const b = band(a);
-  const al = measureLines(arWords, ARABIC_FONT, a, AR_LH, FULL.width, true);
-  const el = enSets.length ? measureLines(enSets[0], ENGLISH_FONT, e, EN_LH, FULL.width, false) : [];
-  const body = FULL.height - FULL.refH - (el.length ? FULL.gap : 0);
+  const al = measureLines(arWords, ARABIC_FONT, a, AR_LH, geo.full.width, true);
+  const el = enSets.length ? measureLines(enSets[0], geo.englishFont, e, EN_LH, geo.full.width, false, geo.englishWeight) : [];
+  const body = geo.full.height - geo.full.refH - (el.length ? geo.full.gap : 0);
   const arShare = el.length ? 0.54 : 1;
   // Lines per Arabic page as without meanings (page turns follow the recitation; fewer lines would
   // turn them more often); the room kept for the meaning comes out of the translation's share.
@@ -324,11 +376,27 @@ function planFor(state: DisplayState, useGroup = true): Plan | null {
 const EN_ONLY_MAX = 76;
 const EN_ONLY_MIN = 40;
 
+/** The full-frame stage (the overlay, reading screen and preview). */
+const DEFAULT_GEO: Geo = {
+  full: FULL,
+  lower: LOWER,
+  nextW: NEXT_W,
+  nextH: NEXT_H,
+  bannerH: BANNER_H,
+  ar: { max: 108, min: 54, minWide: 64, page: 58 },
+  en: { max: 44, min: 31, page: 32 },
+  nextPx: [40, 54],
+  enOnly: { max: EN_ONLY_MAX, min: EN_ONLY_MIN, minGroup: 48, minNext: 44 },
+  enOnlyNextPx: [28, 40],
+  englishFont: ENGLISH_FONT,
+  englishWeight: 400,
+};
+
 /**
  * English only: the translation is the text being read, so it gets the stage. Short ayahs share the
  * screen as in Arabic, each closed by its numbered ornament.
  */
-function planEnglish(state: DisplayState, useGroup: boolean): Plan {
+function planEnglish(state: DisplayState, useGroup: boolean, geo: Geo): Plan {
   const v = state.verse!;
   const group = useGroup && state.group && state.group.length > 1 ? state.group : null;
   const measureWords: string[] = [];
@@ -342,23 +410,23 @@ function planEnglish(state: DisplayState, useGroup: boolean): Plan {
       enMeta.push({ ayah: gi, mark });
     });
   });
-  const lower = state.style.layout === 'lowerthird';
+  const lower = !!geo.lower && state.style.layout === 'lowerthird';
   const banner = !lower && opensSurah(state, !!group);
-  const bannerH = banner ? BANNER_H : 0;
+  const bannerH = banner ? geo.bannerH : 0;
   const fit = (g: Geometry, height: number, max: number, min: number) =>
-    remember(`en|${g.width}/${g.refH}|${height}|${max}-${min}|${measureWords.join(' ')}`, () => {
+    remember(`en|${g.width}/${g.refH}|${height}|${max}-${min}|${geo.englishFont}/${geo.englishWeight}|${measureWords.join(' ')}`, () => {
       for (let e = max; e >= min; e -= 2) {
-        const lines = measureLines(measureWords, ENGLISH_FONT, e, EN_LH, g.width, false);
+        const lines = measureLines(measureWords, geo.englishFont, e, EN_LH, g.width, false, geo.englishWeight);
         if (lines.length * e * EN_LH + g.refH <= height) return { e, lines };
       }
       return null;
     });
-  const nextPx = (e: number) => Math.max(28, Math.min(40, Math.round(e * 0.6)));
+  const nextPx = (e: number) => Math.max(geo.enOnlyNextPx[0], Math.min(geo.enOnlyNextPx[1], Math.round(e * 0.6)));
   const nextLine = (e: number): Plan['next'] => {
     const n = state.next;
     if (!n) return null;
     const px = nextPx(e);
-    const lines = measureLines(n.english.split(/\s+/).filter(Boolean), ENGLISH_FONT, px, EN_LH, NEXT_W, false);
+    const lines = measureLines(n.english.split(/\s+/).filter(Boolean), geo.englishFont, px, EN_LH, geo.nextW, false, geo.englishWeight);
     return { px, words: lines[0] ?? [], cut: lines.length > 1, lang: 'en' };
   };
   const plan = (layout: Plan['layout'], e: number, pages: Lines[], next: Plan['next'], room = false): Plan => ({
@@ -378,33 +446,33 @@ function planEnglish(state: DisplayState, useGroup: boolean): Plan {
     passage: !!group,
     banner: banner && layout === 'fullframe',
   });
-  if (lower && !group) {
-    const f = fit(LOWER, LOWER.height, 44, 30);
+  if (lower && geo.lower && !group) {
+    const f = fit(geo.lower, geo.lower.height, 44, 30);
     if (f) return plan('lowerthird', f.e, [f.lines], null);
   }
-  if (lower && group) return planEnglish(state, false);
+  if (lower && group) return planEnglish(state, false, geo);
   // As in Arabic, a passage keeps the preview's room from its first ayah.
   const room = !!group && state.style.showNext !== false;
   if (state.next || room) {
-    const f = fit(FULL, FULL.height - NEXT_H - bannerH, EN_ONLY_MAX, group ? 48 : 44);
+    const f = fit(geo.full, geo.full.height - geo.nextH - bannerH, geo.enOnly.max, group ? geo.enOnly.minGroup : geo.enOnly.minNext);
     if (f) return plan('fullframe', f.e, [f.lines], nextLine(f.e), room);
   }
-  const f = fit(FULL, FULL.height - bannerH, EN_ONLY_MAX, group ? 48 : EN_ONLY_MIN);
+  const f = fit(geo.full, geo.full.height - bannerH, geo.enOnly.max, group ? geo.enOnly.minGroup : geo.enOnly.min);
   if (f) return plan('fullframe', f.e, [f.lines], null);
-  if (group) return planEnglish(state, false);
-  const lines = measureLines(measureWords, ENGLISH_FONT, EN_ONLY_MIN, EN_LH, FULL.width, false);
-  const perPage = Math.max(1, Math.floor((FULL.height - FULL.refH) / (EN_ONLY_MIN * EN_LH)));
-  return plan('fullframe', EN_ONLY_MIN, chunk(lines, perPage), null);
+  if (group) return planEnglish(state, false, geo);
+  const lines = measureLines(measureWords, geo.englishFont, geo.enOnly.min, EN_LH, geo.full.width, false, geo.englishWeight);
+  const perPage = Math.max(1, Math.floor((geo.full.height - geo.full.refH) / (geo.enOnly.min * EN_LH)));
+  return plan('fullframe', geo.enOnly.min, chunk(lines, perPage), null);
 }
 
 const AR_DIGITS = '٠١٢٣٤٥٦٧٨٩';
 export const arabicNumber = (n: number) => String(n).replace(/\d/g, (d) => AR_DIGITS[Number(d)]);
 
-export function useFontsReady(): boolean {
+export function useFontsReady(englishFont: string = ENGLISH_FONT, englishWeight = 400): boolean {
   const [ready, setReady] = useState(false);
   useEffect(() => {
     let alive = true;
-    Promise.all([document.fonts.load(`64px ${ARABIC_FONT}`, 'بسم'), document.fonts.load(`32px ${ENGLISH_FONT}`, 'In the name')])
+    Promise.all([document.fonts.load(`64px ${ARABIC_FONT}`, 'بسم'), document.fonts.load(`${englishWeight} 32px ${englishFont}`, 'In the name')])
       .catch(() => undefined)
       .then(() => document.fonts.ready)
       .then(() => alive && setReady(true));
@@ -420,20 +488,29 @@ export function VerseDisplay({
   fontsReady,
   onLayout,
   preview = false,
+  frame,
+  theme,
 }: {
   state: DisplayState;
   fontsReady: boolean;
   onLayout?: (info: LayoutInfo) => void;
   preview?: boolean;
+  /** Lay the verse out in a panel of this size (the charity stream scene) instead of the full frame. */
+  frame?: { width: number; height: number };
+  /** The charity stream's colours and type (Nurra royal blue and gold). */
+  theme?: 'nurra';
 }) {
   const v = state.verse;
+  const fw = frame?.width ?? 0;
+  const fh = frame?.height ?? 0;
+  const geo = useMemo(() => (fw && fh ? panelGeo({ width: fw, height: fh }, theme) : DEFAULT_GEO), [fw, fh, theme]);
   const lastFocus = useRef<{ key: string; text: string } | null>(null);
   useLayoutEffect(() => {
     if (v && state.cursor) lastFocus.current = { key: v.key, text: toQpcHafsEncoding(v.arabic).split(/\s+/).filter(Boolean).slice(state.cursor.from, state.cursor.to + 1).join(' ') };
   }, [v?.key, state.cursor?.from, state.cursor?.to]);
-  const planKey = v ? `${v.key}|${state.group?.map((g) => g.key).join(',')}|${state.next?.key}|${state.style.layout}|${state.style.readingMode}|${state.style.arabicScale}|${state.style.language}|${state.style.showNext}` : '';
+  const planKey = v ? `${v.key}|${state.group?.map((g) => g.key).join(',')}|${state.next?.key}|${state.style.layout}|${state.style.readingMode}|${state.style.arabicScale}|${state.style.language}|${state.style.showNext}|${fw}x${fh}|${theme ?? ''}` : '';
   // Layout is computed synchronously from measured line boxes before paint.
-  const plan = useMemo(() => (fontsReady && v ? planFor(state) : null), [planKey, fontsReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  const plan = useMemo(() => (fontsReady && v ? planFor(state, true, geo) : null), [planKey, fontsReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reading forward: when the new ayah is the one that was previewed, it rises out of the preview
   // line into place (a teleprompter scroll); any other change (jump, search) simply cuts. Only a
@@ -482,7 +559,8 @@ export function VerseDisplay({
     g.style.setProperty('--gloss-shift', `${Math.round(shift)}px`);
   });
 
-  if (!fontsReady) return <div className="stage" data-bg={state.style.background} data-empty="true" />;
+  const panelSize = frame ? { width: frame.width, height: frame.height } : undefined;
+  if (!fontsReady) return <div className="stage" data-bg={frame ? 'panel' : state.style.background} data-layout={frame ? 'panel' : undefined} data-theme={theme} data-empty="true" style={panelSize} />;
   const visible = state.visible && !!plan && !!v;
 
   let arabicPage = 0;
@@ -519,9 +597,9 @@ export function VerseDisplay({
   const heldText = lastFocus.current?.key === v?.key ? lastFocus.current?.text : null;
   const focusText = state.cursor ? displayWords.slice(state.cursor.from, state.cursor.to + 1).join(' ') : (heldText ?? displayWords[0] ?? '');
   return (
-    <div ref={stageRef} className="stage" data-bg={state.style.background} data-layout={layout} data-reading={mode} data-lang={lang} data-preview={preview || undefined} style={accentVars(state.style.accent) as React.CSSProperties}>
-      {/* Small, quiet credit while an ayah is up (the broadcaster can turn it off). */}
-      {visible && state.style.credit !== false && (
+    <div ref={stageRef} className="stage" data-bg={frame ? 'panel' : state.style.background} data-layout={frame ? 'panel' : layout} data-theme={theme} data-reading={mode} data-lang={lang} data-preview={preview || undefined} style={(panelSize ?? accentVars(state.style.accent)) as React.CSSProperties}>
+      {/* Small, quiet credit while an ayah is up (the broadcaster can turn it off; the stream scene credits Nurra itself). */}
+      {visible && state.style.credit !== false && !frame && (
         <div className="stage-credit" aria-label="Quran Overlay by Nurra">
           <span>Quran Overlay by</span>
           <span className="stage-credit-mark">
@@ -542,7 +620,7 @@ export function VerseDisplay({
                 <span className="sb-en">{v.surahName}</span>
               </header>
             )}
-            {lang !== 'english' && <div className={`arabic ${mode === 'word' ? 'word-focus' : ''}`} lang="ar" dir="rtl" style={{ fontSize: mode === 'word' ? 128 * state.style.arabicScale : plan.arabicPx, '--meaning-band': plan.band ? `${plan.band}px` : undefined } as React.CSSProperties}>
+            {lang !== 'english' && <div className={`arabic ${mode === 'word' ? 'word-focus' : ''}`} lang="ar" dir="rtl" style={{ fontSize: mode === 'word' ? (frame ? 96 : 128) * state.style.arabicScale : plan.arabicPx, width: frame ? geo.full.width : undefined, '--meaning-band': plan.band ? `${plan.band}px` : undefined } as React.CSSProperties}>
               {mode === 'word' ? (
                 <div className="focus-word" data-active={!!state.cursor} data-waiting={(!state.cursor && !heldText) || undefined}>
                   {focusText}
@@ -581,7 +659,7 @@ export function VerseDisplay({
               )}
             </div>}
             {lang !== 'arabic' && plan.englishPages[englishPage].length > 0 && (
-              <div className={`english${lang === 'english' ? ' english-only' : ''}`} lang="en" style={{ fontSize: plan.englishPx, minHeight: plan.englishMinH ?? undefined }}>
+              <div className={`english${lang === 'english' ? ' english-only' : ''}`} lang="en" style={{ fontSize: plan.englishPx, minHeight: plan.englishMinH ?? undefined, width: frame ? geo.full.width : undefined }}>
                 {mode === 'word' && <div className="translation-label">Ayah translation</div>}
                 {plan.englishPages[englishPage].map((line, i) => {
                   if (!plan.enMeta) return <div className="line" key={i}>{line.join(' ')}</div>;
@@ -618,15 +696,17 @@ export function VerseDisplay({
             )}
             {state.style.showReference && (
               <footer className="reference">
-                <span className="ref-ar" lang="ar" dir="rtl">
-                  <span className="ref-surah">{v.surahNameArabic}</span>
-                  {/* This Hafs font draws the end-of-ayah ornament around Arabic-Indic digits itself;
-                      prefixing U+06DD would render a second, empty ornament. */}
-                  <span className="ref-mark">{arabicNumber(v.ayah)}</span>
-                </span>
-                <span className="ref-en">
-                  <span className="ref-name">{v.surahName}</span>
-                  <span className="ref-key">{v.key}</span>
+                <span className="ref-names">
+                  <span className="ref-ar" lang="ar" dir="rtl">
+                    <span className="ref-surah">{v.surahNameArabic}</span>
+                    {/* This Hafs font draws the end-of-ayah ornament around Arabic-Indic digits itself;
+                        prefixing U+06DD would render a second, empty ornament. */}
+                    <span className="ref-mark">{arabicNumber(v.ayah)}</span>
+                  </span>
+                  <span className="ref-en">
+                    <span className="ref-name">{v.surahName}</span>
+                    <span className="ref-key">{v.key}</span>
+                  </span>
                 </span>
                 {lang !== 'arabic' && <span className="ref-credit">{v.translationName}{lang === 'both' && v.glosses && v.glossCredit ? ` · ${v.glossCredit}` : ''}</span>}
               </footer>
@@ -638,7 +718,7 @@ export function VerseDisplay({
                 aria-label={`Next: ${state.next.key}`}
                 // The reciter has reached the last word: what comes next brightens, without moving.
                 data-anticipate={anticipating || undefined}
-                style={plan.nextRoom !== null ? { height: plan.nextRoom } : undefined}
+                style={plan.nextRoom !== null || frame ? { height: plan.nextRoom ?? undefined, width: frame ? geo.nextW : undefined } : undefined}
               >
                 {state.next.surahName && <div className="next-label">Next surah · {state.next.surahName}</div>}
                 <div className={`next-line${plan.next.lang === 'en' ? ' next-en' : ''}${plan.next.cut ? ' next-cut' : ''}`} lang={plan.next.lang} dir={plan.next.lang === 'en' ? 'ltr' : 'rtl'} style={{ fontSize: plan.next.px }}>

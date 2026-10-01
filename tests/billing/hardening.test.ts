@@ -43,7 +43,10 @@ describe('saved overlay links', () => {
     const links = new OverlayLinks(':memory:');
     links.saveView('v1', 'view-a');
     links.saveStyle('v1', { layout: 'lowerthird' });
-    expect(links.get('v1')).toEqual({ view: 'view-a', style: { layout: 'lowerthird' } });
+    expect(links.get('v1')).toEqual({ view: 'view-a', style: { layout: 'lowerthird' }, stream: null });
+    // A charity stream's settings and donations are kept with the link.
+    links.saveStream('v1', { settings: { partner: 'Partner' }, donations: [], total: 0, count: 0 });
+    expect(links.get('v1')?.stream).toEqual({ settings: { partner: 'Partner' }, donations: [], total: 0, count: 0 });
     expect(links.visitorOf('view-a')).toBe('v1');
     links.saveView('v1', 'view-b');
     expect(links.visitorOf('view-a')).toBeNull();

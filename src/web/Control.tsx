@@ -2,12 +2,13 @@
 // (mirrored in the preview) reaches the audience.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView, SearchCard } from '../shared/contracts';
+import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView, SearchCard, StreamSettings, StreamState } from '../shared/contracts';
 import { OWN_KEY_SHAPE, ownSonioxKey, setOwnSonioxKey, SonioxCapture, type CaptureStatus } from './audio/soniox-session';
 import { access, applyDisplay, applySnapshot, connect, formatListening, listeningLine, u } from './net';
 import { NurraBadge } from './Nurra';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { StageFrame, VerseDisplay, useFontsReady, type LayoutInfo } from './VerseDisplay';
+import { money } from './stream-format';
 
 type ChapterRow = { number: number; nameSimple: string; nameArabic: string; verseCount: number };
 type Auth = 'checking' | 'owner' | 'unauthorized';
@@ -75,6 +76,7 @@ export function Control() {
   const [mode, setMode] = useState<'local' | 'hosted' | null>(null);
   /** Listening time left (hosted service only). */
   const [credits, setCredits] = useState<CreditView | null>(null);
+  const [stream, setStream] = useState<StreamState | null>(null);
   const fontsReady = useFontsReady();
   const sock = useRef<ReturnType<typeof connect> | null>(null);
   const lastRequest = useRef<string | null>(null);
@@ -140,6 +142,7 @@ export function Control() {
           onMessage: (data) => {
             const m = data as ControlServerMessage;
             if (m.type === 'credits') setCredits(m.credits);
+            else if (m.type === 'stream') setStream(m.state);
             else if (m.type === 'listen_turn') captureRef.current?.onTurn(); // waiting in line: a place is free
             else if (m.type === 'snapshot') {
               setSnap((prev) => applySnapshot(prev, m.snapshot));
@@ -420,9 +423,131 @@ export function Control() {
               }
             }}
           />
+          <CharityCard snap={snap} stream={stream} send={send} />
         </aside>
       </main>
     </div>
+  );
+}
+
+type CharityForm = Record<'title' | 'partner' | 'project' | 'country' | 'about' | 'photo' | 'link' | 'goal' | 'raisedBefore' | 'currency' | 'reciter' | 'hours', string>;
+const formOf = (s: StreamSettings): CharityForm => ({
+  title: s.title, partner: s.partner, project: s.project, country: s.country, about: s.about, photo: s.photo, link: s.link,
+  goal: s.goal ? String(s.goal) : '', raisedBefore: s.raisedBefore ? String(s.raisedBefore) : '', currency: s.currency, reciter: s.reciter, hours: String(s.hours),
+});
+const amountOf = (text: string) => {
+  const n = Number(text.replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : 0;
+};
+
+/**
+ * The charity stream scene (/stream, for OBS): what it is for, how to give, and the donations as
+ * they come in. Each donation added here is announced on stream ("May Allah accept Aisha's
+ * donation"); money goes to the partner's own link, never through this app.
+ */
+function CharityCard({ snap, stream, send }: { snap: ControlSnapshot; stream: StreamState | null; send: (m: ControlClientMessage) => boolean }) {
+  const s = stream?.settings ?? null;
+  const [form, setForm] = useState<CharityForm | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [gift, setGift] = useState({ name: '', amount: '', message: '' });
+  const [copied, setCopied] = useState<'ok' | 'failed' | null>(null);
+  const settingsKey = s ? JSON.stringify(s) : '';
+  // The form shows the saved settings: when they first arrive, and after each save.
+  useEffect(() => {
+    if (s) setForm(formOf(s));
+  }, [settingsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const streamUrl = snap.overlay.url.replace('/overlay#', '/stream#');
+  if (!s || !form) return null;
+  const field = (key: keyof CharityForm, label: string, opts: { wide?: boolean; placeholder?: string; inputMode?: 'decimal' | 'url' | 'numeric' } = {}) => (
+    <label className={opts.wide ? 'cc-wide' : undefined}>
+      <span>{label}</span>
+      <input value={form[key]} placeholder={opts.placeholder} inputMode={opts.inputMode} onChange={(e) => setForm({ ...form, [key]: e.target.value })} />
+    </label>
+  );
+  const badLink = (v: string) => v.trim() !== '' && !/^https:\/\/\S+$/.test(v.trim());
+  const save = () => {
+    if (badLink(form.photo) || badLink(form.link)) return;
+    send({
+      type: 'stream_settings',
+      patch: {
+        title: form.title, partner: form.partner, project: form.project, country: form.country, about: form.about,
+        photo: form.photo.trim(), link: form.link.trim(), goal: amountOf(form.goal), raisedBefore: amountOf(form.raisedBefore),
+        currency: form.currency || '$', reciter: form.reciter, hours: Math.min(72, Math.max(1, Math.round(Number(form.hours) || 24))),
+      },
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
+  };
+  const addGift = () => {
+    send({ type: 'donation', name: gift.name.trim(), amount: amountOf(gift.amount), message: gift.message.trim() });
+    setGift({ name: '', amount: '', message: '' });
+  };
+  const copy = () => {
+    try {
+      navigator.clipboard.writeText(streamUrl).then(() => setCopied('ok'), () => setCopied('failed'));
+    } catch {
+      setCopied('failed');
+    }
+  };
+  return (
+    <section className="card charity-card">
+      <h2>Charity stream</h2>
+      <div className="cc-copy">
+        <button className="primary" onClick={copy}>{copied === 'ok' ? 'Copied' : 'Copy OBS stream link'}</button>
+        <a href={streamUrl} target="_blank" rel="noreferrer">Open the stream scene</a>
+      </div>
+      {copied === 'failed' && <input className="cc-link" readOnly value={streamUrl} aria-label="OBS stream link" autoFocus onFocus={(e) => e.currentTarget.select()} />}
+      <p className="hint">In OBS: Sources → + → Browser, paste the link, set 1920 × 1080. Put your camera (or VTuber) source under it in the list and move it so you show in the arch window. Leave “Shutdown source when not visible” off.</p>
+
+      <form className="cc-form" onSubmit={(e) => { e.preventDefault(); save(); }}>
+        {field('title', 'Title', { wide: true })}
+        {field('partner', 'Partner (who receives the donations)', { wide: true })}
+        {field('project', 'Project')}
+        {field('country', 'Where')}
+        {field('about', 'What a donation provides (one line)', { wide: true })}
+        {field('link', 'Donation link (their page, https://…)', { wide: true, inputMode: 'url' })}
+        {badLink(form.link) && <p className="warn cc-wide">The donation link must start with https://</p>}
+        {field('photo', 'Project photo link (https://…, optional)', { wide: true, inputMode: 'url' })}
+        {badLink(form.photo) && <p className="warn cc-wide">The photo link must start with https://</p>}
+        {field('goal', 'Goal', { inputMode: 'decimal', placeholder: '50000' })}
+        {field('raisedBefore', 'Already raised elsewhere', { inputMode: 'decimal', placeholder: '0' })}
+        {field('currency', 'Currency sign', { placeholder: '$' })}
+        {field('reciter', 'Reciter’s name (under the camera)')}
+        <label className="cc-check"><input type="checkbox" checked={s.camera} onChange={(e) => send({ type: 'stream_settings', patch: { camera: e.target.checked } })} /> Camera window in the arch</label>
+        <label className="cc-check"><input type="checkbox" checked={s.showAmounts} onChange={(e) => send({ type: 'stream_settings', patch: { showAmounts: e.target.checked } })} /> Show amounts on stream</label>
+        <div className="cc-wide cc-actions"><button type="submit" className="primary">{saved ? 'Saved' : 'Save'}</button></div>
+      </form>
+
+      <div className="cc-clock">
+        <span>{s.startedAt !== null ? `Clock started ${new Date(s.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${s.hours} hours` : 'The “Hour 1 of 24” clock is not running.'}</span>
+        {field('hours', 'Hours', { inputMode: 'numeric' })}
+        {s.startedAt === null
+          ? <button onClick={() => send({ type: 'stream_settings', patch: { startedAt: Date.now(), hours: Math.min(72, Math.max(1, Math.round(Number(form.hours) || 24))) } })}>Start the clock</button>
+          : <button onClick={() => send({ type: 'stream_settings', patch: { startedAt: null } })}>Stop the clock</button>}
+      </div>
+
+      <h3 className="cc-sub">A donation came in</h3>
+      <form className="cc-gift" onSubmit={(e) => { e.preventDefault(); addGift(); }}>
+        <input value={gift.name} onChange={(e) => setGift({ ...gift, name: e.target.value })} placeholder="Name (empty: anonymous)" aria-label="Donor’s name" maxLength={60} />
+        <input value={gift.amount} onChange={(e) => setGift({ ...gift, amount: e.target.value })} placeholder="Amount" aria-label="Amount" inputMode="decimal" />
+        <input className="cc-wide" value={gift.message} onChange={(e) => setGift({ ...gift, message: e.target.value })} placeholder="Their words, optional (e.g. For my late father)" aria-label="The donor’s words" maxLength={80} />
+        <button type="submit" className="primary cc-wide">Announce on stream</button>
+      </form>
+      <p className="hint">Shown as “May Allah accept {gift.name.trim() ? `${gift.name.trim()}’s` : 'this'} donation”, silently, without interrupting the recitation.</p>
+
+      <p className="cc-total">{money(stream!.total, s.currency)} raised · {stream!.count} {stream!.count === 1 ? 'donor' : 'donors'}</p>
+      {stream!.donations.length > 0 && (
+        <ul className="cc-list">
+          {stream!.donations.slice(0, 8).map((d) => (
+            <li key={d.id}>
+              <span className="cc-list-name">{d.name || 'Anonymous'}</span>
+              <span className="muted">{money(d.amount, s.currency)}</span>
+              <button className="cc-remove" onClick={() => send({ type: 'donation_remove', id: d.id })} aria-label={`Remove ${d.name || 'the anonymous'} donation`}>Remove</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

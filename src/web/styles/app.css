@@ -680,3 +680,160 @@ a.about-ref:hover { text-decoration: underline; }
 .listening-consent input { margin-top: 7px; min-width: 20px; min-height: 20px; }
 .listening-consent .lc-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .listening-consent button { flex: 1 1 auto; min-height: 44px; padding: 10px 16px; border: 1px solid #cfaa62; border-radius: 10px; background: #1b3438; color: #fff1cf; cursor: pointer; }
+
+/* ---------------- the reader in a panel (the charity stream scene's centre) ---------------- */
+.ref-names { display: contents; }
+.stage[data-layout='panel'] .panel { inset: 0; }
+.stage[data-layout='panel'] .verse { padding: 24px 30px 20px; }
+.stage[data-layout='panel'] .surah-banner { margin-bottom: 10px; gap: 6px; }
+.stage[data-layout='panel'] .sb-frame { padding: 2px 40px; }
+.stage[data-layout='panel'] .sb-ar { font-size: 40px; }
+.stage[data-layout='panel'] .sb-en { font-size: 16px; }
+.stage[data-layout='panel'] .word-focus { min-height: 200px; }
+
+/* Nurra's colours: royal blue panels, Nurra gold (#fff7b2) for the highlight and the frame. */
+.stage[data-theme='nurra'] { --ivory: #fffdf2; --paper: #f1f5fb; --gold: #fff7b2; --gold-dim: #e9dc8a; --muted: #b8d0ff; color: #fffdf2; }
+.stage[data-theme='nurra'] .english { font-family: 'Cormorant Garamond', 'Palatino Linotype', Georgia, serif; font-weight: 500; color: #f1f5fb; margin-top: 24px; }
+.stage[data-theme='nurra'][data-reading='follow'] .quran-word { color: #fffdf2; }
+.stage[data-theme='nurra'][data-reading='follow'] .passed-word { color: #c9d6ff; }
+.stage[data-theme='nurra'][data-reading='follow'] .active-word { color: #fff7b2; background: rgba(255, 247, 178, 0.24); box-shadow: 0 4px 0 #fff7b2; }
+.stage[data-theme='nurra'] .gloss { background: #062194; color: #fff7b2; box-shadow: 0 0 0 1px rgba(255, 247, 178, 0.4); font-family: 'Cormorant Garamond', Georgia, serif; font-weight: 600; }
+.stage[data-theme='nurra'] .focus-word[data-active='true'], .stage[data-theme='nurra'] .focus-gloss { color: #fff7b2; }
+.stage[data-theme='nurra'] .translation-label { color: #b8d0ff; font-family: 'Marcellus SC', Georgia, serif; }
+.stage[data-theme='nurra'] .cont { font-family: 'Marcellus SC', Georgia, serif; font-weight: 400; text-transform: none; letter-spacing: 0.14em; color: #e9dc8a; }
+.stage[data-theme='nurra'] .reference { flex-direction: column; gap: 10px; height: auto; margin-top: 24px; color: #fff7b2; }
+.stage[data-theme='nurra'] .ref-names { display: inline-flex; align-items: center; gap: 18px; padding: 8px 26px; border: 1px solid #fff7b2; border-radius: 999px; }
+.stage[data-theme='nurra'] .ref-ar { font-size: 32px; gap: 12px; }
+.stage[data-theme='nurra'] .ref-mark { font-size: 36px; }
+.stage[data-theme='nurra'] .ref-en { font-family: 'Marcellus SC', Georgia, serif; font-weight: 400; font-size: 22px; letter-spacing: 0.14em; text-transform: none; }
+.stage[data-theme='nurra'] .ref-key { color: #fff7b2; opacity: 1; }
+.stage[data-theme='nurra'] .ref-credit { font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-size: 20px; color: #8fb2ff; }
+.stage[data-theme='nurra'] .next-ayah::before { background: linear-gradient(90deg, transparent, rgba(255, 247, 178, 0.6), transparent); }
+.stage[data-theme='nurra'] .next-label { font-family: 'Marcellus SC', Georgia, serif; font-weight: 400; text-transform: none; color: #fff7b2; }
+.stage[data-theme='nurra'] .next-ayah[data-anticipate] .next-line { color: #fff7b2; }
+.stage[data-theme='nurra'] .sb-frame { border-color: rgba(255, 247, 178, 0.6); }
+.stage[data-theme='nurra'] .sb-frame::before, .stage[data-theme='nurra'] .sb-frame::after { background: #fff7b2; }
+.stage[data-theme='nurra'] .sb-ar { color: #fff7b2; }
+.stage[data-theme='nurra'] .sb-en { font-family: 'Marcellus SC', Georgia, serif; font-weight: 400; color: #e9dc8a; }
+.stage[data-theme='nurra'] .passage .ayah-mark { color: #fff7b2; }
+
+/* ---------------- charity stream scene (/stream): 1920×1080, Nurra royal blue and gold ---------------- */
+.cs-scene { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #062194; color: #f1f5fb; font-family: 'Cormorant Garamond', 'Palatino Linotype', Georgia, serif; font-variant-numeric: lining-nums; }
+/* With a camera the ground is the hole's spread shadow, so the arch's window stays see-through. */
+.cs-scene[data-camera] { background: transparent; }
+.cs-hole { position: absolute; box-shadow: 0 0 0 2400px #062194; }
+.cs-glow { position: absolute; left: 500px; top: 0; width: 920px; height: 420px; background: radial-gradient(ellipse 50% 70% at 50% 0%, rgba(255, 247, 178, 0.12), rgba(255, 247, 178, 0) 72%); pointer-events: none; }
+.cs-pattern { position: absolute; left: 0; top: 0; }
+.cs-frame { position: absolute; pointer-events: none; }
+.cs-frame-outer { inset: 20px; border: 1px solid rgba(255, 247, 178, 0.45); }
+.cs-frame-inner { inset: 28px; border: 1px solid rgba(255, 247, 178, 0.16); }
+.cs-corner { position: absolute; display: block; line-height: 0; z-index: 2; }
+.cs-label { font-family: 'Marcellus SC', Georgia, serif; font-size: 17px; letter-spacing: 0.2em; color: #fff7b2; }
+.cs-muted { color: #b8d0ff; }
+
+.cs-header { position: absolute; left: 72px; right: 72px; top: 50px; display: flex; align-items: center; gap: 24px; }
+.cs-live, .cs-hour { flex: none; width: 190px; font-family: 'Marcellus SC', Georgia, serif; font-size: 20px; letter-spacing: 0.16em; }
+.cs-live { display: inline-flex; align-items: center; gap: 10px; color: #fff7b2; }
+.cs-live-dot { width: 9px; height: 9px; border-radius: 50%; background: #fff7b2; box-shadow: 0 0 0 5px rgba(255, 247, 178, 0.2); animation: cs-breathe 2.4s ease-in-out infinite; }
+@keyframes cs-breathe { 50% { box-shadow: 0 0 0 9px rgba(255, 247, 178, 0.06); } }
+.cs-hour { text-align: right; color: #b8d0ff; }
+.cs-rule { flex-grow: 1; height: 1px; background: rgba(255, 247, 178, 0.4); }
+.cs-title { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.cs-title-main { font-family: 'Marcellus SC', Georgia, serif; font-size: 30px; line-height: 1; letter-spacing: 0.22em; color: #fff7b2; white-space: nowrap; }
+.cs-title-for { font-size: 28px; font-style: italic; font-weight: 500; line-height: 1.1; color: #f1f5fb; white-space: nowrap; }
+
+.cs-arch { position: absolute; left: 122px; top: 160px; width: 300px; height: 372px; box-sizing: border-box; padding: 9px; border: 2px solid #fff7b2; border-radius: 150px 150px 12px 12px; }
+.cs-arch-window { position: relative; height: 100%; box-sizing: border-box; overflow: hidden; border: 1px solid rgba(255, 247, 178, 0.35); border-radius: 140px 140px 6px 6px; }
+.cs-arch-closed { display: flex; align-items: center; justify-content: center; background: #041663; }
+.cs-arch-photo { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; }
+.cs-arch-star { line-height: 0; }
+.cs-nameplate { position: absolute; left: 0; right: 0; bottom: 0; padding: 13px 10px; background: rgba(3, 14, 70, 0.88); border-top: 1px solid rgba(255, 247, 178, 0.35); text-align: center; font-family: 'Marcellus SC', Georgia, serif; font-size: 20px; letter-spacing: 0.14em; color: #fff7b2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.cs-project { position: absolute; left: 72px; top: 556px; width: 400px; height: 364px; box-sizing: border-box; padding: 8px; border: 1px solid rgba(255, 247, 178, 0.5); }
+.cs-project-inner { height: 100%; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; padding: 16px 18px; border: 1px solid rgba(255, 247, 178, 0.2); background: #041663; }
+.cs-photo { flex: none; height: 138px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #05196e; }
+.cs-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cs-project .cs-label { margin-top: 14px; }
+/* Without a photo the words stand alone, centred in the frame. */
+.cs-project-text { justify-content: center; padding: 24px 26px; }
+.cs-project-text .cs-label { margin-top: 0; }
+.cs-project-text .cs-project-title { margin-top: 10px; font-size: 40px; }
+.cs-project-text .cs-project-about { margin-top: 12px; font-size: 25px; }
+.cs-project-title { margin-top: 6px; font-size: 34px; font-weight: 700; line-height: 1.06; color: #f1f5fb; }
+.cs-project-about { margin-top: 6px; font-size: 22px; font-weight: 500; line-height: 1.28; color: #b8d0ff; }
+
+.cs-reader { position: absolute; left: 520px; top: 160px; width: 860px; height: 760px; box-sizing: border-box; padding: 12px; border: 1px solid rgba(255, 247, 178, 0.5); }
+.cs-reader-inner { position: relative; height: 100%; box-sizing: border-box; overflow: hidden; border: 1px solid rgba(255, 247, 178, 0.2); background: #041663; }
+
+.cs-giving { position: absolute; left: 1428px; top: 160px; width: 420px; height: 760px; display: flex; flex-direction: column; gap: 26px; }
+.cs-total { display: flex; flex-direction: column; gap: 10px; }
+.cs-total-amount { font-weight: 700; line-height: 0.95; font-variant-numeric: lining-nums tabular-nums; color: #fff7b2; white-space: nowrap; }
+.cs-progress { position: relative; height: 16px; margin-top: 6px; }
+.cs-progress-track { position: absolute; left: 0; right: 0; top: 6px; height: 4px; border-radius: 2px; background: #041663; }
+.cs-progress-fill { position: absolute; left: 0; top: 6px; width: calc(var(--p) * 100%); height: 4px; border-radius: 2px; background: #fff7b2; box-shadow: 0 0 12px rgba(255, 247, 178, 0.55); transition: width 900ms ease; }
+.cs-progress-star { position: absolute; top: 0; left: calc(var(--p) * 100% - 8px); line-height: 0; transition: left 900ms ease; }
+.cs-total-note { font-size: 25px; font-weight: 500; color: #b8d0ff; }
+
+.cs-slot { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 24px 24px 20px; text-align: center; background: #041663; border: 1.5px solid rgba(255, 247, 178, 0.55); transition: background-color 900ms ease, border-color 900ms ease, box-shadow 900ms ease; }
+.cs-slot-line { position: absolute; inset: 6px; border: 1px solid rgba(255, 247, 178, 0.2); pointer-events: none; transition: border-color 900ms ease; }
+.cs-slot-label { font-size: 19px; letter-spacing: 0.24em; transition: color 900ms ease; }
+.cs-slot-name { font-weight: 700; line-height: 1.05; color: #f1f5fb; overflow-wrap: anywhere; transition: color 900ms ease; }
+.cs-slot-words { font-size: 24px; font-style: italic; color: #b8d0ff; transition: color 900ms ease; }
+.cs-slot-when { font-size: 22px; font-style: italic; font-weight: 500; color: #b8d0ff; transition: color 900ms ease; }
+.cs-slot .cs-corner rect { transition: fill 900ms ease; }
+/* A new donation is announced in Nurra gold, silently: the recitation is never interrupted. */
+.cs-slot-new { background: #fff7b2; border-color: #fff7b2; box-shadow: 0 0 0 6px rgba(255, 247, 178, 0.14), 0 24px 60px rgba(2, 8, 48, 0.5); animation: cs-arrive 700ms cubic-bezier(0.16, 0.84, 0.3, 1) both; }
+.cs-slot-new .cs-slot-line { border-color: rgba(4, 26, 61, 0.28); }
+.cs-slot-new .cs-slot-label { color: #2b3a6b; }
+.cs-slot-new .cs-slot-name { color: #041a3d; }
+.cs-slot-new .cs-slot-words, .cs-slot-new .cs-slot-when { color: #3a4a7a; }
+.cs-slot-new .cs-corner rect { fill: #f0d66a; }
+@keyframes cs-arrive { from { opacity: 0; transform: translateY(18px) scale(0.97); } }
+.cs-slot-empty { padding: 26px 24px; }
+
+.cs-recent { display: flex; flex-direction: column; }
+.cs-recent .cs-label { margin-bottom: 8px; }
+.cs-recent-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid rgba(255, 247, 178, 0.22); }
+.cs-recent-row:last-child { border-bottom: 1px solid rgba(255, 247, 178, 0.22); }
+.cs-recent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 33px; font-weight: 600; color: #f1f5fb; }
+.cs-anon { font-style: italic; font-weight: 500; color: #b8d0ff; }
+.cs-recent-when { flex: none; font-size: 21px; font-style: italic; color: #8fb2ff; }
+
+.cs-give { margin-top: auto; display: flex; align-items: center; gap: 22px; }
+.cs-give-qr { flex: none; line-height: 0; border: 1px solid #fff7b2; box-shadow: 0 0 0 5px rgba(255, 247, 178, 0.16); }
+.cs-give-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cs-give-now { font-family: 'Marcellus SC', Georgia, serif; font-size: 28px; letter-spacing: 0.14em; color: #fff7b2; }
+.cs-give-link { overflow-wrap: anywhere; font-size: 28px; font-weight: 700; line-height: 1.1; color: #f1f5fb; }
+.cs-give-note { font-size: 21px; font-style: italic; color: #b8d0ff; }
+
+.cs-footer { position: absolute; left: 72px; right: 72px; top: 944px; height: 64px; display: flex; align-items: center; gap: 20px; border-top: 1px solid rgba(255, 247, 178, 0.3); }
+.cs-footer-by { font-size: 25px; font-style: italic; color: #b8d0ff; }
+.cs-footer-mark { display: inline-flex; color: #fff7b2; }
+.cs-footer-url { font-size: 26px; font-weight: 500; color: #f1f5fb; }
+.cs-footer-url b { font-weight: 700; color: #fff7b2; }
+.cs-footer-note { margin-left: auto; font-size: 25px; font-style: italic; color: #b8d0ff; }
+@media (prefers-reduced-motion: reduce) {
+  .cs-slot-new, .cs-live-dot { animation: none; }
+  .cs-slot, .cs-slot *, .cs-progress-fill, .cs-progress-star { transition: none; }
+}
+
+/* The control page's Charity stream card. */
+.cc-copy { display: flex; gap: 14px; align-items: center; }
+.cc-copy a { color: var(--gold); font-size: 14px; }
+.charity-card .cc-link { width: 100%; margin-top: 10px; }
+.cc-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; margin-top: 14px; }
+.cc-form label, .cc-clock label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.cc-form .cc-wide, .cc-gift .cc-wide { grid-column: 1 / -1; }
+.cc-form .warn { margin: -4px 0 0; }
+.cc-form .cc-check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); }
+.cc-actions { display: flex; justify-content: flex-end; }
+.cc-clock { display: flex; align-items: flex-end; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13.5px; color: var(--muted); }
+.cc-clock > span { flex: 1; align-self: center; }
+.cc-clock label { width: 72px; }
+.cc-sub { margin: 18px 0 8px; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.cc-gift { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 8px; }
+.cc-total { margin: 14px 0 6px; color: var(--gold); font-weight: 600; }
+.cc-list { list-style: none; margin: 0; padding: 0; }
+.cc-list li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.cc-list-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-remove { padding: 4px 10px; font-size: 12.5px; }

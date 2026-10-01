@@ -19,6 +19,7 @@ It works as a personal reader on your phone or computer, and as an OBS/Twitch ov
 - **Reads beautifully.** Short ayahs share the screen as one mushaf-style passage; long ayahs are paged, never shrunk; Arabic + English, Arabic only, or English only; word-by-word meanings; ornaments, reduced-motion support, legible over any stream footage.
 - **Free for everyone, through sadaqah.** On the hosted site (nurra.org/quran-reader) listening is paid for by a pool of sponsored hours that donations fill, shown live on the start page; reading and search are always free, and *Why we built this* (`/about`) explains the costs and where sadaqah goes. Run it yourself with your own keys, unlimited (see [docs/DEPLOY.md](docs/DEPLOY.md)).
 - **Made for streams.** An OBS overlay driven from a control page: full frame or lower third, transparent, shaded or solid, your own highlight colour, and a small "Quran Overlay by Nurra" credit (can be turned off).
+- **Charity streams.** A full stream scene in Nurra's colours: the reader in a framed panel, a window for your camera (or VTuber), what the donations are for, the total raised, a QR code to give, and each donation announced on stream: "May Allah accept Aisha's donation".
 
 <p>
   <img src="docs/screenshots/overlay-english-passage.webp" width="49%" alt="English-only mode: Al-Ikhlas as an English passage with ayah ornaments, the current ayah bright">
@@ -126,6 +127,12 @@ Without keys, everything except listening works: manual and keyboard navigation,
 ## OBS
 
 Sources → + → Browser, paste the link from **Copy OBS overlay link**, set width 1920 and height 1080. Leave "Shutdown source when not visible" off so scene switches don't reconnect it (both settings recover: every (re)connect receives the full current state). The overlay link can only display ayahs; **Replace overlay link** revokes it. On the hosted site your link and your chosen look are kept for your browser, so OBS keeps working across restarts and days away. The overlay plays no audio. Keep the microphone in the Chrome/Edge control page, not in OBS.
+
+### Charity stream scene
+
+The control page's **Charity stream** card sets up `/stream`, a 1920 × 1080 scene for a fundraising stream: the partner (who receives the donations), the project and what a donation provides, an optional project photo, the donation link (shown, and as a QR code), a goal, the reciter's name and an "Hour 3 of 24" clock. In OBS add it as a Browser source (**Copy OBS stream link**, 1920 × 1080) and put your camera or VTuber source *under* it in the source list: the arch at the left is a see-through window, so move the camera until you show in it (or untick *Camera window* to show the project photo there instead).
+
+Money goes to the partner's own donation page, never through this app. When a donation comes in, add it under **A donation came in** (a name, or empty for anonymous; the amount; the donor's own words if they want, e.g. "For my late father"): the stream announces it in Nurra gold, silently, one at a time, and the total and the recent list update. **Remove** takes a mistake back. Amounts are hidden on stream unless *Show amounts* is ticked: every donor gets the same du'a. Settings and donations are kept across restarts (hosted: with your overlay link; self-hosted: `data/state/local-stream.json`). While the scene is open in OBS your listening counts as live on stream (no daily limit; see [Deploy: live streams](docs/DEPLOY.md#live-streams)).
 
 ## How it works
 

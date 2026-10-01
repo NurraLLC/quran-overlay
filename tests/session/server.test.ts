@@ -55,7 +55,7 @@ function overlay(view: string) {
   ws.on('message', (d) => {
     const m = JSON.parse(String(d)) as OverlayServerMessage;
     if (m.type === 'display') states.push(m.state);
-    else denied.push(m.reason);
+    else if (m.type === 'denied') denied.push(m.reason);
   });
   ws.on('close', (c) => (closeCode = c));
   ws.on('open', () => ws.send(JSON.stringify({ type: 'hello', view, role: 'overlay' })));

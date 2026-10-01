@@ -103,7 +103,60 @@ export type OverlayClientMessage = z.infer<typeof OverlayClientMessageSchema>;
 
 export type OverlayServerMessage =
   | { type: 'display'; state: DisplayState }
+  | { type: 'stream'; state: StreamState }
   | { type: 'denied'; reason: 'invalid_view' | 'revoked' };
+
+// ---------- charity stream (the /stream scene around the reader) ----------
+
+/** An address the stream shows or encodes: https only, no spaces or markup characters. */
+const StreamUrl = z.union([z.literal(''), z.string().max(500).regex(/^https:\/\/[^\s"'<>`]+$/)]);
+const StreamText = (max: number) => z.string().max(max).transform((s) => s.replace(/[\u0000-\u001f\u007f]/g, '').trim());
+
+/** What the streamer sets for a charity stream: the partner, the project, the goal and how to give. */
+export const StreamSettingsSchema = z.object({
+  title: StreamText(60).default('Twenty-four hours of Quran'),
+  partner: StreamText(60).default(''),
+  project: StreamText(80).default(''),
+  country: StreamText(40).default(''),
+  /** One line on what a donation provides. */
+  about: StreamText(140).default(''),
+  /** A photo of the project (the partner's own), shown on the stream. */
+  photo: StreamUrl.default(''),
+  /** Where to give (the partner's own donation page): shown and encoded in the QR code. */
+  link: StreamUrl.default(''),
+  goal: z.number().finite().min(0).max(1e9).default(0),
+  /** Given before this page counted (offline gifts, a match): added to the total. */
+  raisedBefore: z.number().finite().min(0).max(1e9).default(0),
+  currency: StreamText(4).default('$'),
+  reciter: StreamText(40).default(''),
+  /** Leave a window in the arch for the camera (or VTuber) source placed under the stream in OBS. */
+  camera: z.boolean().default(true),
+  showAmounts: z.boolean().default(false),
+  /** When the stream's clock started ("Hour 3 of 24"), or null when it is not shown. */
+  startedAt: z.number().int().min(0).nullable().default(null),
+  hours: z.number().int().min(1).max(72).default(24),
+});
+export type StreamSettings = z.infer<typeof StreamSettingsSchema>;
+export const StreamSettingsPatchSchema = z.object({
+  title: StreamText(60), partner: StreamText(60), project: StreamText(80), country: StreamText(40), about: StreamText(140),
+  photo: StreamUrl, link: StreamUrl, goal: z.number().finite().min(0).max(1e9), raisedBefore: z.number().finite().min(0).max(1e9),
+  currency: StreamText(4), reciter: StreamText(40), camera: z.boolean(), showAmounts: z.boolean(),
+  startedAt: z.number().int().min(0).nullable(), hours: z.number().int().min(1).max(72),
+}).partial();
+
+/** One donation as the stream shows it ("May Allah accept Aisha's donation"); an empty name is anonymous. */
+export const DonationSchema = z.object({
+  id: z.string().max(40),
+  name: StreamText(60),
+  amount: z.number().finite().min(0).max(1e8),
+  /** The donor's own words, e.g. "For my late father". */
+  message: StreamText(80),
+  at: z.number().int().min(0),
+});
+export type Donation = z.infer<typeof DonationSchema>;
+
+/** The stream scene's data: settings, the latest donations (newest first), the total and how many gave. */
+export type StreamState = { settings: StreamSettings; donations: Donation[]; total: number; count: number };
 
 // ---------- control channel ----------
 
@@ -181,6 +234,10 @@ export const ControlClientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('rotate_view') }),
   /** Push-to-talk held: recitation publication pauses and in-flight location decisions are dropped. */
   z.object({ type: z.literal('command_capture'), active: z.boolean() }),
+  /** Charity stream: change its settings, add a donation (it is announced on stream), or take one back. */
+  z.object({ type: z.literal('stream_settings'), patch: StreamSettingsPatchSchema }),
+  z.object({ type: z.literal('donation'), name: StreamText(60), amount: z.number().finite().min(0).max(1e8), message: StreamText(80).default('') }),
+  z.object({ type: z.literal('donation_remove'), id: z.string().max(40) }),
 ]);
 export type ControlClientMessage = z.infer<typeof ControlClientMessageSchema>;
 
@@ -310,4 +367,5 @@ export type ControlServerMessage =
   | { type: 'command_result'; requestId: string; result: CommandResult }
   | { type: 'credits'; credits: CreditView }
   /** This page is waiting in line to listen and a place is free for it now. */
-  | { type: 'listen_turn' };
+  | { type: 'listen_turn' }
+  | { type: 'stream'; state: StreamState };

@@ -1,5 +1,5 @@
 // npm start — loopback server on 127.0.0.1:4317 (or PORT). Prints the owner link.
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { CreditStore, DEFAULT_CREDITS } from './billing/credits';
 import { SessionHub } from './billing/hub';
 import { OverlayLinks } from './billing/overlay-links';
@@ -63,7 +63,7 @@ function decisionSetup(): { client: DecisionClient | null; provider: JevGateway 
  * Hosted service: one anonymous session per visitor, drawing from the shared sponsored pool.
  * Configured listening durations are in hours; reading and translations are always free.
  */
-function hostedSetup(create: (saved: Pick<ConstructorParameters<typeof Session>[0], 'viewToken' | 'onViewToken' | 'style' | 'onStyle'>) => Session): HostedOptions {
+function hostedSetup(create: (saved: Pick<ConstructorParameters<typeof Session>[0], 'viewToken' | 'onViewToken' | 'style' | 'onStyle' | 'stream' | 'onStream'>) => Session): HostedOptions {
   const hours = (name: string, fallback: number) => Math.round((Number(process.env[name]) || fallback) * 3600);
   const stateDir = process.env.QO_STATE_DIR || path.join(ROOT, 'data', 'state');
   mkdirSync(stateDir, { recursive: true });
@@ -84,7 +84,8 @@ function hostedSetup(create: (saved: Pick<ConstructorParameters<typeof Session>[
     const saved = links.get(visitor);
     const view = saved?.view ?? randomBytes(18).toString('base64url');
     if (!saved) links.saveView(visitor, view);
-    return create({ viewToken: view, onViewToken: (v) => links.saveView(visitor, v), style: saved?.style ?? undefined, onStyle: (st) => links.saveStyle(visitor, st) });
+    return create({ viewToken: view, onViewToken: (v) => links.saveView(visitor, v), style: saved?.style ?? undefined, onStyle: (st) => links.saveStyle(visitor, st),
+      stream: saved?.stream ?? undefined, onStream: (st) => links.saveStream(visitor, st) });
   };
   return {
     hub: new SessionHub(session, undefined, undefined, (view) => links.visitorOf(view)),
@@ -164,7 +165,18 @@ async function main() {
     mkdirSync(dir, { recursive: true });
     return localLinks(path.join(dir, 'local-links.json'));
   })();
-  const session = hostedMode ? undefined : new Session({ ...sessionOptions(false), viewToken: links?.links.view, onViewToken: links?.saveView });
+  // Self-hosted: a charity stream's settings and donations are kept beside the links.
+  const localStream = links ? (() => {
+    const file = path.join(process.env.QO_STATE_DIR || path.join(ROOT, 'data', 'state'), 'local-stream.json');
+    let stream: unknown;
+    try {
+      stream = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : undefined;
+    } catch {
+      stream = undefined;
+    }
+    return { stream, onStream: (st: unknown) => writeFileSync(file, JSON.stringify(st), { mode: 0o600 }) };
+  })() : {};
+  const session = hostedMode ? undefined : new Session({ ...sessionOptions(false), viewToken: links?.links.view, onViewToken: links?.saveView, ...localStream });
   const hosted = hostedMode ? hostedSetup((saved) => new Session({ ...sessionOptions(true), ...saved })) : undefined;
   if (hosted) {
     // Reading without a visitor cookie shares one session that never listens.

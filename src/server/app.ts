@@ -475,6 +475,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     const off = s.onControl(send);
     s.controlConnected();
     send({ type: 'snapshot', snapshot: s.snapshot() });
+    send({ type: 'stream', state: s.stream });
     if (visitorId) send({ type: 'credits', credits: creditView(visitorId, clientIp(req)) });
     // Every message runs the tracker on one shared process: a page past these budgets is closed (it
     // reconnects); requests that may ask for paid decisions are limited per page.
@@ -571,7 +572,13 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
           s.overlayClients++;
           s.overlayChanged();
         }
-        off = s.onDisplay((state) => send({ type: 'display', state }));
+        const offDisplay = s.onDisplay((state) => send({ type: 'display', state }));
+        // The charity stream scene (/stream) also shows the partner, the project and the donations.
+        const offStream = s.onStream((state) => send({ type: 'stream', state }));
+        off = () => {
+          offDisplay();
+          offStream();
+        };
         const revoke = () => {
           if (role !== 'overlay') return;
           send({ type: 'denied', reason: 'revoked' });
@@ -587,6 +594,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
         };
         // Full latest state immediately on (re)connect.
         send({ type: 'display', state: s.display });
+        send({ type: 'stream', state: s.stream });
       } else if (m.type === 'painted' && off && role === 'overlay') {
         s.painted(m.revision);
       }
@@ -622,7 +630,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
         .replace(/url\((['"]?)\/fonts\//g, (_m, q: string) => `url(${q}${base}/fonts/`)
         .replace('<head>', `<head>\n    <meta name="qo-base" content="${base}" />`);
     };
-    for (const route of ['/control', '/overlay', '/read', '/reader', '/about']) app.get(route, (_req, reply) => reply.type('text/html').send(indexHtml()));
+    for (const route of ['/control', '/overlay', '/read', '/stream', '/reader', '/about']) app.get(route, (_req, reply) => reply.type('text/html').send(indexHtml()));
     app.get('/', (_req, reply) => (hosted ? reply.type('text/html').send(indexHtml()) : reply.redirect(`${base}/control`)));
     // The installable app's manifest, with its start page and icons under the base path.
     app.get('/manifest.webmanifest', (_req, reply) =>

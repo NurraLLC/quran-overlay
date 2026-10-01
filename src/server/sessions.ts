@@ -18,7 +18,12 @@ import path from 'node:path';
 import {
   DEFAULT_STYLE,
   DisplayStyleSchema,
+  DonationSchema,
   PROTOCOL_VERSION,
+  StreamSettingsSchema,
+  type Donation,
+  type StreamSettings,
+  type StreamState,
   type CapturePhase,
   type CommandResult,
   type ControlClientMessage,
@@ -72,6 +77,9 @@ export type SessionOptions = {
   /** Hosted: the visitor's saved look, and where a changed one is saved (overlay-links.ts). */
   style?: unknown;
   onStyle?: (style: DisplayStyle) => void;
+  /** A charity stream's settings and donations as last saved, and where a change is saved. */
+  stream?: unknown;
+  onStream?: (saved: SavedStream) => void;
   clock?: Clock;
   /** Explicit, bounded, local diagnostic capture of provider token events (no audio). */
   captureDir?: string | null;
@@ -84,6 +92,12 @@ export type SessionOptions = {
 };
 
 const CAPTURE_MAX_BYTES = 20 * 1024 * 1024;
+/** Charity stream: donations kept (newest first; the total counts every one), and how many go to pages. */
+const MAX_DONATIONS = 200;
+const DONATIONS_SHOWN = 20;
+
+/** What a charity stream keeps between runs: its settings, the latest donations, their sum and count. */
+export type SavedStream = { settings: StreamSettings; donations: Donation[]; total: number; count: number };
 
 const pct = (xs: number[], p: number) => {
   if (!xs.length) return null;
@@ -160,6 +174,12 @@ export class Session {
   private snapshotTimer: unknown = null;
 
   private readonly displayListeners = new Set<(s: DisplayState) => void>();
+  private readonly streamListeners = new Set<(s: StreamState) => void>();
+  private streamSettings: StreamSettings = StreamSettingsSchema.parse({});
+  /** Newest first; the sum and count cover every donation, including ones no longer kept. */
+  private donations: Donation[] = [];
+  private donationSum = 0;
+  private donationCount = 0;
   private readonly controlListeners = new Set<(m: ControlServerMessage) => void>();
   controlClients = 0;
   overlayClients = 0;
@@ -177,6 +197,7 @@ export class Session {
     }, message => this.say(message));
     const saved = o.style ? DisplayStyleSchema.safeParse({ ...DEFAULT_STYLE, ...(o.style as object) }) : null;
     if (saved?.success) this.style = saved.data;
+    this.restoreStream(o.stream);
     this.follower = new RecitationFollower(o.ix, o.corpus.id, this.sessionEpoch, o.decisionClient, o.mode, (e) => this.onFollower(e), this.clock);
     // When recitation stops matching (a jump to somewhere new, a pause to talk), the last ayah stays
     // up until the new place is found: a blank screen tells the audience nothing. The control page
@@ -191,6 +212,35 @@ export class Session {
   onDisplay(fn: (s: DisplayState) => void) {
     this.displayListeners.add(fn);
     return () => this.displayListeners.delete(fn);
+  }
+
+  /** The charity stream's data changed (settings, or a donation added or taken back). */
+  onStream(fn: (s: StreamState) => void) {
+    this.streamListeners.add(fn);
+    return () => this.streamListeners.delete(fn);
+  }
+
+  get stream(): StreamState {
+    return { settings: this.streamSettings, donations: this.donations.slice(0, DONATIONS_SHOWN), total: Math.round((this.streamSettings.raisedBefore + this.donationSum) * 100) / 100, count: this.donationCount };
+  }
+
+  private restoreStream(raw: unknown) {
+    if (!raw || typeof raw !== 'object') return;
+    const r = raw as { settings?: unknown; donations?: unknown; total?: unknown; count?: unknown };
+    const settings = StreamSettingsSchema.safeParse(r.settings ?? {});
+    if (settings.success) this.streamSettings = settings.data;
+    const donations = DonationSchema.array().max(MAX_DONATIONS).safeParse(r.donations ?? []);
+    if (donations.success) this.donations = donations.data;
+    const sum = this.donations.reduce((n, d) => n + d.amount, 0);
+    this.donationSum = typeof r.total === 'number' && Number.isFinite(r.total) && r.total >= sum ? r.total : sum;
+    this.donationCount = typeof r.count === 'number' && Number.isInteger(r.count) && r.count >= this.donations.length ? r.count : this.donations.length;
+  }
+
+  private streamChanged() {
+    const s = this.stream;
+    for (const fn of this.streamListeners) fn(s);
+    this.emitControl({ type: 'stream', state: s });
+    this.o.onStream?.({ settings: this.streamSettings, donations: this.donations, total: this.donationSum, count: this.donationCount });
   }
 
   onControl(fn: (m: ControlServerMessage) => void) {
@@ -454,6 +504,29 @@ export class Session {
         this.logEvent('rotate_view', null);
         for (const fn of this.revokeListeners) fn();
         return this.queueSnapshot();
+      case 'stream_settings': {
+        const next = StreamSettingsSchema.safeParse({ ...this.streamSettings, ...msg.patch });
+        if (!next.success) return this.say('Those stream settings were not saved. Links must start with https://.');
+        this.streamSettings = next.data;
+        return this.streamChanged();
+      }
+      case 'donation': {
+        // Wall-clock time: the stream shows how long ago each one came ("4 min").
+        const d: Donation = { id: randomBytes(9).toString('base64url'), name: msg.name, amount: Math.round(msg.amount * 100) / 100, message: msg.message, at: Date.now() };
+        this.donations = [d, ...this.donations].slice(0, MAX_DONATIONS);
+        this.donationSum = Math.round((this.donationSum + d.amount) * 100) / 100;
+        this.donationCount++;
+        this.logEvent('donation', null);
+        return this.streamChanged();
+      }
+      case 'donation_remove': {
+        const i = this.donations.findIndex((d) => d.id === msg.id);
+        if (i < 0) return;
+        const [d] = this.donations.splice(i, 1);
+        this.donationSum = Math.max(0, Math.round((this.donationSum - d.amount) * 100) / 100);
+        this.donationCount = Math.max(0, this.donationCount - 1);
+        return this.streamChanged();
+      }
     }
   }
 
@@ -842,6 +915,7 @@ export class Session {
     for (const fn of this.endListeners) fn();
     this.endListeners.clear();
     this.displayListeners.clear();
+    this.streamListeners.clear();
     this.controlListeners.clear();
     this.revokeListeners.clear();
   }
