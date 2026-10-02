@@ -135,7 +135,9 @@ test('shared lifetime totals, donation readback, and browser audio through the p
       await route.fulfill({ response, json: { ...state, billing: null, sponsored: {...state.sponsored, operatingReserve:166154, operatingReserveUsdMicros:6000000, left:state.sponsored.left-166154} } });
     });
     await page.reload();
-    await page.locator('.r-support-nav').getByRole('button', { name: /Support Quran Reader/ }).click();
+    const supportButton = page.locator('.r-support-nav').getByRole('button', { name: 'Support Quran Reader', exact: true });
+    await expect(supportButton).toHaveAccessibleName('Support Quran Reader');
+    await supportButton.click();
     await expect(support.getByRole('status')).toContainText('Online contributions aren’t open yet');
     await expect(support).toContainText('$6.00 set aside for running costs');
     await expect(support).toContainText('This is reserved, not spent.');
@@ -149,6 +151,9 @@ test('shared lifetime totals, donation readback, and browser audio through the p
     await page.getByRole('link', { name: /Support Quran Reader/ }).click();
     await expect(page).toHaveURL(/about#support$/);
     await expect(page.getByRole('heading', { name: 'Support Quran Reader' })).toBeInViewport();
+    const supportSection = page.locator('#support');
+    await expect(supportSection).toContainText('When online contributions are available, payments go to Nurra LLC');
+    await expect(supportSection.getByRole('status')).toContainText('Online contributions aren’t open yet');
     await expect(page.getByRole('link', { name: /Open the overlay controls/ })).toHaveAttribute('href', '/quran-reader/control');
     expect(errors).toEqual([]);
   } finally {

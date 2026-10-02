@@ -8,6 +8,8 @@ test('reader: request, word meaning, language and continue where you left off', 
   await page.goto(`/reader#owner=${OWNER}`);
   // (The UI suite shares one session: another test may already have an ayah on screen.)
   await expect(page.locator('.r-top')).toBeVisible();
+  // Word interactions need Arabic visible, regardless of the previous test's language choice.
+  await page.getByRole('radio', { name: 'Both', exact: true }).click();
 
   // A typed request opens the surah and follows from the ayah.
   await page.getByRole('button', { name: 'Type instead' }).click();
@@ -42,6 +44,7 @@ test('reader: request, word meaning, language and continue where you left off', 
 test('reader: menu to home and all surahs; following comes back when recitation moves on', async ({ page }) => {
   await page.goto(`/reader#owner=${OWNER}`);
   await expect(page.locator('.r-top')).toBeVisible();
+  await page.getByRole('radio', { name: 'Both', exact: true }).click();
 
   // Home and the surah list, from the menu.
   await page.getByRole('button', { name: /^Menu/ }).click();

@@ -90,7 +90,7 @@ export function About() {
           <p>We want more Muslims to feel able to start a stream, give a talk, or share their recitation. The OBS overlay puts the ayah and its translation alongside your video, so people can follow the Quran you’re reciting.</p>
           <p>You can also use the reading screen for a study circle or a community gathering. Open it on another screen so the people with you can read along.</p>
           <p>One reason we built this is to recite on a stream while raising support for an organization we care about. You can do that too: use the overlay, and direct viewers to that organization’s own fundraiser.</p>
-          <p className="about-fine">Contributions on this website support Quran Reader itself. They are separate from any fundraiser a creator runs for another organization.</p>
+          <p className="about-fine">When online contributions are available here, they support Quran Reader itself. They are separate from any fundraiser a creator runs for another organization.</p>
           <a href={u('/control')}>Open the overlay controls →</a>
         </section>
 
@@ -116,11 +116,11 @@ export function About() {
           <ul>
             <li>Listening is free for everyone. There are no accounts and no plans.</li>
             <li>Listening draws from a shared pool funded by community contributions, including our own. Daily limits help more people share those hours.</li>
-            <li>Contributions cover Quran Reader’s own running costs. We show the shared budget as estimated listening-hour equivalents. Listening, payment fees, hosting, and other recorded running costs reduce that balance. Actual listening time is shown separately.</li>
+            <li>Community support covers Quran Reader’s own running costs. We show the shared budget as estimated listening-hour equivalents. Listening, payment fees, hosting, and other recorded running costs reduce that balance. Actual listening time is shown separately.</li>
             <li>If the sponsored hours ever run out, listening pauses until someone gives again. Reading and search never stop.</li>
             <li>No accounts, no ads, no selling data, and no public donor names.</li>
           </ul>
-          <p>Payments go to Nurra LLC to support this service. They are voluntary, one-time contributions, not tax-deductible charitable donations.</p>
+          <p>When online contributions are available, payments go to Nurra LLC to support this service. They are voluntary, one-time contributions, not tax-deductible charitable donations.</p>
           {credits && <SharedHours stats={me?.sponsored} donations={donations} testMode={me?.billing?.testMode} defaultOpen />}
           {me?.mode === 'local' && <p className="r-support-status">This is a self-hosted copy. It uses your own listening service and doesn’t collect contributions.</p>}
         </section>
