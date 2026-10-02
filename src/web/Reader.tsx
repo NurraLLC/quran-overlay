@@ -3,7 +3,7 @@
 // move ("go to Surah Maryam", "show the ayah about the orphan", "English only") or type. It shares
 // the control page's session, so a stream overlay, if open, follows along too.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView } from '../shared/contracts';
 import { ownSonioxKey, RECONNECTING, SonioxCapture, type CaptureStatus } from './audio/soniox-session';
 import { access, applyDisplay, applySnapshot, connect, listeningLine, type Access, u } from './net';
@@ -12,6 +12,7 @@ import { arabicNumber } from './VerseDisplay';
 import { NurraBadge } from './Nurra';
 import { SharedHours } from './Sponsor';
 import { ReaderAppearance, useReaderAppearance } from './ReaderAppearance';
+import { audioRoute, transcriptUse, SILENCE_CONTROL, REQUEST_PRIVACY } from './privacy-copy';
 
 type Ayah = { key: string; ayah: number; arabic: string; english: string; glosses: Array<string | null> | null };
 type Surah = { number: number; name: string; nameArabic: string; translation: string; glossCredit: string | null; ayahs: Ayah[] };
@@ -76,6 +77,7 @@ const Keys = () => (
 
 export function Reader() {
   const [auth, setAuth] = useState<Auth>('checking');
+  const [mode, setMode] = useState<Access['mode'] | null>(null);
   const [snap, setSnap] = useState<ControlSnapshot | null>(null);
   const [connection, setConnection] = useState<'connecting' | 'open' | 'closed'>('connecting');
   const [surahFailed, setSurahFailed] = useState(false);
@@ -143,6 +145,7 @@ export function Reader() {
       .then((s) => {
         if (cancelled) return;
         if (!s.owner) return setAuth('unauthorized');
+        setMode(s.mode);
         if (s.credits) setCredits(s.credits);
         setFunding({ billing: s.billing, sponsored: s.sponsored });
         if (new URLSearchParams(location.search).has('donated') || new URLSearchParams(location.search).has('canceled')) history.replaceState(null, '', location.pathname);
@@ -176,6 +179,9 @@ export function Reader() {
               setPending(false);
               setResult({ id: m.requestId, r: m.result });
               setMoreOpen(false);
+              // Typed searches explicitly show their best match. A spoken description can instead
+              // be a private preview; it must not leave Home as if that result were on the page.
+              if (m.result.kind === 'navigate' || (m.result.kind === 'candidates' && m.result.confirmedKey && !m.requestId.startsWith('listen:'))) setHome(false);
               if (m.result.kind !== 'candidates' || !m.result.refining) setTyping(false);
             }
           },
@@ -457,7 +463,7 @@ export function Reader() {
             </div>
             <details className="r-privacy">
               <summary>How your voice is used</summary>
-              <p>{credits ? 'When the microphone is on, your voice passes through our server to Soniox for speech recognition. This lets us stop unused streams and protect the shared hours.' : 'When the microphone is on, your voice goes directly to Soniox for speech recognition.'} We never record or keep your audio. Nothing is sent during long pauses. Reading, word meanings and translations never need the microphone.</p>
+              <p>{audioRoute(mode)} {transcriptUse(mode)} {SILENCE_CONTROL} Reading never needs the microphone. <a href={u('/privacy.html')}>Privacy details</a></p>
             </details>
             {credits && <SharedHours stats={funding.sponsored} donations={funding.billing?.donations ?? []} testMode={funding.billing?.testMode} />}
             {/* Streamers: the same following, as a broadcast overlay driven from the control page. */}
@@ -472,7 +478,6 @@ export function Reader() {
             </footer>
           </section>
         )}
-        {cur && !home && !shownSurah && <p className="r-loading">Opening {cur.surahName}…</p>}
         {shownSurah && !home && (
           <>
             <header className="r-surah">
@@ -553,7 +558,7 @@ export function Reader() {
 
       {showSupportThanks && <div className="r-toast" role="status"><span>JazakAllahu khayran for supporting Quran Reader. Shared hours are added after Stripe confirms payment.</span><button aria-label="Dismiss thank-you message" onClick={() => setDonated(false)}>×</button></div>}
       {menuOpen && (
-        <div className="r-modal" role="dialog" aria-modal="true" aria-label="Menu" onClick={() => setMenuOpen(false)} onKeyDown={(e) => e.key === 'Escape' && setMenuOpen(false)}>
+        <ReaderModal label="Menu" onClose={() => setMenuOpen(false)}>
           <nav className="r-time r-menu" onClick={(e) => e.stopPropagation()}>
             <button className="r-close" onClick={() => setMenuOpen(false)} aria-label="Close">×</button>
             <button className="r-menu-item" autoFocus onClick={() => { setHome(true); setMenuOpen(false); window.scrollTo(0, 0); }}>
@@ -584,12 +589,13 @@ export function Reader() {
               Why we built this<span>Our purpose, the overlay, and community support</span>
             </a>
             <a className="r-menu-item" href={u('/privacy.html')}>Privacy and your data</a>
+            <a className="r-menu-item" href="https://github.com/NurraLLC/quran-reader/issues" target="_blank" rel="noopener">Help or report a problem</a>
             <a className="r-menu-item" href={u('/terms.html')}>Terms of use</a>
             <div className="r-menu-brand">
               <NurraBadge />
             </div>
           </nav>
-        </div>
+        </ReaderModal>
       )}
       {timeOpen && credits && <ListeningTime credits={credits} funding={funding} focus={timeOpen} onClose={() => setTimeOpen(false)} />}
       {appearanceOpen && <ReaderAppearance appearance={appearance} onChange={setAppearance} onClose={() => { setAppearanceOpen(false); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.r-menu-btn')?.focus()); }} />}
@@ -628,6 +634,7 @@ export function Reader() {
                         send({ type: 'hold', on: false });
                         setResult(null);
                         setFollow(true);
+                        setHome(false);
                       }}
                     >
                       <span className="r-res-key">{c.surahName} {c.key}{c.key === r.confirmedKey ? ' · best match' : ''}</span>
@@ -652,8 +659,9 @@ export function Reader() {
               if (query.trim()) run(query.trim());
             }}
           >
-            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Surah Maryam 3, or what the ayah says" aria-label="Type a request" enterKeyHint="go" />
+            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Surah Maryam 3, or what the ayah says" aria-label="Type a request" aria-describedby="reader-request-privacy" enterKeyHint="go" />
             <button type="submit" disabled={!query.trim()}>Go</button>
+            <p id="reader-request-privacy" className="r-request-privacy">{REQUEST_PRIVACY} <a href={u('/privacy.html')} target="_blank" rel="noopener">Privacy</a></p>
           </form>
         )}
         <div className="r-controls">
@@ -693,10 +701,32 @@ export function Reader() {
   );
 }
 
+/** Native modal semantics contain keyboard focus and make the reading page behind the sheet inert. */
+function ReaderModal({ label, onClose, children }: { label: string; onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const returnFocus = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  useEffect(() => {
+    const dialog = ref.current!;
+    dialog.showModal();
+    return () => {
+      dialog.close();
+      // React removes the sheet before passive cleanup, so native close alone cannot always
+      // restore its opener. Leave focus in a newly opened dialog when moving between sheets.
+      const opener = returnFocus.current?.isConnected ? returnFocus.current : document.querySelector<HTMLElement>('.r-menu-btn');
+      if (document.activeElement === document.body || dialog.contains(document.activeElement)) opener?.focus();
+    };
+  }, []);
+  return (
+    <dialog ref={ref} className="r-modal" aria-label={label} onCancel={(e) => { e.preventDefault(); onClose(); }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      {children}
+    </dialog>
+  );
+}
+
 /** Community-funded listening, without accounts or personal purchases. */
 function ListeningTime({ credits, funding, focus, onClose }: { credits: CreditView; funding: Pick<Access, 'billing' | 'sponsored'>; focus: 'time' | 'sponsor'; onClose: () => void }) {
   return (
-    <div className="r-modal" role="dialog" aria-modal="true" aria-label={focus === 'sponsor' ? 'Support Quran Reader' : 'Listening'} onClick={onClose} onKeyDown={(e) => e.key === 'Escape' && onClose()}>
+    <ReaderModal label={focus === 'sponsor' ? 'Support Quran Reader' : 'Listening'} onClose={onClose}>
       <section className="r-time" onClick={(e) => e.stopPropagation()}>
         <button className="r-close" onClick={onClose} aria-label="Close" autoFocus>×</button>
         <h2>{focus === 'sponsor' ? 'Support Quran Reader' : 'Free for everyone'}</h2>
@@ -709,7 +739,7 @@ function ListeningTime({ credits, funding, focus, onClose }: { credits: CreditVi
             : 'Daily listening limits help everyone share the available hours.'}
         </p>
       </section>
-    </div>
+    </ReaderModal>
   );
 }
 
@@ -755,22 +785,30 @@ type ChapterRow = { number: number; nameSimple: string; nameArabic: string; vers
 /** Every surah, findable by English name, Arabic name or number. */
 function SurahIndex({ onOpen }: { onOpen: (n: number) => void }) {
   const [list, setList] = useState<ChapterRow[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
   const [q, setQ] = useState('');
   const [all, setAll] = useState(false);
   useEffect(() => {
-    fetch(u('/api/chapters'), { credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((l: ChapterRow[] | null) => l && setList(l))
-      .catch(() => undefined);
-  }, []);
-  if (!list) return null;
+    const controller = new AbortController();
+    setFailed(false);
+    fetch(u('/api/chapters'), { credentials: 'same-origin', signal: controller.signal })
+      .then((r) => { if (!r.ok) throw new Error('Surahs unavailable'); return r.json(); })
+      .then((l: ChapterRow[]) => { if (!controller.signal.aborted) setList(l); })
+      .catch(() => { if (!controller.signal.aborted) setFailed(true); });
+    return () => controller.abort();
+  }, [retry]);
   const flat = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, '');
   const t = q.trim();
-  const matches = t ? list.filter((c) => String(c.number) === t || (flat(t) && flat(c.nameSimple).includes(flat(t))) || c.nameArabic.includes(t)) : list;
+  const matches = t ? (list ?? []).filter((c) => String(c.number) === t || (flat(t) && flat(c.nameSimple).includes(flat(t))) || c.nameArabic.includes(t)) : (list ?? []);
   const shown = t || all ? matches : matches.slice(0, 12);
   return (
     <section className="r-index" id="r-surahs" aria-label="All surahs">
       <h2>All surahs</h2>
+      {!list ? <div className="r-index-state" role="status">
+        <p>{failed ? "Couldn't load the surahs." : 'Opening surahs.'}</p>
+        {failed && <button className="r-index-more" onClick={() => setRetry((n) => n + 1)}>Try again</button>}
+      </div> : <>
       <input className="r-index-find" type="search" placeholder="Find a surah by name or number" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find a surah" />
       <ol className="r-index-list">
         {shown.map((c) => (
@@ -792,6 +830,7 @@ function SurahIndex({ onOpen }: { onOpen: (n: number) => void }) {
           Show all 114 surahs
         </button>
       )}
+      </>}
     </section>
   );
 }

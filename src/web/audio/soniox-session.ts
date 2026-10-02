@@ -131,8 +131,8 @@ export const LIVE_RECONNECTING = 'The connection was lost. Reconnecting by itsel
 export const RECONNECTING = 'Reconnecting to Soniox…';
 
 /**
- * A reciter's own Soniox key (hosted site): kept only in this browser, sent with each listening
- * request so their account pays for it (no shared hours, no daily limit); the server never stores it.
+ * A reciter's own Soniox key (hosted site): saved in this browser and sent with each listening
+ * request so their account pays. The relay holds it temporarily in memory, never on server disk.
  */
 const OWN_KEY_STORAGE = 'qo.ownSonioxKey';
 export const OWN_KEY_SHAPE = /^[A-Za-z0-9._~+/=-]{16,256}$/;

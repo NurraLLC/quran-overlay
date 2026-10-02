@@ -10,6 +10,7 @@ import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { StageFrame, VerseDisplay, useFontsReady, type LayoutInfo } from './VerseDisplay';
 import { money } from './stream-format';
 import { OverlayAppearance } from './OverlayAppearance';
+import { REQUEST_PRIVACY } from './privacy-copy';
 
 const StreamScene = lazy(() => import('./Stream').then((m) => ({ default: m.StreamScene })));
 
@@ -548,7 +549,7 @@ function CharityCard({ snap, stream, send, onPreview }: { snap: ControlSnapshot;
         <input className="cc-wide" value={gift.message} onChange={(e) => setGift({ ...gift, message: e.target.value })} placeholder="Their words, optional (e.g. For my late father)" aria-label="The donor’s words" maxLength={80} />
         <button type="submit" className="primary cc-wide">Announce on stream</button>
       </form>
-      <p className="hint">Shown as “May Allah accept {gift.name.trim() ? `${gift.name.trim()}’s` : 'this'} donation”, silently, without interrupting the recitation.</p>
+      <p className="hint">Shown as “May Allah accept {gift.name.trim() ? `${gift.name.trim()}’s` : 'this'} donation”, silently, without interrupting the recitation. Only share names and words with permission; leave the name empty for anonymous.</p>
 
       <p className="cc-total">{money(stream!.total, s.currency)} raised · {stream!.count} {stream!.count === 1 ? 'donor' : 'donors'}</p>
       {stream!.donations.length > 0 && (
@@ -637,8 +638,8 @@ function VoiceCard(p: {
               ? p.capture.detail ?? 'Recite and the screen follows. Or just say it in English: “go to Surah Maryam, ayah three”, “show the ayah about the orphan”, or describe one to find it here privately. Other English talk never changes the screen.'
               : (p.capture.detail ??
                 (p.snap.overlay.clients > 0
-                  ? 'One microphone for both: recite to follow, or speak an English request. Audio goes to Soniox only while you speak: long pauses send nothing. While you’re live on stream, listening stays on through breaks and talk with your audience, with no time limit.'
-                  : 'One microphone for both: recite to follow, or speak an English request. Audio goes to Soniox only while you speak: long pauses send nothing, and listening stops by itself after a while without recitation.'))}
+                  ? 'One microphone for both: recite to follow, or speak an English request. Transmission can pause after a long silence. While you’re live on stream, listening stays on through breaks and talk with your audience, with no time limit.'
+                  : 'One microphone for both: recite to follow, or speak an English request. Transmission can pause after a long silence, and listening stops by itself after a while without recitation.'))}
       </p>
 
       {p.credits && (
@@ -658,10 +659,12 @@ function VoiceCard(p: {
           onChange={(e) => p.setQuery(e.target.value)}
           placeholder="Or type: 2:255, Surah Maryam ayah 3, or what it says"
           aria-label="Type a reference or what the ayah says"
+          aria-describedby="control-request-privacy"
         />
         <button type="submit" disabled={!p.query.trim()}>Go</button>
       </form>
 
+      <p className="hint" id="control-request-privacy">{REQUEST_PRIVACY} <a href={u('/privacy.html')} target="_blank" rel="noopener">Privacy</a></p>
       {p.pending && <p className="pending">Searching…</p>}
       {!p.pending && r?.kind === 'control' && <p className="ok">{r.label}</p>}
       {!p.pending && r?.kind === 'navigate' && <p className="ok">Opened {r.key}.{r.note ? ` ${r.note}` : ''} Recitation continues from there.</p>}
@@ -700,7 +703,7 @@ function VoiceCard(p: {
   );
 }
 
-/** A streamer's own Soniox key (hosted site): kept only in this browser, sent when listening starts. */
+/** Optional own key: saved on this device and sent to the relay for each listening stream. */
 function OwnKey(p: { saved: string | null; problem: string | null; onChange: (key: string | null) => void }) {
   const [draft, setDraft] = useState('');
   const valid = OWN_KEY_SHAPE.test(draft.trim());
@@ -728,7 +731,7 @@ function OwnKey(p: { saved: string | null; problem: string | null; onChange: (ke
       )}
       {p.problem && <p className="hint own-key-problem">{p.problem} Listening uses the shared hours meanwhile.</p>}
       <p className="hint">
-        For long streams: listening is billed to your own Soniox account instead of the shared hours, with no daily limit. The key stays in this browser and is sent over the encrypted connection only when listening starts; the server never stores it. Get one at{' '}
+        Listening is billed to your Soniox account instead of the shared hours. Your key is saved in this browser until you remove it or clear site data. Each listening stream sends it encrypted to Nurra’s server, which holds it temporarily in memory without saving it to disk. Remove affects future streams; Stop listening closes the current stream. Get a key at{' '}
         <a href="https://console.soniox.com" target="_blank" rel="noreferrer">console.soniox.com</a>.
       </p>
     </details>

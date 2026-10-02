@@ -7,6 +7,7 @@ import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { NurraBadge } from './Nurra';
 import { SharedHours } from './Sponsor';
 import { access, type Access, u } from './net';
+import { audioRoute, transcriptUse, SILENCE_CONTROL } from './privacy-copy';
 
 const REPO = 'https://github.com/NurraLLC/quran-reader';
 
@@ -103,7 +104,7 @@ export function About() {
         <section>
           <h2>How it works</h2>
           <ul>
-            <li>Listening starts only when you turn on the microphone. {me?.mode === 'hosted' ? 'Your voice passes through our server to Soniox, so we can stop unused streams and protect the shared hours.' : 'Your voice goes directly to Soniox for recognition.'} We never record or keep the audio. During a long pause the stream closes.</li>
+            <li>Listening starts only when you turn on the microphone. {audioRoute(me?.mode ?? null)} {transcriptUse(me?.mode ?? null)} {SILENCE_CONTROL} <a href={u('/privacy.html')}>Privacy details</a>.</li>
             <li>Quran text, word meanings, transliteration and the Uthmani display font are provided through <a href="https://quran.foundation">Quran Foundation</a>. The English translation is Saheeh International. The reader never generates scripture or translations.</li>
             <li>The code is open. Anyone can read it, check it, or run their own copy for free: <a href={REPO}>github.com/NurraLLC/quran-reader</a>.</li>
           </ul>
