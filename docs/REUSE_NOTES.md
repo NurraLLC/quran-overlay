@@ -25,6 +25,14 @@ Not carried over (Moard-specific): always-listening English TALK endpoint tuning
 
 ## Learning-loop record
 
+2026-10-02 motion polish: reread the four required Moard skills and current
+`harbor/intelligence/contextual_ranking_composition.py` read-only. Applied its
+stable-owner lesson to preserve passage mounting while removing the verse-scale
+entrance, and the motion/surface skills' actual-frame comparison and interruption
+review to reader controls. A measured 11 px temporary phone-dialog overflow was
+fixed at the starting position and guarded in the browser test. No Moard styling,
+device timing floor or runtime was imported. See [motion evidence and limits](READER_MOTION_POLISH.md).
+
 October 2 reader finishing pass: reread the required Moard skills and current `harbor/actions/contextual_ranking.py` read-only. Adapted the surface-quality practice of reproducing complete failures and comparing equivalent browser states, and the learning-loop practice of placing guards in the actual state owner. `Reader.tsx` retains the existing shared display contract, distinguishes navigation from private previews, and uses native modal semantics with persistent focus restoration. New browser regressions first failed against `d70946f`; independent critique corrected preview authority, dialog lifecycle and link contrast before the final checks. See [the finishing evidence](READER_FINISHING_PASS.md). No Moard aesthetics, runtime capabilities, credentials or recordings were imported.
 
 2026-10-02 reader and scene pass: compared complete reading and broadcasting flows, including recorded intermediate frames. The charity preview now reuses `StreamScene` without its audience transport, and measures the actual panel for translation paging. Reader appearance is local browser state, separate from the audience contract. A rendered-pixel check found an existing radial backing overriding the shading setting; the final layer now uses that setting. `tests/ui/reading-and-scene.spec.ts` covers every source-owned English word of 2:282 across the scene's pages, maximum reading size at 320 px, persistence and broadcast isolation, and actual pixel alpha. Shared-hours details now state the existing ledger formula and explain simultaneous use. No new provider, microphone, native OBS or latency proof is claimed.

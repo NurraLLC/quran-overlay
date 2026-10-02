@@ -518,17 +518,9 @@ export function VerseDisplay({
   // Layout is computed synchronously from measured line boxes before paint.
   const plan = useMemo(() => (fontsReady && v ? planFor(state, true, geo) : null), [planKey, fontsReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reading forward: when the new ayah is the one that was previewed, it rises out of the preview
-  // line into place (a teleprompter scroll); any other change (jump, search) simply cuts. Only a
-  // preview that was actually drawn counts: the lower third, or a screen with no room for one, cuts.
-  // A passage of short ayahs stays in place while the highlight moves through it: the article is
-  // keyed by the passage, and only a new passage (or single ayah) arrives.
-  const firstKey = plan?.passage && state.group ? state.group[0].key : (v?.key ?? null);
-  const articleKey = plan?.passage && state.group ? `group:${firstKey}` : firstKey;
-  const shownNext = plan?.next && state.next ? state.next.key : null;
-  const flow = useRef<{ key: string | null; nextKey: string | null; arrived: boolean }>({ key: null, nextKey: null, arrived: false });
-  if (articleKey !== flow.current.key) flow.current = { key: articleKey, nextKey: shownNext, arrived: !!firstKey && firstKey === flow.current.nextKey };
-  else flow.current.nextKey = shownNext;
+  // Keep a passage mounted while its highlight moves. New ayahs appear together at the measured
+  // reading size; scripture never shrinks or moves through an entrance transition.
+  const articleKey = plan?.passage && state.group ? `group:${state.group[0].key}` : (v?.key ?? null);
 
   // Reported when the measured layout changes (not with every highlight step); the control page
   // resends until the server holds it.
@@ -551,8 +543,8 @@ export function VerseDisplay({
   });
 
   // The meaning is centred under its word but never leaves the panel: under a word at the end of a
-  // line, a long meaning is moved inward. Layout offsets ignore the stage's scale and the arrival
-  // animation; measured after layout, applied before paint.
+  // line, a long meaning is moved inward. Layout offsets ignore the stage's scale; measured after
+  // layout, applied before paint.
   const stageRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const g = stageRef.current?.querySelector<HTMLElement>('.gloss');
@@ -614,10 +606,10 @@ export function VerseDisplay({
         </div>
       )}
       {/* Hidden from stream keeps the ayah mounted under a transparent panel, so unhiding shows it
-          where it was instead of replaying its arrival. */}
+          where it was. */}
       <div className={`panel ${visible ? 'panel-on' : 'panel-off'}`} aria-hidden={!visible}>
         {plan && v && (
-          <article className={`verse${flow.current.arrived ? ' arrive' : ''}${plan.passage ? ' passage' : ''}`} key={articleKey ?? v.key} aria-label={`${v.surahName} ${v.key}`}>
+          <article className={`verse${plan.passage ? ' passage' : ''}`} key={articleKey ?? v.key} aria-label={`${v.surahName} ${v.key}`}>
             {plan.banner && (
               <header className="surah-banner" aria-label={`Surah ${v.surahName}`}>
                 <span className="sb-frame">
