@@ -9,12 +9,12 @@ import '@fontsource/cormorant-garamond/700.css';
 import '@fontsource/cormorant-garamond/500-italic.css';
 import '@fontsource/marcellus-sc/400.css';
 import qrcode from 'qrcode-generator';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { DisplayStateSchema, type DisplayState, type Donation, type OverlayServerMessage, type StreamState } from '../shared/contracts';
 import { connect, u } from './net';
 import { NurraWordmark } from './Nurra';
 import { money, whose } from './stream-format';
-import { NURRA_ENGLISH_FONT, NURRA_ENGLISH_WEIGHT, StageFrame, VerseDisplay, useFontsReady } from './VerseDisplay';
+import { NURRA_ENGLISH_FONT, NURRA_ENGLISH_WEIGHT, StageFrame, VerseDisplay, useFontsReady, type LayoutInfo } from './VerseDisplay';
 
 /** How long a new donation is announced (gold) before the next one, or before it settles. */
 const ANNOUNCE_MS = 8000;
@@ -96,29 +96,9 @@ export function Stream() {
   const [display, setDisplay] = useState<DisplayState | null>(null);
   const [stream, setStream] = useState<StreamState | null>(null);
   const [denied, setDenied] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  const fontsReady = useFontsReady(NURRA_ENGLISH_FONT, NURRA_ENGLISH_WEIGHT);
-  // The scene appears once its own lettering is loaded (never a flash of a fallback face on stream);
-  // a font that fails to load does not hold it back for more than a moment.
-  const [letteringReady, setLetteringReady] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    const done = () => alive && setLetteringReady(true);
-    const t = setTimeout(done, 3000);
-    Promise.all(['20px "Marcellus SC"', '700 34px "Cormorant Garamond"', 'italic 500 28px "Cormorant Garamond"', '600 32px "Cormorant Garamond"'].map((f) => document.fonts.load(f))).then(done, done);
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-  }, []);
   const lastRevision = useRef(-1);
   const epoch = useRef<string | null>(null);
   const sock = useRef<ReturnType<typeof connect> | null>(null);
-
-  // Donations are announced one at a time, oldest first; ones already there when the page opened are not.
-  const seen = useRef<Set<string> | null>(null);
-  const [queue, setQueue] = useState<Donation[]>([]);
-  const [announcing, setAnnouncing] = useState<Donation | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.surface = 'overlay';
@@ -155,11 +135,40 @@ export function Stream() {
     return () => sock.current?.close();
   }, [view]);
 
+  const onPaint = useCallback((revision: number) => { sock.current?.send({ type: 'painted', revision }); }, []);
+
   useEffect(() => {
-    if (!display || !fontsReady) return;
-    const rev = display.revision;
-    requestAnimationFrame(() => setTimeout(() => sock.current?.send({ type: 'painted', revision: rev }), 0));
-  }, [display, fontsReady]);
+    if (denied) console.warn('Quran Reader: this stream link is missing or was replaced. Copy the current one from the control page (Charity stream).');
+  }, [denied]);
+
+  if (denied || !stream) return null;
+  return <StageFrame className="overlay-frame"><StreamScene display={display} stream={stream} onPaint={onPaint} /></StageFrame>;
+}
+
+/** The actual scene, shared by OBS and the broadcaster preview; it opens no viewer or audio socket. */
+export function StreamScene({ display, stream, onLayout, onPaint }: {
+  display: DisplayState | null; stream: StreamState; onLayout?: (info: LayoutInfo) => void; onPaint?: (revision: number) => void;
+}) {
+  const id = useId();
+  const [now, setNow] = useState(() => Date.now());
+  const fontsReady = useFontsReady(NURRA_ENGLISH_FONT, NURRA_ENGLISH_WEIGHT);
+  // The scene appears once its own lettering is loaded (never a flash of a fallback face on stream);
+  // a font that fails to load does not hold it back for more than a moment.
+  const [letteringReady, setLetteringReady] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const done = () => alive && setLetteringReady(true);
+    const t = setTimeout(done, 3000);
+    Promise.all(['20px "Marcellus SC"', '700 34px "Cormorant Garamond"', 'italic 500 28px "Cormorant Garamond"', '600 32px "Cormorant Garamond"'].map((f) => document.fonts.load(f))).then(done, done);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, []);
+  // Donations are announced one at a time, oldest first; ones already there when the page opened are not.
+  const seen = useRef<Set<string> | null>(null);
+  const [queue, setQueue] = useState<Donation[]>([]);
+  const [announcing, setAnnouncing] = useState<Donation | null>(null);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 15_000);
@@ -194,10 +203,13 @@ export function Stream() {
   }, [announcing]);
 
   useEffect(() => {
-    if (denied) console.warn('Quran Reader: this stream link is missing or was replaced. Copy the current one from the control page (Charity stream).');
-  }, [denied]);
+    if (!display || !fontsReady || !letteringReady || !onPaint) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const frame = requestAnimationFrame(() => { timer = setTimeout(() => onPaint(display.revision), 0); });
+    return () => { cancelAnimationFrame(frame); clearTimeout(timer); };
+  }, [display, fontsReady, letteringReady, onPaint]);
 
-  if (denied || !stream || !letteringReady) return null;
+  if (!letteringReady) return null;
   const s = stream.settings;
   const camera = s.camera;
   // The slot shows the donation being announced, or (settled) the latest one.
@@ -213,7 +225,6 @@ export function Stream() {
   const project = s.project ? `${s.project}${s.country ? ` in ${s.country}` : ''}` : s.country;
 
   return (
-    <StageFrame className="overlay-frame">
       <div className="cs-scene" data-camera={camera || undefined}>
         {/* With a camera, the scene's ground is painted around the arch's window (a spread shadow),
             so the camera source under this page in OBS shows through it. */}
@@ -221,17 +232,17 @@ export function Stream() {
         <div className="cs-glow" />
         <svg className="cs-pattern" width="1920" height="1080" viewBox="0 0 1920 1080" aria-hidden="true">
           <defs>
-            <pattern id="cs-khatam" width="120" height="120" patternUnits="userSpaceOnUse">
+            <pattern id={`cs-khatam-${id}`} width="120" height="120" patternUnits="userSpaceOnUse">
               <rect x="42" y="42" width="36" height="36" fill="none" stroke="#fff7b2" strokeWidth="1" />
               <rect x="42" y="42" width="36" height="36" fill="none" stroke="#fff7b2" strokeWidth="1" transform="rotate(45 60 60)" />
               <path d="M0 60 H24 M96 60 H120 M60 0 V24 M60 96 V120" stroke="#fff7b2" strokeWidth="1" />
             </pattern>
-            <mask id="cs-window">
+            <mask id={`cs-window-${id}`}>
               <rect width="1920" height="1080" fill="white" />
               {camera && <path d={WINDOW_PATH} fill="black" />}
             </mask>
           </defs>
-          <rect width="1920" height="1080" fill="url(#cs-khatam)" opacity="0.07" mask="url(#cs-window)" />
+          <rect width="1920" height="1080" fill={`url(#cs-khatam-${id})`} opacity="0.07" mask={`url(#cs-window-${id})`} />
         </svg>
         <div className="cs-frame cs-frame-outer" />
         <div className="cs-frame cs-frame-inner" />
@@ -277,7 +288,7 @@ export function Stream() {
           <div className="cs-reader-inner">
             {/* Before the first ayah (or while it is hidden): a quiet star, never an empty box. */}
             <span className={`cs-reader-idle${display?.verse && display.visible ? ' cs-reader-idle-off' : ''}`}><Star size={150} color="rgba(255, 247, 178, 0.14)" /></span>
-            {display && <VerseDisplay state={display} fontsReady={fontsReady} frame={PANEL} theme="nurra" />}
+            {display && <VerseDisplay state={display} fontsReady={fontsReady} frame={PANEL} theme="nurra" onLayout={onLayout} />}
           </div>
           <Corners size={20} />
         </div>
@@ -346,6 +357,5 @@ export function Stream() {
           <span className="cs-footer-note">The highlight follows the recitation, word by word</span>
         </footer>
       </div>
-    </StageFrame>
   );
 }

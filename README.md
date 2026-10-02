@@ -117,6 +117,8 @@ Without keys, everything except listening works: manual and keyboard navigation,
 
 ## Use it in the browser first
 
+- **Your reading page:** in `/reader`, *Menu → Reading appearance* chooses Night or Paper and adjusts Arabic and translation size together. These choices are saved on this device; the audience keeps the broadcaster's chosen look.
+- **Overlay appearance:** choose Reading, Stream captions or Arabic only, then adjust text size, colour, shading and caption placement. The audience preview offers light, dark and transparency backdrops for checking contrast; these backdrops are preview-only.
 - **Reading screen:** *Stream output → Open reading screen* opens the same display with a solid background; make it full-screen (F11) on a second monitor.
 - **Recite or ask:** one microphone for both. Recite and the screen follows; say or type `2:255`, `surah two verse two hundred fifty five`, `yaseen`, `go to inna fatahna`, `surah about elephants`, `English only`, `next`. References and explicit finding requests show immediately; plain descriptions of a verse stay private until you choose **Show on stream** on a result card.
 - **Going back and moving on:** restarting a few words back after a breath (or at the start of the ayah) is followed, not treated as a new place. When recitation stops matching (a jump elsewhere, a pause to talk), the last ayah stays up until the new place is found; *When recitation stops matching → clear the screen after 3 s* is the alternative.
@@ -131,6 +133,8 @@ Sources → + → Browser, paste the link from **Copy OBS overlay link**, set wi
 ### Charity stream scene
 
 The control page's **Charity stream** card sets up `/stream`, a 1920 × 1080 scene for a fundraising stream: the partner (who receives the donations), the project and what a donation provides, an optional project photo, the donation link (shown, and as a QR code), a goal, the reciter's name and an "Hour 3 of 24" clock. In OBS add it as a Browser source (**Copy OBS stream link**, 1920 × 1080) and put your camera or VTuber source *under* it in the source list: the arch at the left is a see-through window, so move the camera until you show in it (or untick *Camera window* to show the project photo there instead).
+
+**Preview charity scene** shows that actual scene in the control monitor. Its page controls measure the scene's reading panel, so even the longest translation can be paged completely. The preview itself does not count as a connected audience or grant live-stream listening allowances.
 
 Money goes to the partner's own donation page, never through this app. When a donation comes in, add it under **A donation came in** (a name, or empty for anonymous; the amount; the donor's own words if they want, e.g. "For my late father"): the stream announces it in Nurra gold, silently, one at a time, and the total and the recent list update. **Remove** takes a mistake back. Amounts are hidden on stream unless *Show amounts* is ticked: every donor gets the same du'a. Settings and donations are kept across restarts (hosted: with your overlay link; self-hosted: `data/state/local-stream.json`). While the scene is open in OBS your listening counts as live on stream (no daily limit; see [Deploy: live streams](docs/DEPLOY.md#live-streams)).
 

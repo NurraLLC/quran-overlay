@@ -101,6 +101,7 @@ export function SharedHours({ stats: initial, donations, testMode = false, defau
           {donations.length > 0 && <p className="r-pool-sub">Choose an amount to continue to Stripe’s secure checkout.</p>}
           {note && <p className="r-note" role="alert">{note}</p>}
           <p className="r-pool-sub">Time counts while recognition is connected, including short pauses. Usage is added when a session ends; totals refresh every minute.</p>
+          <p className="r-pool-sub">Available hours = funded hours − listening used − recorded costs − operating reserve. When two people each use one shared hour, two hours leave the pool.</p>
           <p className="r-pool-sub">Conversion: ${( (stats.centsPerHour ?? 13) / 100).toFixed(2)} per hour equivalent. Listening is estimated from connected time. Other costs reduce the balance when recorded; this is not a live provider invoice.</p>
           <a className="r-give-more" href={u('/about')}>
             Why support this project?

@@ -1,7 +1,7 @@
 // Reciter's control page. Everything here is private to the broadcaster; only the display state
 // (mirrored in the preview) reaches the audience.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, ControlClientMessage, ControlServerMessage, ControlSnapshot, CreditView, SearchCard, StreamSettings, StreamState } from '../shared/contracts';
 import { OWN_KEY_SHAPE, ownSonioxKey, setOwnSonioxKey, SonioxCapture, type CaptureStatus } from './audio/soniox-session';
 import { access, applyDisplay, applySnapshot, connect, formatListening, listeningLine, u } from './net';
@@ -10,6 +10,8 @@ import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { StageFrame, VerseDisplay, useFontsReady, type LayoutInfo } from './VerseDisplay';
 import { money } from './stream-format';
 import { OverlayAppearance } from './OverlayAppearance';
+
+const StreamScene = lazy(() => import('./Stream').then((m) => ({ default: m.StreamScene })));
 
 type ChapterRow = { number: number; nameSimple: string; nameArabic: string; verseCount: number };
 type Auth = 'checking' | 'owner' | 'unauthorized';
@@ -68,6 +70,8 @@ export function Control() {
   /** Listening time left (hosted service only). */
   const [credits, setCredits] = useState<CreditView | null>(null);
   const [stream, setStream] = useState<StreamState | null>(null);
+  const [previewMode, setPreviewMode] = useState<'overlay' | 'stream'>('overlay');
+  const [backdrop, setBackdrop] = useState<'grid' | 'light' | 'dark'>('grid');
   const fontsReady = useFontsReady();
   const sock = useRef<ReturnType<typeof connect> | null>(null);
   const lastRequest = useRef<string | null>(null);
@@ -178,15 +182,23 @@ export function Control() {
   // keeps a measurement only for the revision it was taken at, so it is resent, at most once per
   // revision, until the server holds it for the ayah on screen.
   const [measured, setMeasured] = useState<LayoutInfo | null>(null);
-  const layoutSentAt = useRef(-1);
+  const layoutSentAt = useRef('');
   useEffect(() => {
     if (!snap || !measured || measured.key !== snap.display.verse?.key) return;
     const held = snap.layout;
     if (held && held.key === measured.key && held.englishPages === measured.englishPages && held.arabicPages === measured.arabicPages && held.promotedToFullFrame === measured.promotedToFullFrame) return;
-    if (layoutSentAt.current === snap.display.revision) return;
-    layoutSentAt.current = snap.display.revision;
+    const stamp = `${snap.display.revision}:${previewMode}:${measured.englishPages}:${measured.arabicPages}:${measured.promotedToFullFrame}`;
+    if (layoutSentAt.current === stamp) return;
+    layoutSentAt.current = stamp;
     send({ type: 'layout', revision: snap.display.revision, key: measured.key, englishPages: measured.englishPages, arabicPages: measured.arabicPages, promotedToFullFrame: measured.promotedToFullFrame });
-  }, [snap, measured, send]);
+  }, [snap, measured, previewMode, send]);
+
+  const choosePreview = (next: 'overlay' | 'stream') => {
+    if (next === previewMode) return;
+    setMeasured(null);
+    setPreviewMode(next);
+    layoutSentAt.current = '';
+  };
 
   const runCommand = useCallback(
     (text: string, source: 'typed' | 'voice') => {
@@ -246,7 +258,7 @@ export function Control() {
   const st = statusLine(snap);
   const listening = cap.listening;
   const d = snap.display;
-  const lay = snap.layout && d.verse && snap.layout.key === d.verse.key ? snap.layout : null;
+  const lay = measured && measured.key === d.verse?.key ? measured : null;
 
   return (
     <div className="control">
@@ -271,6 +283,9 @@ export function Control() {
             <SpeedMeter view={speedView} listening={cap.listening} />
           </div>
           <div className="view-controls">
+            <div className="reading-view preview-choice" role="radiogroup" aria-label="Preview output">
+              {([['overlay', 'Overlay'], ['stream', 'Charity scene']] as const).map(([value, label]) => <button key={value} role="radio" aria-checked={previewMode === value} className={previewMode === value ? 'primary' : ''} onClick={() => choosePreview(value)}>{label}</button>)}
+            </div>
             <div className="reading-view" role="radiogroup" aria-label="Language">
               {([['both', 'Arabic + English'], ['arabic', 'Arabic'], ['english', 'English']] as const).map(([value, label]) => <button key={value} role="radio" aria-checked={d.style.language === value} className={d.style.language === value ? 'primary' : ''} onClick={() => send({ type: 'style', patch: { language: value } })}>{label}</button>)}
             </div>
@@ -278,9 +293,17 @@ export function Control() {
               {([['follow', 'Follow words'], ['word', 'Word focus'], ['ayah', 'Full ayah']] as const).map(([value, label]) => <button key={value} role="radio" aria-checked={d.style.readingMode === value} className={d.style.readingMode === value ? 'primary' : ''} disabled={value === 'word' && d.style.language === 'english'} title={value === 'word' && d.style.language === 'english' ? 'Word focus shows one Arabic word' : undefined} onClick={() => send({ type: 'style', patch: { readingMode: value } })}>{label}</button>)}
             </div>
           </div>
-          <StageFrame className="preview">
-            <VerseDisplay state={d} fontsReady={fontsReady} onLayout={setMeasured} preview />
+          <StageFrame className={`preview preview-${backdrop}`}>
+            {previewMode === 'stream' ? <Suspense fallback={<div className="preview-loading">Opening the charity scene…</div>}>
+              {stream && <StreamScene display={d} stream={stream} onLayout={setMeasured} />}
+            </Suspense> : <VerseDisplay state={d} fontsReady={fontsReady} onLayout={setMeasured} preview />}
           </StageFrame>
+          <div className="preview-environment" role="radiogroup" aria-label="Preview backdrop">
+            <span>Check over</span>
+            {([['grid', 'Transparency grid'], ['light', 'Light'], ['dark', 'Dark']] as const).map(([value, label]) => <button key={value} role="radio" aria-checked={backdrop === value} className={backdrop === value ? 'on' : ''} onClick={() => setBackdrop(value)}>{label}</button>)}
+            <span className="hint">Preview only</span>
+          </div>
+          {previewMode === 'stream' && <p className="hint">This is the full OBS scene. Page controls match its reading panel. Layout, shading and highlight colour settings below apply to the plain overlay.</p>}
 
           <div className="transport">
             <button onClick={() => send({ type: 'nav', action: 'prev' })} title="Previous ayah (←)">‹ Previous ayah</button>
@@ -414,7 +437,7 @@ export function Control() {
               }
             }}
           />
-          <CharityCard snap={snap} stream={stream} send={send} />
+          <CharityCard snap={snap} stream={stream} send={send} onPreview={() => { choosePreview('stream'); document.getElementById('audience-preview')?.scrollIntoView({ block: 'start' }); }} />
         </aside>
       </main>
     </div>
@@ -436,7 +459,7 @@ const amountOf = (text: string) => {
  * they come in. Each donation added here is announced on stream ("May Allah accept Aisha's
  * donation"); money goes to the partner's own link, never through this app.
  */
-function CharityCard({ snap, stream, send }: { snap: ControlSnapshot; stream: StreamState | null; send: (m: ControlClientMessage) => boolean }) {
+function CharityCard({ snap, stream, send, onPreview }: { snap: ControlSnapshot; stream: StreamState | null; send: (m: ControlClientMessage) => boolean; onPreview: () => void }) {
   const s = stream?.settings ?? null;
   const [form, setForm] = useState<CharityForm | null>(null);
   const [saved, setSaved] = useState(false);
@@ -486,6 +509,7 @@ function CharityCard({ snap, stream, send }: { snap: ControlSnapshot; stream: St
       <div className="cc-copy">
         <button className="primary" onClick={copy}>{copied === 'ok' ? 'Copied' : 'Copy OBS stream link'}</button>
         <a href={streamUrl} target="_blank" rel="noreferrer">Open the stream scene</a>
+        <button onClick={onPreview}>Preview charity scene</button>
       </div>
       {copied === 'failed' && <input className="cc-link" readOnly value={streamUrl} aria-label="OBS stream link" autoFocus onFocus={(e) => e.currentTarget.select()} />}
       <p className="hint">In OBS: Sources → + → Browser, paste the link, set 1920 × 1080. Put your camera (or VTuber) source under it in the list and move it so you show in the arch window. Leave “Shutdown source when not visible” off.</p>

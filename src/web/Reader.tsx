@@ -11,6 +11,7 @@ import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { arabicNumber } from './VerseDisplay';
 import { NurraBadge } from './Nurra';
 import { SharedHours } from './Sponsor';
+import { ReaderAppearance, useReaderAppearance } from './ReaderAppearance';
 
 type Ayah = { key: string; ayah: number; arabic: string; english: string; glosses: Array<string | null> | null };
 type Surah = { number: number; name: string; nameArabic: string; translation: string; glossCredit: string | null; ayahs: Ayah[] };
@@ -89,6 +90,8 @@ export function Reader() {
   /** The start page, opened from the menu while a surah is up (recitation or a request leaves it). */
   const [home, setHome] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [appearance, setAppearance] = useReaderAppearance();
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   /** When the reader last scrolled by hand (wheel, touch). */
   const lastScroll = useRef(-Infinity);
   const curKey = useRef<string | null>(null);
@@ -295,7 +298,7 @@ export function Reader() {
     if (!el) return;
     const r = el.getBoundingClientRect();
     if (r.top < bars.current.top || r.bottom > window.innerHeight - bars.current.bottom) el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-  }, [cur?.key, d?.cursor?.from, surah?.number, follow]);
+  }, [cur?.key, d?.cursor?.from, surah?.number, follow, appearance.scale]);
 
   // Scrolling by hand pauses following only once the recited ayah is out of view (a nudge, or
   // scrolling back to it, keeps following). The next word recited after a few still seconds brings
@@ -384,7 +387,7 @@ export function Reader() {
         : 'Listening… recite, or say “go to Surah Yaseen”.';
 
   return (
-    <div className="reader" data-lang={lang}>
+    <div className="reader" data-lang={lang} data-theme={appearance.theme}>
       <header className="r-top">
         <button className="r-menu-btn" onClick={() => setMenuOpen(true)} aria-label="Menu: home, surahs, listening time" aria-haspopup="dialog">
           <MenuIcon />
@@ -559,6 +562,9 @@ export function Reader() {
             <button className="r-menu-item" onClick={() => { setHome(true); setMenuOpen(false); requestAnimationFrame(() => document.getElementById('r-surahs')?.scrollIntoView({ block: 'start' })); }}>
               All surahs<span>Open any of the 114, by name or number</span>
             </button>
+            <button className="r-menu-item" onClick={() => { setMenuOpen(false); setAppearanceOpen(true); }}>
+              Reading appearance<span>{appearance.theme === 'paper' ? 'Paper' : 'Night'} · text at {Math.round(appearance.scale * 100)}%</span>
+            </button>
             {credits ? (
               <button className="r-menu-item" onClick={() => { setMenuOpen(false); setTimeOpen('time'); }}>
                 Listening<span>{listeningLine(credits, snap.overlay.clients > 0, ownKey)}</span>
@@ -586,6 +592,7 @@ export function Reader() {
         </div>
       )}
       {timeOpen && credits && <ListeningTime credits={credits} funding={funding} focus={timeOpen} onClose={() => setTimeOpen(false)} />}
+      {appearanceOpen && <ReaderAppearance appearance={appearance} onChange={setAppearance} onClose={() => { setAppearanceOpen(false); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.r-menu-btn')?.focus()); }} />}
 
       {!follow && cur && !home && (
         <button className="r-back" onClick={() => setFollow(true)}>
