@@ -176,7 +176,8 @@ async function main() {
     }
     return { stream, onStream: (st: unknown) => writeFileSync(file, JSON.stringify(st), { mode: 0o600 }) };
   })() : {};
-  const session = hostedMode ? undefined : new Session({ ...sessionOptions(false), viewToken: links?.links.view, onViewToken: links?.saveView, ...localStream });
+  const session = hostedMode ? undefined : new Session({ ...sessionOptions(false), viewToken: links?.links.view, onViewToken: links?.saveView,
+    style: links?.links.style, onStyle: links?.saveStyle, ...localStream });
   const hosted = hostedMode ? hostedSetup((saved) => new Session({ ...sessionOptions(true), ...saved })) : undefined;
   if (hosted) {
     // Reading without a visitor cookie shares one session that never listens.

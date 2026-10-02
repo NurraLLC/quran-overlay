@@ -20,6 +20,13 @@ export const DisplayStyleSchema = z.object({
   /** Short consecutive ayahs share the screen as one passage (the current one highlighted). */
   groupShort: z.boolean().default(true),
   arabicScale: z.number().min(0.8).max(1.25),
+  /** Translation size, measured before pagination rather than stretching the finished text. */
+  englishScale: z.number().min(0.8).max(1.4).default(1),
+  /** Placement applies to the lower third; long ayahs still promote to the full frame. */
+  captionPosition: z.enum(['top', 'bottom']).default('bottom'),
+  captionInset: z.number().int().min(24).max(160).default(56),
+  /** Shading behind text only; the text itself stays opaque. */
+  panelOpacity: z.number().min(0.2).max(1).default(0.72),
   /** Seconds per translation page when a translation overflows; 0 = broadcaster pages manually. */
   translationPageSeconds: z.number().int().min(0).max(60),
   /** Highlight colour of the stream (the recited word, meanings, ornaments); gold by default. */
@@ -38,6 +45,10 @@ export const DEFAULT_STYLE: DisplayStyle = {
   showNext: true,
   groupShort: true,
   arabicScale: 1,
+  englishScale: 1,
+  captionPosition: 'bottom',
+  captionInset: 56,
+  panelOpacity: 0.72,
   translationPageSeconds: 0,
   accent: '#cfaa62',
   credit: true,
@@ -173,7 +184,13 @@ export const WireTokenSchema = z.object({
 
 export const TrackerModeSchema = z.enum(['deterministic', 'hybrid', 'jev_required']);
 
-export const StylePatchSchema = DisplayStyleSchema.partial();
+// Defaults belong to full snapshots and saved records. A partial update must contain only the
+// fields the broadcaster changed; otherwise changing a colour resets language, size and layout.
+const styleFields = DisplayStyleSchema.shape;
+const patchFields = Object.fromEntries(Object.entries(styleFields).map(([key, schema]) =>
+  [key, schema instanceof z.ZodDefault ? schema.removeDefault() : schema],
+)) as { [K in keyof typeof styleFields]: typeof styleFields[K] extends z.ZodDefault<infer T> ? T : typeof styleFields[K] };
+export const StylePatchSchema = z.object(patchFields).partial();
 export type StylePatch = z.infer<typeof StylePatchSchema>;
 
 export const ControlClientMessageSchema = z.discriminatedUnion('type', [

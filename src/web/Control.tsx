@@ -9,19 +9,10 @@ import { NurraBadge } from './Nurra';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { StageFrame, VerseDisplay, useFontsReady, type LayoutInfo } from './VerseDisplay';
 import { money } from './stream-format';
+import { OverlayAppearance } from './OverlayAppearance';
 
 type ChapterRow = { number: number; nameSimple: string; nameArabic: string; verseCount: number };
 type Auth = 'checking' | 'owner' | 'unauthorized';
-
-/** Stream colours: gold (the default), and a few that sit well over most footage. */
-const ACCENTS: Array<[string, string]> = [
-  ['#cfaa62', 'Gold'],
-  ['#5fbf98', 'Emerald'],
-  ['#7fb2e5', 'Sky'],
-  ['#e39aa8', 'Rose'],
-  ['#b99be6', 'Lavender'],
-  ['#e8e3d6', 'Pearl'],
-];
 
 function statusLine(s: ControlSnapshot): { tone: string; title: string; detail: string } {
   const key = s.display.verse ? `${s.display.verse.surahName} ${s.display.verse.key}` : null;
@@ -272,7 +263,7 @@ export function Control() {
       </header>
 
       <main className="grid">
-        <section className="monitor" aria-label="What the audience sees">
+        <section id="audience-preview" className="monitor" tabIndex={-1} aria-label="What the audience sees">
           <div className="monitor-head">
             <span className={`onair ${d.visible ? 'live' : ''}`}>{d.visible ? 'On screen' : snap.blanked ? 'Hidden from stream' : 'Nothing on screen'}</span>
             {snap.blanked && d.verse && <span className="muted">{d.verse.key} returns when you unhide</span>}
@@ -753,15 +744,6 @@ function ResultCard({ card, confirmed, onShow }: { card: SearchCard; confirmed: 
 }
 
 function OutputCard({ snap, send, copied, copyFailed, onCopy }: { snap: ControlSnapshot; send: (m: ControlClientMessage) => boolean; copied: boolean; copyFailed: boolean; onCopy: () => void }) {
-  const s = snap.display.style;
-  const seg = <T extends string>(label: string, value: T, options: Array<[T, string]>, onPick: (v: T) => void) => (
-    <div className="seg" role="radiogroup" aria-label={label}>
-      <span className="seg-label">{label}</span>
-      {options.map(([v, text]) => (
-        <button key={v} role="radio" aria-checked={value === v} className={value === v ? 'on' : ''} onClick={() => onPick(v)}>{text}</button>
-      ))}
-    </div>
-  );
   return (
     <section className="card">
       <h2>Stream output</h2>
@@ -776,36 +758,10 @@ function OutputCard({ snap, send, copied, copyFailed, onCopy }: { snap: ControlS
         </div>
       )}
       <p className="hint">In OBS: Sources → + → Browser, paste the link, set 1920 × 1080. Leave “Shutdown source when not visible” off. The link can only show ayahs.</p>
-      {seg('Layout', s.layout, [['fullframe', 'Full frame'], ['lowerthird', 'Lower third']], (v) => send({ type: 'style', patch: { layout: v } }))}
-      {seg('Background', s.background, [['transparent', 'Transparent'], ['scrim', 'Shaded panel'], ['solid', 'Solid']], (v) => send({ type: 'style', patch: { background: v } }))}
-      <div className="seg accent-row" role="radiogroup" aria-label="Colour">
-        <span className="seg-label">Colour</span>
-        {ACCENTS.map(([hex, name]) => (
-          <button key={hex} role="radio" aria-checked={s.accent.toLowerCase() === hex} aria-label={name} title={name} className={`swatch${s.accent.toLowerCase() === hex ? ' on' : ''}`} style={{ background: hex }} onClick={() => send({ type: 'style', patch: { accent: hex } })} />
-        ))}
-        <label className={`swatch custom${ACCENTS.some(([h]) => h === s.accent.toLowerCase()) ? '' : ' on'}`} title="Your own colour">
-          <input type="color" value={s.accent} aria-label="Your own colour" onChange={(e) => send({ type: 'style', patch: { accent: e.target.value } })} />
-        </label>
-      </div>
-      <label className="row">
-        <input type="checkbox" checked={s.credit} onChange={(e) => send({ type: 'style', patch: { credit: e.target.checked } })} /> Show a small “Quran Overlay by Nurra” in the corner
-      </label>
-      <label className="row">
-        <input type="checkbox" checked={s.showReference} onChange={(e) => send({ type: 'style', patch: { showReference: e.target.checked } })} /> Show surah and ayah number
-      </label>
-      <label className="row">
-        <input type="checkbox" checked={s.showNext} onChange={(e) => send({ type: 'style', patch: { showNext: e.target.checked } })} /> Show the next ayah, dimmed (full frame)
-      </label>
-      <label className="row">
-        <input type="checkbox" checked={s.groupShort} onChange={(e) => send({ type: 'style', patch: { groupShort: e.target.checked } })} /> Show short ayahs together (full frame)
-      </label>
-      <label className="row">
-        Arabic size
-        <input type="range" min={0.8} max={1.25} step={0.05} value={s.arabicScale} onChange={(e) => send({ type: 'style', patch: { arabicScale: Number(e.target.value) } })} />
-      </label>
+      <OverlayAppearance style={snap.display.style} sessionEpoch={snap.sessionEpoch} send={send} />
       <label className="row">
         Long translations turn pages
-        <select value={s.translationPageSeconds} onChange={(e) => send({ type: 'style', patch: { translationPageSeconds: Number(e.target.value) } })}>
+        <select value={snap.display.style.translationPageSeconds} onChange={(e) => send({ type: 'style', patch: { translationPageSeconds: Number(e.target.value) } })}>
           <option value={0}>only when I press ›</option>
           <option value={10}>every 10 s</option>
           <option value={14}>every 14 s</option>
@@ -819,7 +775,7 @@ function OutputCard({ snap, send, copied, copyFailed, onCopy }: { snap: ControlS
           <option value="clear">clear the screen after 3 s</option>
         </select>
       </label>
-      <label className="row">
+      <label className="row check-row">
         <input type="checkbox" checked={snap.pinned} onChange={(e) => send({ type: 'pin', on: e.target.checked })} /> Keep the ayah up if the microphone disconnects
       </label>
       <button className="link" onClick={() => send({ type: 'rotate_view' })}>Replace overlay link (old links stop working)</button>

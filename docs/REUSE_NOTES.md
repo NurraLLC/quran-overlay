@@ -21,6 +21,8 @@ Sources read on 2026-09-28. Moard is an active checkout: HEAD was `bebab2bf73bcâ
 
 Not carried over (Moard-specific): always-listening English TALK endpoint tuning, managed customer keys, the no-local-model rule (the optional MiniLM adapter here is this product's own, unmeasured experiment), phone/device policies, styling.
 
+2026-10-02 overlay customization: reread the current Moard surface-quality, cross-runtime-integrity, motion-and-latency and learning-loop skills, guidance, and `harbor/intelligence/contextual_ranking_composition.py` (durable state belongs to the stable owner). Adapted the surface/contract practice here: one validated `DisplayStyle`, one measured renderer for preview/OBS/charity panels, and self-hosted appearance saved beside the stable overlay link. Found and repaired default-filled partial updates that reset unrelated choices. `tests/session/style.test.ts`, `local-links.test.ts` and `tests/ui/overlay-appearance.spec.ts` cover preserved choices, restarts, rapid adjustments, narrow controls, audience synchronization and every word across the longest ayah's pages. These are source and browser checks, with synthetic speech in the existing suite; no new provider, microphone, rendered OBS or latency measurement is claimed.
+
 ## Learning-loop record
 
 | Friction | Cause | Correction | Proof | Durable owner |

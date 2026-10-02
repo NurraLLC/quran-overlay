@@ -279,9 +279,9 @@ function planFor(state: DisplayState, useGroup = true, geo: Geo = DEFAULT_GEO): 
   const FULLB: Geometry = banner ? { ...geo.full, height: geo.full.height - geo.bannerH } : geo.full;
   type Fit = { a: number; e: number; al: Lines; els: Lines[]; enLines: number };
   const tryFit = (g: Geometry, arMax: number, arMin: number, enMax: number, enMin: number) =>
-    remember(`ar|${g.width}x${g.height}/${g.gap}/${g.refH}|${arMax}-${arMin}|${enMax}-${enMin}|${following}|${geo.englishFont}/${geo.englishWeight}|${arWords.join(' ')}|${enSets.map((ws) => ws.join(' ')).join('\n')}`, (): Fit | null => {
+    remember(`ar|${g.width}x${g.height}/${g.gap}/${g.refH}|${arMax}-${arMin}|${enMax}-${enMin}/${state.style.englishScale}|${following}|${geo.englishFont}/${geo.englishWeight}|${arWords.join(' ')}|${enSets.map((ws) => ws.join(' ')).join('\n')}`, (): Fit | null => {
       for (let a = arMax; a >= arMin; a -= 2) {
-        const e = Math.max(enMin, Math.min(enMax, Math.round(a * 0.5)));
+        const e = Math.max(enMin, Math.min(enMax, Math.round(a * 0.5 * state.style.englishScale)));
         const al = measureLines(arWords, ARABIC_FONT, a, AR_LH, g.width, true);
         const els = enSets.map((ws) => measureLines(ws, geo.englishFont, e, EN_LH, g.width, false, geo.englishWeight));
         const enLines = Math.max(0, ...els.map((l) => l.length));
@@ -319,7 +319,7 @@ function planFor(state: DisplayState, useGroup = true, geo: Geo = DEFAULT_GEO): 
 
   if (lowerWanted && geo.lower && state.style.readingMode !== 'word') {
     if (group) return planFor(state, false, geo);
-    const fit = tryFit(geo.lower, Math.round(62 * scale), Math.round(46 * scale), 30, 26);
+    const fit = tryFit(geo.lower, Math.round(62 * scale), Math.round(46 * scale), Math.round(30 * state.style.englishScale), Math.round(26 * state.style.englishScale));
     if (fit) return single(fit, 'lowerthird', false);
   }
   const promoted = lowerWanted;
@@ -447,7 +447,7 @@ function planEnglish(state: DisplayState, useGroup: boolean, geo: Geo): Plan {
     banner: banner && layout === 'fullframe',
   });
   if (lower && geo.lower && !group) {
-    const f = fit(geo.lower, geo.lower.height, 44, 30);
+    const f = fit(geo.lower, geo.lower.height, Math.round(44 * state.style.englishScale), Math.round(30 * state.style.englishScale));
     if (f) return plan('lowerthird', f.e, [f.lines], null);
   }
   if (lower && group) return planEnglish(state, false, geo);
@@ -503,12 +503,18 @@ export function VerseDisplay({
   const v = state.verse;
   const fw = frame?.width ?? 0;
   const fh = frame?.height ?? 0;
-  const geo = useMemo(() => (fw && fh ? panelGeo({ width: fw, height: fh }, theme) : DEFAULT_GEO), [fw, fh, theme]);
+  const geo = useMemo(() => {
+    const base = fw && fh ? panelGeo({ width: fw, height: fh }, theme) : DEFAULT_GEO;
+    const scale = state.style.englishScale;
+    const sizes = <T extends Record<string, number>>(values: T): T => Object.fromEntries(Object.entries(values).map(([k, v]) => [k, Math.round(v * scale)])) as T;
+    return { ...base, en: sizes(base.en), enOnly: sizes(base.enOnly),
+      enOnlyNextPx: base.enOnlyNextPx.map((n) => Math.round(n * scale)) as [number, number] };
+  }, [fw, fh, theme, state.style.englishScale]);
   const lastFocus = useRef<{ key: string; text: string } | null>(null);
   useLayoutEffect(() => {
     if (v && state.cursor) lastFocus.current = { key: v.key, text: toQpcHafsEncoding(v.arabic).split(/\s+/).filter(Boolean).slice(state.cursor.from, state.cursor.to + 1).join(' ') };
   }, [v?.key, state.cursor?.from, state.cursor?.to]);
-  const planKey = v ? `${v.key}|${state.group?.map((g) => g.key).join(',')}|${state.next?.key}|${state.style.layout}|${state.style.readingMode}|${state.style.arabicScale}|${state.style.language}|${state.style.showNext}|${fw}x${fh}|${theme ?? ''}` : '';
+  const planKey = v ? `${v.key}|${state.group?.map((g) => g.key).join(',')}|${state.next?.key}|${state.style.layout}|${state.style.readingMode}|${state.style.arabicScale}|${state.style.englishScale}|${state.style.language}|${state.style.showNext}|${fw}x${fh}|${theme ?? ''}` : '';
   // Layout is computed synchronously from measured line boxes before paint.
   const plan = useMemo(() => (fontsReady && v ? planFor(state, true, geo) : null), [planKey, fontsReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -597,7 +603,7 @@ export function VerseDisplay({
   const heldText = lastFocus.current?.key === v?.key ? lastFocus.current?.text : null;
   const focusText = state.cursor ? displayWords.slice(state.cursor.from, state.cursor.to + 1).join(' ') : (heldText ?? displayWords[0] ?? '');
   return (
-    <div ref={stageRef} className="stage" data-bg={frame ? 'panel' : state.style.background} data-layout={frame ? 'panel' : layout} data-theme={theme} data-reading={mode} data-lang={lang} data-preview={preview || undefined} style={(panelSize ?? accentVars(state.style.accent)) as React.CSSProperties}>
+    <div ref={stageRef} className="stage" data-bg={frame ? 'panel' : state.style.background} data-layout={frame ? 'panel' : layout} data-position={state.style.captionPosition} data-theme={theme} data-reading={mode} data-lang={lang} data-preview={preview || undefined} style={{ ...panelSize, ...(!frame ? accentVars(state.style.accent) : {}), '--caption-inset': `${state.style.captionInset}px`, '--panel-opacity': state.style.panelOpacity } as React.CSSProperties}>
       {/* Small, quiet credit while an ayah is up (the broadcaster can turn it off; the stream scene credits Nurra itself). */}
       {visible && state.style.credit !== false && !frame && (
         <div className="stage-credit" aria-label="Quran Overlay by Nurra">
