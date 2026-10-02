@@ -1,6 +1,54 @@
-# Launch status — 2026-10-01
+# Launch status — 2026-10-02
 
-## Current update: charity stream scene
+## Current update: appearance, reading comfort and accurate scene preview
+
+The owner explicitly requested this live update on October 2. Production runs
+`quran-reader:cbcbb01` (image `70c3769bf5b3`, revision
+`cbcbb01308674911890b4a9f195edb8561962237`). It includes overlay customization
+from `fa85423`, the reader/scene improvements in `93dd384`, and the Paper hover
+contrast correction in `cbcbb01`. The final frontend was built on Linux from
+the validated `93dd384` build stage with the sole changed product file mounted;
+the final image retains that validated live runtime and replaces the committed
+CSS and built frontend. No provider credentials or bundled scripture were added.
+
+- Fresh checks: typecheck, 276 source tests, all 23 Edge browser tests, production
+  frontend build, and all 25 corpus checks passed. The final CSS correction passed
+  five affected browser flows, including measured text/background contrast on the
+  hosted support card. Linux CI passed for both product commits.
+- Private Linux startup checked the production content cache read-only, with fresh
+  temporary state and no provider keys: 114 chapters, 6,236 ayahs, and source-owned
+  Arabic/English at the beginning, longest ayah and end. The cache checkpoint was
+  about 14 hours old. The first external staging probe used the mapped port in its
+  Host header and was correctly rejected; the corrected Host probe passed.
+- Production is healthy. Public health, policies, assets, protected anonymous
+  cookie, control WebSocket and full chapter count passed. All seven served
+  JavaScript/CSS hashes (including retained earlier asset versions) match the final
+  container. Direct origin access returns 404; the main site returns 200. Sites
+  routing was not edited. `QO_TRUST_PROXY=1`, `QO_MAX_LISTENERS=10` and
+  `QO_REQUIRE_CONTENT_SYNC=1` were read back; the refresh timer is active.
+- There were zero open listening holds at each switch. Existing content and
+  financial/link-state volumes were preserved. Pool totals matched before and
+  after both switches: 276,923 funded seconds, 2,518 used, 108,251 available,
+  166,154 operating-reserve seconds and zero recorded additional costs.
+- Live browser review verified Paper selection and persistence, the budget formula
+  and 30 h 4 min available, readable support details on hover, the new control
+  choices, the actual charity preview and translation page 1 → 2 of 5 for 2:282.
+  The preview retained zero audience connections. No microphone or payment was
+  started during this production review.
+- Rollback containers are retained as `quran-reader-old-c889d26-20261002T140210Z`
+  and `quran-reader-old-93dd384-20261002T141536Z`. Private env/state backups remain
+  in `/opt/quran-reader-backups`.
+
+Live Stripe contributions remain disabled. Signed-payment conversion, actual-fee
+deduction, duplicate delivery, reservations, failed connections and voice usage
+are covered by automated fixtures with stand-in providers. These checks do not
+confirm a real paid donation. Provider/hosting invoice reconciliation is manual;
+the hour rate is a budget estimate. The charity partner's separate donation page
+does not automatically fund the listening pool. No new replay, paid-provider,
+owner-microphone, camera or rendered native OBS proof is claimed. Follow
+[STREAM_TEST.md](STREAM_TEST.md) for that owner pass.
+
+## Previous update: charity stream scene — 2026-10-01
 
 The owner explicitly approved deployment on October 1. Production now runs
 `quran-reader:c889d26` (image `63449bc561c2`), with the existing content and state

@@ -27,6 +27,8 @@ Not carried over (Moard-specific): always-listening English TALK endpoint tuning
 
 2026-10-02 reader and scene pass: compared complete reading and broadcasting flows, including recorded intermediate frames. The charity preview now reuses `StreamScene` without its audience transport, and measures the actual panel for translation paging. Reader appearance is local browser state, separate from the audience contract. A rendered-pixel check found an existing radial backing overriding the shading setting; the final layer now uses that setting. `tests/ui/reading-and-scene.spec.ts` covers every source-owned English word of 2:282 across the scene's pages, maximum reading size at 320 px, persistence and broadcast isolation, and actual pixel alpha. Shared-hours details now state the existing ledger formula and explain simultaneous use. No new provider, microphone, native OBS or latency proof is claimed.
 
+The production walkthrough exposed a Paper-only hover contrast regression in the hosted support card, absent from the self-hosted reader screen. Scoped Paper hover colors now preserve the card's readable foreground; the hosted browser flow measures actual text/background contrast at at least 4.5:1 and captures the result. This reinforced reviewing the complete hosted journey after the local flow. Final public asset hashes, budget preservation and browser readback are recorded in `docs/LAUNCH_STATUS.md`.
+
 | Friction | Cause | Correction | Proof | Durable owner |
 |---|---|---|---|---|
 | Wrong jump 36:4 → 67:23 | Words already explained by the current ayah (36:4 = end of 67:22) counted as evidence for the jump | Jumps need *fresh* evidence only | engine test "does not double-count…"; scenario `different-surah-jumps` | `reducer.ts` |
