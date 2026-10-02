@@ -370,9 +370,12 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   app.post('/api/owner/session', async (req, reply) => {
     if (hosted) return reply.code(404).send({ error: 'not available' });
     if (!originOk(req)) return reply.code(403).send({ error: 'origin' });
-    if (!exchangeLimit.take()) return reply.code(429).send({ error: 'rate' });
     const token = (req.body as { token?: unknown } | undefined)?.token;
-    if (typeof token !== 'string' || !safeEqual(token, ownerToken)) return reply.code(401).send({ error: 'invalid owner link' });
+    if (typeof token !== 'string' || !safeEqual(token, ownerToken)) {
+      if (!exchangeLimit.take()) return reply.code(429).send({ error: 'rate' });
+      return reply.code(401).send({ error: 'invalid owner link' });
+    }
+    // A proven owner can reopen reader/control pages; failed guesses cannot lock them out.
     reply.header('Set-Cookie', `${COOKIE}=${ownerCookie}; HttpOnly; SameSite=Strict; Path=${base || '/'}`);
     return { ok: true };
   });

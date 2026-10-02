@@ -101,6 +101,32 @@ describe('local server authorization', () => {
     expect(code).toBe(4401);
   });
 
+  it('valid owner links remain usable while failed owner-link guesses are rate limited', async () => {
+    const port = 4317;
+    const { app: isolated } = await buildApp({ session, port, ownerToken: OWNER });
+    const headers = { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}` };
+    const exchange = (token: string) => isolated.inject({ method: 'POST', url: '/api/owner/session', headers, payload: { token } });
+    try {
+      // Opening multiple real reader/control contexts must not consume the failed-guess budget.
+      for (let i = 0; i < 25; i++) expect((await exchange(OWNER)).statusCode).toBe(200);
+      for (let i = 0; i < 20; i++) {
+        const denied = await exchange('wrong-owner-link');
+        expect(denied.statusCode).toBe(401);
+        expect(denied.headers['set-cookie']).toBeUndefined();
+      }
+      const limited = await exchange('wrong-owner-link');
+      expect(limited.statusCode).toBe(429);
+      expect(limited.headers['set-cookie']).toBeUndefined();
+      const allowed = await exchange(OWNER);
+      expect(allowed.statusCode).toBe(200);
+      const ownerCookie = String(allowed.headers['set-cookie']).split(';')[0];
+      const status = await isolated.inject({ method: 'GET', url: '/api/owner/status', headers: { ...headers, cookie: ownerCookie } });
+      expect(status.json()).toEqual({ owner: true });
+    } finally {
+      await isolated.close();
+    }
+  });
+
   it('the overlay view capability is read-only: it cannot mint keys or send control messages', async () => {
     const o = overlay(viewToken());
     await until(() => o.states.length > 0);
