@@ -111,11 +111,11 @@ export function About() {
 
         <section id="support">
           <h2>Support Quran Reader</h2>
-          <p>Reading and search cost almost nothing to run. Listening is different: recognising recitation costs about 12 cents for every hour.</p>
+          <p>Keeping the reader available has ongoing hosting costs, even when nobody is listening. Voice recognition is estimated at about 12 cents per hour and billed by token usage; AI requests, payment fees and other running costs are additional. See <a href="https://soniox.com/pricing" target="_blank" rel="noreferrer">Soniox’s pricing</a>.</p>
           <ul>
             <li>Listening is free for everyone. There are no accounts and no plans.</li>
             <li>Listening draws from a shared pool funded by community contributions, including our own. Daily limits help more people share those hours.</li>
-            <li>Contributions support the whole project. We show the shared budget as equivalent listening hours. Listening, payment fees, hosting, and other recorded running costs reduce that balance. Actual listening time is shown separately.</li>
+            <li>Contributions cover Quran Reader’s own running costs. We show the shared budget as estimated listening-hour equivalents. Listening, payment fees, hosting, and other recorded running costs reduce that balance. Actual listening time is shown separately.</li>
             <li>If the sponsored hours ever run out, listening pauses until someone gives again. Reading and search never stop.</li>
             <li>No accounts, no ads, no selling data, and no public donor names.</li>
           </ul>

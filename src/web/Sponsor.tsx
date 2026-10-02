@@ -67,6 +67,7 @@ export function SharedHours({ stats: initial, donations, testMode = false, defau
         </dl>
       </div>
       <p className="r-budget-note">{duration(stats.used)} used for listening · {duration(stats.costs ?? 0)} in other recorded costs</p>
+      <p className="r-budget-note">Hours are a budget estimate. Community support covers Quran Reader’s own running costs.</p>
       {!!stats.operatingReserve && <p className="r-budget-note">${((stats.operatingReserveUsdMicros ?? 0) / 1_000_000).toFixed(2)} set aside for running costs ({duration(stats.operatingReserve)}). This is reserved, not spent.</p>}
       <button className="r-pool-head" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span className="r-pool-line">
@@ -80,7 +81,7 @@ export function SharedHours({ stats: initial, donations, testMode = false, defau
       {open && (
         <div className="r-pool-body">
           <p className="r-pool-why">
-            Support listening, hosting, payment fees, and other running costs. This budget is shown as equivalent listening hours.
+            Support this reader’s hosting, voice recognition, AI requests and payment fees. Hosting continues even when nobody is listening. The hour conversion is not a guaranteed total cost per hour.
             {example ? ` ${price(example.price)} represents about ${example.hours} hours before fees and project costs.` : ''}
           </p>
           <p className="r-pool-sub">One-time support for Quran Reader, operated by Nurra LLC. No subscription or reader account. Contributions are not tax-deductible charitable donations.</p>

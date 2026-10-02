@@ -4,6 +4,65 @@ Owner decision, 2026-09-29: start with a **$10 project budget**. This is a launc
 
 The community supports the whole Quran Reader project. Contributions add to the budget. Listening and project expenses reduce it. The public display uses hour equivalents; it must keep actual listening time separate from costs. A negative balance represents uncovered costs and prevents new listening.
 
+## Community funding scope — 2026-10-02
+
+The owner confirmed that community support covers **Quran Reader's own costs**.
+Do not allocate the main Nurra website/domain or unrelated products to this pool.
+Record only costs attributable to running this reader, including its server,
+voice recognition, AI requests, payment fees, and any reader-specific overages.
+
+The 13-cent conversion is not an all-in operating price. Fixed hosting continues
+when no one is listening, and its cost per listening hour changes with traffic.
+The current server plan is $6/month before applicable taxes or overages. For a
+planning example, 100 listener-hours at the existing 13-cent voice estimate plus
+the $6 server plan requires about $19 **before AI charges, payment fees, taxes,
+overages and any reserve top-up**. This is a planning example, not an invoice.
+
+Use two distinct calculations:
+
+- Actual project funds remaining = confirmed support received − actual
+  attributable hosting, voice, AI, payment fees and other running costs.
+- Estimated listening capacity = the spendable budget after protecting the
+  operating reserve, converted using the ledger's fixed rate.
+
+The reserve is money still held, not a second expense. Replacing a voice estimate
+with its actual charge must reconcile the difference; importing the complete
+voice invoice as an extra cost would charge it twice. A true actual-cost balance
+requires that reconciliation and real receipts. Live contributions remain off
+until Stripe activation and a real payment readback are completed.
+
+## Read actual provider costs without changing the budget
+
+`scripts/project-budget-report.mjs` reads the existing ledger in read-only mode
+and the providers' read-only accounting endpoints. Run it inside the existing
+container so keys stay there:
+
+```sh
+docker exec -e QO_BUDGET_REPORT_START=2026-09-29T00:00:00Z quran-reader-prelaunch node scripts/project-budget-report.mjs
+```
+
+The default window is the last seven days; a window may not exceed 31 days.
+The scan is bounded to three pages of 1,000 Soniox records. Only the server-owned
+`quran-reader:` reference prefix is attributed to shared listening; own-key and
+other-product records are excluded. UUIDs are deduplicated, decimal USD costs are
+summed exactly, and partial/denied/malformed results are unknown rather than zero.
+No keys, visitor references, private receipt IDs, transcripts or raw log entries
+are output. No financial entries are created or corrected by this report.
+
+Soniox reports completed requests; OpenRouter reports totals for the configured
+key, so confirm its exclusive use for this reader before allocating its totals.
+Neither report replaces an invoice or proves that all failed/boundary-crossing
+usage has been reconciled. Documentation:
+[Soniox usage logs](https://soniox.com/docs/guides/usage-logs),
+[OpenRouter current-key accounting](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-key).
+
+The October 2 read-only audit since September 29 found 20 shared-reader Soniox
+records costing $0.06937, with about 0.6965 reported audio hours. The configured
+OpenRouter key reported $0.003416448 lifetime usage and $0.000086898 in the current
+UTC month. The ledger held 2,518 listening seconds and no additional expense
+receipts. Those are provider/ledger readbacks, not newly recorded expenses or a
+claim of fully reconciled community funding.
+
 ## Current accounting and its limits
 
 - The existing conversion is 13 US cents per hour equivalent (`QO_SPONSOR_CENTS_PER_HOUR`). This is a display/admission estimate, not a provider price guarantee. Keep it fixed for an existing ledger; changing it requires a reviewed conversion of historical balances.

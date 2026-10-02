@@ -93,7 +93,7 @@ test('how and why: costs, the reward of helping with sources, and the Nurra mark
   await page.goto(`/reader#owner=${OWNER}`);
   await expect(page.locator('.r-top')).toBeVisible();
   await page.getByRole('button', { name: /^Menu/ }).click();
-  await page.getByRole('link', { name: /^Why we built this/ }).click();
+  await page.getByRole('dialog', { name: 'Menu', exact: true }).getByRole('link', { name: /^Why we built this/ }).click();
   await expect(page.getByRole('heading', { name: 'Why we built this' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'A starting point for Muslim creators' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'More Muslim spaces, built by us' })).toBeVisible();
