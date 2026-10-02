@@ -395,6 +395,7 @@ html[data-reader-theme='paper'] .r-give-legend .lit,
 html[data-reader-theme='paper'] .r-pool .r-give-amounts button strong { color: #73501b; }
 html[data-reader-theme='paper'] .r-give-dots i.lit { background: var(--gold); border-color: var(--gold); box-shadow: none; }
 html[data-reader-theme='paper'] .r-pool-track span { background: linear-gradient(90deg, #c2a565, var(--gold)); }
+html[data-surface='reader'][data-reader-theme='paper'] button:hover:not(:disabled):not(.r-mic):not(.r-theme-choice) { background: var(--ink-2); border-color: var(--gold-dim); }
 .r-reading-dialog { width: min(calc(100% - 24px), 520px); max-height: 88dvh; overflow: auto; margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 22px; color: var(--text); background: var(--ink-1); font: 16px/1.5 var(--ui); }
 .r-reading-dialog::backdrop { background: rgba(4, 10, 12, .6); }
 .r-reading-body { position: relative; padding: 26px 22px 22px; }

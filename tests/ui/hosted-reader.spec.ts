@@ -62,6 +62,29 @@ test('shared lifetime totals, donation readback, and browser audio through the p
     await panel.getByRole('button', { name: /Support Quran Reader/ }).click();
     await panel.scrollIntoViewIfNeeded();
     await panel.screenshot({ path: 'test-results/community-hours-fixture.png' });
+    await page.getByRole('button', { name: /^Menu/ }).click();
+    await page.getByRole('button', { name: /^Reading appearance/ }).click();
+    await page.getByRole('radio', { name: /^Paper/ }).click();
+    await page.getByRole('button', { name: 'Return to reading', exact: true }).click();
+    await panel.locator('.r-pool-head').hover();
+    // The real hover background must keep the normal-sized support label readable.
+    const contrast = await panel.locator('.r-pool-head').evaluate((head) => {
+      const luminance = (color: string) => {
+        const rgb = color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map((v) => {
+          const c = v / 255; return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4;
+        });
+        return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722;
+      };
+      const bg = luminance(getComputedStyle(head).backgroundColor);
+      const fg = luminance(getComputedStyle(head.querySelector('.r-pool-now')!).color);
+      return (Math.max(bg, fg) + .05) / (Math.min(bg, fg) + .05);
+    });
+    expect(contrast).toBeGreaterThanOrEqual(4.5);
+    await panel.screenshot({ path: 'test-results/paper-support-hover.png' });
+    await page.getByRole('button', { name: /^Menu/ }).click();
+    await page.getByRole('button', { name: /^Reading appearance/ }).click();
+    await page.getByRole('radio', { name: /^Night/ }).click();
+    await page.getByRole('button', { name: 'Return to reading', exact: true }).click();
     await page.locator('.r-support-nav').getByRole('button', { name: /Support Quran Reader/ }).click();
     const support = page.getByRole('dialog', { name: 'Support Quran Reader' });
     await expect(support).toContainText('not tax-deductible');
